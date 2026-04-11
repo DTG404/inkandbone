@@ -762,15 +762,23 @@ func rollVtMV5Stats() map[string]any {
 	wit := groups[2][1]
 	res := groups[2][2]
 
-	clans := []string{"Brujah", "Gangrel", "Malkavian", "Nosferatu", "Toreador", "Tremere", "Ventrue", "Caitiff", "Thin-Blooded"}
-	predTypes := []string{"Alleycat", "Bagger", "Blood Leech", "Cleaner", "Consensualist", "Extortionist", "Graverobber", "Osiris", "Sandman", "Siren"}
+	clans := []string{
+		"Brujah", "Gangrel", "Malkavian", "Nosferatu", "Toreador", "Tremere", "Ventrue", "Caitiff", "Thin-Blooded",
+		"Banu Haqim", "Hecata", "Lasombra", "Ministry", "Ravnos", "Salubri", "Tzimisce",
+	}
+	predTypes := []string{
+		"Alleycat", "Bagger", "Blood Leech", "Cleaner", "Consensualist", "Extortionist",
+		"Graverobber", "Osiris", "Sandman", "Siren",
+		"Farmer", "Montero", "Scene Queen", "Treasure Hunter", "Pursuer", "Witch Hunter",
+	}
 	sects := []string{"Camarilla", "Anarch", "Unaligned", "Sabbat (lapsed)"}
 
 	stats := map[string]any{
+		"character_type": "Vampire",
 		"clan": randPick(clans), "predator_type": randPick(predTypes), "sect": randPick(sects),
-		"generation": randPick([]string{"10th", "11th", "12th", "13th", "14th", "15th (Thin-Blooded)"}),
+		"generation": randPick([]string{"10th", "11th", "12th", "13th", "14th", "15th (Thin-Blooded)", "16th (Thin-Blooded)"}),
 		"hunger": 1, "blood_potency": 1, "bane_severity": 1,
-		"humanity": 7, "stains": 0,
+		"humanity": 7, "stains": 0, "xp": 0,
 		"strength": str, "dexterity": dex, "stamina": sta,
 		"charisma": cha, "manipulation": man, "composure": com,
 		"intelligence": intel, "wits": wit, "resolve": res,
@@ -785,6 +793,8 @@ func rollVtMV5Stats() map[string]any {
 		"animalism": 0, "auspex": 0, "blood_sorcery": 0, "celerity": 0,
 		"dominate": 0, "fortitude": 0, "obfuscate": 0, "oblivion": 0,
 		"potence": 0, "presence": 0, "protean": 0,
+		"thin_blood_alchemy": 0, "bond_strength": 0,
+		"domitor": "", "rituals": "", "ceremonies": "", "known_formulae": "", "loresheets": "",
 		"skill_specialties": "", "merits_flaws": "", "ambition": "", "desire": "",
 		"convictions": "", "touchstones": "", "notes": "",
 	}

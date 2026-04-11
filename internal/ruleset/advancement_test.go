@@ -179,6 +179,23 @@ func TestXPCostFor_ironsworn(t *testing.T) {
 	}
 }
 
+func TestVtMInClanDisciplinesSpacedName(t *testing.T) {
+	// "Banu Haqim" stored with a space must resolve to banu_haqim disciplines.
+	discs, ok := VtMInClanDisciplinesFor("Banu Haqim")
+	if !ok {
+		t.Fatal("VtMInClanDisciplinesFor returned not-ok for 'Banu Haqim'")
+	}
+	want := []string{"blood_sorcery", "celerity", "obfuscate"}
+	if len(discs) != len(want) {
+		t.Fatalf("got %v, want %v", discs, want)
+	}
+	for i, d := range discs {
+		if d != want[i] {
+			t.Errorf("disc[%d] got %q want %q", i, d, want[i])
+		}
+	}
+}
+
 func TestCanAffordAny(t *testing.T) {
 	// W&G with 8 XP: can afford skill at rating 2 (cost 8)
 	statsJSON := `{"xp":8,"strength":2,"agility":2,"toughness":2,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0}`

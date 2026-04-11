@@ -2539,7 +2539,7 @@ func (s *Server) vtmRollClanCompulsion(ctx context.Context, sessionID int64, cha
 		var cs map[string]any
 		if json.Unmarshal([]byte(charStatsJSON), &cs) == nil {
 			if c, ok := cs["clan"].(string); ok {
-				clan = strings.ToLower(strings.TrimSpace(c))
+				clan = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(c), " ", "_"))
 			}
 		}
 	}

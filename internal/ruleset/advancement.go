@@ -87,7 +87,8 @@ func XPCostFor(system, field string, newVal int, statsJSON string) int {
 				if err := json.Unmarshal([]byte(statsJSON), &stats); err == nil {
 					if clan, ok := stats["clan"].(string); ok {
 						// Case-insensitive lookup: character sheet may store any capitalization.
-						for _, d := range vtmInClanDisciplines[strings.ToLower(clan)] {
+						normalizedClan := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(clan), " ", "_"))
+						for _, d := range vtmInClanDisciplines[normalizedClan] {
 							if d == field {
 								multiplier = 5
 								break
@@ -365,7 +366,8 @@ func CanAffordAny(system string, currentXP int, statsJSON string) bool {
 // Lookup is case-insensitive. The second return value is false if the clan is not recognized.
 // Caitiff returns an empty slice (all disciplines are out-of-clan for them).
 func VtMInClanDisciplinesFor(clan string) ([]string, bool) {
-	discs, ok := vtmInClanDisciplines[strings.ToLower(clan)]
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(clan), " ", "_"))
+	discs, ok := vtmInClanDisciplines[normalized]
 	return discs, ok
 }
 

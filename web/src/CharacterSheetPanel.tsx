@@ -140,28 +140,6 @@ function DamageTrack({ label, max, superficial, aggravated, onClickBox }: {
   )
 }
 
-function HungerTrack({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div style={{ marginBottom: '10px' }}>
-      <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#c0392b', marginBottom: '4px' }}>Hunger</div>
-      <div style={{ display: 'flex', gap: '4px' }}>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            onClick={() => onChange(i === value ? i - 1 : i)}
-            style={{
-              width: 20, height: 20,
-              background: i <= value ? '#c0392b' : 'transparent',
-              border: '1px solid #c0392b',
-              cursor: 'pointer',
-              animation: value >= 5 && i <= 5 ? 'pulse 1s infinite' : undefined,
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
 
 interface VtMSheetProps {
   character: Character
@@ -186,22 +164,79 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
   }
   const n = (key: string) => parseInt(fields[key] ?? '0') || 0
 
+  const charType = fields['character_type'] || 'Vampire'
+  const isThinBlood = charType === 'Thin-Blooded'
+  const isGhoul = charType === 'Ghoul'
+  const isMortal = charType === 'Mortal'
+  const isVampire = !isThinBlood && !isGhoul && !isMortal
+
   // Suppress unused variable warning — character is available for future use
   void character
 
   return (
     <>
-      {/* Hunger */}
-      <HungerTrack value={n('hunger')} onChange={(v) => onChange('hunger', String(v))} />
+      {/* Character Type */}
+      <div style={{ marginBottom: '10px' }}>
+        <label style={labelStyle}>
+          Character Type
+          <select
+            value={fields['character_type'] ?? 'Vampire'}
+            onChange={(e) => onChange('character_type', e.target.value)}
+            style={{ ...inputStyle, marginTop: '2px' }}
+          >
+            {['Vampire', 'Thin-Blooded', 'Ghoul', 'Mortal'].map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {/* Hunger — hidden for Ghoul and Mortal; capped at 4 for Thin-Blooded */}
+      {!isGhoul && !isMortal && (
+        <div style={{ marginBottom: '10px' }}>
+          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#c0392b', marginBottom: '4px' }}>
+            Hunger{isThinBlood && ' (max 4)'}
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {[1, 2, 3, 4, ...(isVampire ? [5] : [])].map((i) => (
+              <div
+                key={i}
+                onClick={() => onChange('hunger', String(i === n('hunger') ? i - 1 : i))}
+                style={{
+                  width: 20, height: 20,
+                  background: i <= n('hunger') ? '#c0392b' : 'transparent',
+                  border: '1px solid #c0392b',
+                  cursor: 'pointer',
+                  animation: n('hunger') >= (isVampire ? 5 : 4) && i <= (isVampire ? 5 : 4) ? 'pulse 1s infinite' : undefined,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Core stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px', marginBottom: '8px' }}>
-        {(['humanity', 'blood_potency', 'stains'] as const).map((key) => (
-          <label key={key} style={labelStyle}>
-            {key.replace(/_/g, ' ')}
-            <input type="number" value={fields[key] ?? ''} onChange={(e) => onChange(key, e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+        <label style={labelStyle}>
+          humanity
+          <input type="number" value={fields['humanity'] ?? ''} onChange={(e) => onChange('humanity', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+        </label>
+        {isVampire && (
+          <label style={labelStyle}>
+            blood potency
+            <input type="number" value={fields['blood_potency'] ?? ''} onChange={(e) => onChange('blood_potency', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
           </label>
-        ))}
+        )}
+        {isVampire && (
+          <label style={labelStyle}>
+            bane severity
+            <input type="number" value={fields['bane_severity'] ?? ''} onChange={(e) => onChange('bane_severity', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+          </label>
+        )}
+        <label style={labelStyle}>
+          stains
+          <input type="number" value={fields['stains'] ?? ''} onChange={(e) => onChange('stains', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+        </label>
       </div>
 
       {/* XP */}
@@ -308,31 +343,116 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
         ))}
       </div>
 
-      {/* Disciplines — 2-column grid */}
-      <div style={sectionHead}>Disciplines</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
-        {VTM_DISCIPLINES.map((key) => (
-          <PipRow
-            key={key}
-            label={key.replace(/_/g, ' ')}
-            value={n(key)}
-            max={5}
-            onChange={(v) => onChange(key, String(v))}
-          />
-        ))}
-      </div>
+      {/* Disciplines — hidden for Mortals; Thin-Blooded get Alchemy instead */}
+      {!isMortal && (
+        <>
+          {isThinBlood ? (
+            <>
+              <div style={sectionHead}>Thin-Blood Alchemy</div>
+              <PipRow
+                label="alchemy"
+                value={n('thin_blood_alchemy')}
+                max={5}
+                onChange={(v) => onChange('thin_blood_alchemy', String(v))}
+              />
+              <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px' }}>
+                known formulae
+                <textarea
+                  value={fields['known_formulae'] ?? ''}
+                  onChange={(e) => onChange('known_formulae', e.target.value)}
+                  style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical', minHeight: '3rem' }}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <div style={sectionHead}>Disciplines</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                {VTM_DISCIPLINES.map((key) => (
+                  <PipRow
+                    key={key}
+                    label={key.replace(/_/g, ' ')}
+                    value={n(key)}
+                    max={5}
+                    onChange={(v) => onChange(key, String(v))}
+                  />
+                ))}
+              </div>
+              {/* Blood Sorcery Rituals — shown when blood_sorcery >= 1 */}
+              {n('blood_sorcery') >= 1 && (
+                <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px' }}>
+                  rituals
+                  <textarea
+                    value={fields['rituals'] ?? ''}
+                    onChange={(e) => onChange('rituals', e.target.value)}
+                    style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical', minHeight: '3rem' }}
+                  />
+                </label>
+              )}
+              {/* Oblivion Ceremonies — shown when oblivion >= 1 */}
+              {n('oblivion') >= 1 && (
+                <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                  ceremonies
+                  <textarea
+                    value={fields['ceremonies'] ?? ''}
+                    onChange={(e) => onChange('ceremonies', e.target.value)}
+                    style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical', minHeight: '3rem' }}
+                  />
+                </label>
+              )}
+            </>
+          )}
+        </>
+      )}
 
       {/* Identity */}
       <div style={sectionHead}>Identity</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-        {(['clan', 'predator_type', 'sect', 'generation', 'ambition', 'desire'] as const).map((key) => (
+        {isVampire && (['clan', 'predator_type', 'sect', 'generation'] as string[]).map((key) => (
           <label key={key} style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {key.replace(/_/g, ' ')}
             <input type="text" value={fields[key] ?? ''} onChange={(e) => onChange(key, e.target.value)} style={inputStyle} />
           </label>
         ))}
+        {isThinBlood && (['clan', 'predator_type'] as string[]).map((key) => (
+          <label key={key} style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {key.replace(/_/g, ' ')}
+            <input type="text" value={fields[key] ?? ''} onChange={(e) => onChange(key, e.target.value)} style={inputStyle} />
+          </label>
+        ))}
+        {isGhoul && (
+          <>
+            <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              domitor
+              <input type="text" value={fields['domitor'] ?? ''} onChange={(e) => onChange('domitor', e.target.value)} style={inputStyle} />
+            </label>
+            <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              predator type
+              <input type="text" value={fields['predator_type'] ?? ''} onChange={(e) => onChange('predator_type', e.target.value)} style={inputStyle} />
+            </label>
+          </>
+        )}
+        {(['ambition', 'desire'] as string[]).map((key) => (
+          <label key={key} style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {key}
+            <input type="text" value={fields[key] ?? ''} onChange={(e) => onChange(key, e.target.value)} style={inputStyle} />
+          </label>
+        ))}
       </div>
-      {(['convictions', 'touchstones', 'skill_specialties', 'merits_flaws', 'notes'] as const).map((key) => (
+
+      {/* Bond Strength for Ghouls */}
+      {isGhoul && (
+        <div style={{ marginTop: '6px' }}>
+          <PipRow
+            label="bond strength"
+            value={n('bond_strength')}
+            max={3}
+            onChange={(v) => onChange('bond_strength', String(v))}
+          />
+        </div>
+      )}
+
+      {(['convictions', 'touchstones', 'skill_specialties', 'merits_flaws'] as string[]).map((key) => (
         <label key={key} style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
           {key.replace(/_/g, ' ')}
           <textarea
@@ -342,6 +462,24 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
           />
         </label>
       ))}
+      {isVampire && (
+        <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+          loresheets
+          <textarea
+            value={fields['loresheets'] ?? ''}
+            onChange={(e) => onChange('loresheets', e.target.value)}
+            style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical', minHeight: '3rem' }}
+          />
+        </label>
+      )}
+      <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+        notes
+        <textarea
+          value={fields['notes'] ?? ''}
+          onChange={(e) => onChange('notes', e.target.value)}
+          style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical', minHeight: '3rem' }}
+        />
+      </label>
     </>
   )
 }
@@ -427,6 +565,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
           'investigation','medicine','occult','politics','technology',
           'animalism','auspex','blood_sorcery','celerity','dominate','fortitude',
           'obfuscate','oblivion','potence','presence','protean',
+          'bond_strength','thin_blood_alchemy',
         ])
         const updates: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(next)) {

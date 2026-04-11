@@ -64,6 +64,36 @@ var vtmPredatorTypes = map[string]vtmPredatorTypeDef{
 		specialty:   "Persuasion:Seduction",
 		meritsFlaws: "Merit: Looks (Beautiful) / Flaw: Prey Exclusion (Mortals in relationships)",
 	},
+	"Farmer": {
+		disciplines: []disciplineGrant{{"animalism", 1}, {"protean", 1}},
+		specialty:   "Animal Ken (Specific Animal)",
+		meritsFlaws: "Merit: Iron Gullet / Flaw: Prey Exclusion (Humans)",
+	},
+	"Montero": {
+		disciplines: []disciplineGrant{{"fortitude", 1}, {"protean", 1}},
+		specialty:   "Survival (Hunting)",
+		meritsFlaws: "Merit: Herd (Rural) / Flaw: Prey Exclusion (City Dwellers)",
+	},
+	"Scene Queen": {
+		disciplines: []disciplineGrant{{"auspex", 1}, {"presence", 1}},
+		specialty:   "Etiquette (High Society)",
+		meritsFlaws: "Merit: Herd (Artistic Community) / Flaw: Prey Exclusion (Mundane)",
+	},
+	"Treasure Hunter": {
+		disciplines: []disciplineGrant{{"dominate", 1}, {"obfuscate", 1}},
+		specialty:   "Larceny (Security Systems)",
+		meritsFlaws: "Merit: Contacts (Wealthy) / Flaw: Prey Exclusion (Poor)",
+	},
+	"Pursuer": {
+		disciplines: []disciplineGrant{{"celerity", 1}, {"obfuscate", 1}},
+		specialty:   "Athletics (Chase)",
+		meritsFlaws: "Flaw: Prey Exclusion (Docile)",
+	},
+	"Witch Hunter": {
+		disciplines: []disciplineGrant{{"auspex", 1}, {"fortitude", 1}},
+		specialty:   "Occult (Vampire Lore)",
+		meritsFlaws: "Flaw: Obvious Predator",
+	},
 }
 
 // ApplyVtMPredatorType modifies a character stats map in-place with the grants

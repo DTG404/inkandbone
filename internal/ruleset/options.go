@@ -36,19 +36,28 @@ func CharacterOptions(system string) map[string][]string {
 
 	case "vtm":
 		return map[string][]string{
+			"character_type": {
+				"Vampire", "Thin-Blooded", "Ghoul", "Mortal",
+			},
 			"clan": {
+				// Core Rulebook
 				"Brujah", "Gangrel", "Malkavian", "Nosferatu", "Toreador",
 				"Tremere", "Ventrue", "Caitiff", "Thin-Blooded",
+				// Player's Guide
+				"Banu Haqim", "Hecata", "Lasombra", "Ministry", "Ravnos", "Salubri", "Tzimisce",
 			},
 			"predator_type": {
+				// Core Rulebook
 				"Alleycat", "Bagger", "Blood Leech", "Cleaner", "Consensualist",
 				"Extortionist", "Graverobber", "Osiris", "Sandman", "Siren",
+				// Player's Guide
+				"Farmer", "Montero", "Scene Queen", "Treasure Hunter", "Pursuer", "Witch Hunter",
 			},
 			"sect": {
 				"Camarilla", "Anarch", "Unaligned", "Sabbat (lapsed)",
 			},
 			"generation": {
-				"10th", "11th", "12th", "13th", "14th", "15th (Thin-Blooded)",
+				"10th", "11th", "12th", "13th", "14th", "15th (Thin-Blooded)", "16th (Thin-Blooded)",
 			},
 		}
 

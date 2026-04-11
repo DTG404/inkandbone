@@ -1,6 +1,6 @@
 -- 033_vtm_pg_compulsions.sql: Add VtM Player's Guide clan Compulsion oracle tables.
 -- 7 new clans: Banu Haqim, Hecata, Lasombra, Ministry, Ravnos, Salubri, Tzimisce.
--- 10 entries each (rolls 1-10); entries 7-10 duplicate 1-6 for d10 compatibility.
+-- 10 entries each (rolls 1-10). Entries 7-10 duplicate 1-6 for d10 compatibility.
 
 -- Banu Haqim Compulsion: Judgment (must condemn a witnessed wrong)
 INSERT INTO oracle_tables (ruleset_id, table_name, roll_min, roll_max, result)

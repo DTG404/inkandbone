@@ -5,15 +5,11 @@ linters:
     - govet
     - ineffassign
     - unused
-  exclusions:
-    checks:
-      # Package comments not used in this codebase
-      - ST1000
-      - ST1016
-      # Unnecessary type assertion to same type — intentional nil check pattern
-      - S1040
-      # WriteString(fmt.Sprintf(...)) pattern used intentionally
-      - QF1012
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+  exclude:
+    - ST1000
+    - ST1016
+    - S1040
+    - QF1012

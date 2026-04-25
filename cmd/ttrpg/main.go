@@ -35,6 +35,20 @@ func main() {
 		gmModel := os.Getenv("OLLAMA_GM_MODEL")
 		aiClient = ai.NewHybridClient(gmModel, os.Getenv("ANTHROPIC_API_KEY"))
 		log.Printf("AI: Hybrid (GM=%s via Ollama, automation=Claude Haiku)", gmModel)
+	case os.Getenv("DEEPSEEK_API_KEY") != "" && os.Getenv("DEEPSEEK_AUTO_MODEL") != "":
+		autoModel := os.Getenv("DEEPSEEK_AUTO_MODEL")
+		aiClient = ai.NewDualDeepSeekClient(os.Getenv("DEEPSEEK_API_KEY"), autoModel)
+		log.Printf("AI: DeepSeek dual (GM=%s, automation=%s)", ai.DeepSeekModel, autoModel)
+	case os.Getenv("DEEPSEEK_API_KEY") != "":
+		aiClient = ai.NewDeepSeekClient(os.Getenv("DEEPSEEK_API_KEY"))
+		log.Printf("AI: DeepSeek (%s)", ai.DeepSeekModel)
+	case os.Getenv("OPENROUTER_API_KEY") != "" && os.Getenv("OPENROUTER_AUTO_MODEL") != "":
+		autoModel := os.Getenv("OPENROUTER_AUTO_MODEL")
+		aiClient = ai.NewDualOpenRouterClient(os.Getenv("OPENROUTER_API_KEY"), autoModel)
+		log.Printf("AI: OpenRouter dual (GM=%s, automation=%s)", ai.OpenRouterModel, autoModel)
+	case os.Getenv("OPENROUTER_API_KEY") != "":
+		aiClient = ai.NewOpenRouterClient(os.Getenv("OPENROUTER_API_KEY"))
+		log.Printf("AI: OpenRouter (%s)", ai.OpenRouterModel)
 	case os.Getenv("ANTHROPIC_API_KEY") != "":
 		aiClient = ai.NewClient(os.Getenv("ANTHROPIC_API_KEY"))
 		log.Println("AI: Anthropic Claude Haiku")
@@ -48,7 +62,7 @@ func main() {
 		aiClient = ai.NewOllamaClient(model)
 		log.Printf("AI: Ollama single-model (%s)", model)
 	default:
-		log.Println("AI: disabled (set ANTHROPIC_API_KEY or OLLAMA_MODEL)")
+		log.Println("AI: disabled (set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OLLAMA_MODEL)")
 	}
 
 	httpServer := api.NewServer(database, dataDir, aiClient)

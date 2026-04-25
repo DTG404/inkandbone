@@ -580,8 +580,8 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		body.Name = "Generated Map"
 	}
 
-	// Map generation requires precise SVG output — use the structured AI client
-	// (Claude Haiku), not the narrative Ollama model.
+	// Map generation requires precise SVG output — use the structured AI client,
+	// not the narrative GM model.
 	prompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + body.Context
 	svgRaw, err := completer.Generate(r.Context(), prompt, 4096)
 	if err != nil {
@@ -872,7 +872,16 @@ func (s *Server) buildWorldContext(ctx context.Context, sessionID int64) string 
 				if char.DataJSON != "" {
 					var stats map[string]any
 					if err := json.Unmarshal([]byte(char.DataJSON), &stats); err == nil {
-						for _, field := range []string{"archetype", "class", "race", "faction", "keywords", "species", "metatype", "playbook", "culture", "clan", "predator_type", "sect"} {
+						charTypeLower := ""
+						if ct, ok := stats["character_type"].(string); ok {
+							charTypeLower = strings.ToLower(ct)
+						}
+						// Vampire-only fields — suppress for mortal characters.
+						vampireOnlyFields := map[string]bool{"clan": true, "predator_type": true, "sect": true}
+						for _, field := range []string{"character_type", "archetype", "class", "race", "faction", "keywords", "species", "metatype", "playbook", "culture", "clan", "predator_type", "sect"} {
+							if charTypeLower == "mortal" && vampireOnlyFields[field] {
+								continue
+							}
 							if v, ok := stats[field].(string); ok && v != "" {
 								fmt.Fprintf(&sb, "Character %s: %s\n", field, v)
 							}
@@ -1092,25 +1101,41 @@ func (s *Server) buildWorldContext(ctx context.Context, sessionID int64) string 
 								}
 								return ""
 							}
-							hunger := getInt("hunger")
-							humanity := getInt("humanity")
-							bp := getInt("blood_potency")
-							stains := getInt("stains")
+							charType := strings.ToLower(getString("character_type"))
 							hMax := getInt("health_max")
 							hSup := getInt("health_superficial")
 							hAgg := getInt("health_aggravated")
 							wMax := getInt("willpower_max")
 							wSup := getInt("willpower_superficial")
 							wAgg := getInt("willpower_aggravated")
-							predType := getString("predator_type")
-							clan := getString("clan")
-							fmt.Fprintf(&sb, "Hunger: %d/5 | Humanity: %d | Blood Potency: %d\n", hunger, humanity, bp)
-							fmt.Fprintf(&sb, "Predator Type: %s | Clan: %s\n", predType, clan)
-							fmt.Fprintf(&sb, "Health: %d/%d (%d Superficial, %d Aggravated)\n", hMax-hSup-hAgg, hMax, hSup, hAgg)
-							fmt.Fprintf(&sb, "Willpower: %d/%d (%d Superficial, %d Aggravated)\n", wMax-wSup-wAgg, wMax, wSup, wAgg)
-							fmt.Fprintf(&sb, "Stains: %d\n", stains)
-							if hunger >= 4 {
-								sb.WriteString("WARNING: Hunger is critical. Frenzy risk is high.\n")
+							switch charType {
+							case "mortal":
+								sb.WriteString("CHARACTER TYPE: Mortal — This character is a fully human mortal. They have NO Hunger, NO Disciplines, NO Clan, NO Predator Type, and NO Clan Bane. Do NOT narrate Hunger, Frenzy, Rouse Checks, or any vampire mechanics for this character. Narrate them as a human navigating the World of Darkness.\n")
+								fmt.Fprintf(&sb, "Health: %d/%d (%d Superficial, %d Aggravated)\n", hMax-hSup-hAgg, hMax, hSup, hAgg)
+								fmt.Fprintf(&sb, "Willpower: %d/%d (%d Superficial, %d Aggravated)\n", wMax-wSup-wAgg, wMax, wSup, wAgg)
+							case "ghoul":
+								sb.WriteString("CHARACTER TYPE: Ghoul — This character is a mortal empowered by vampire vitae. They have NO Hunger track of their own. They have access to one Discipline (from their domitor's clan) at 1 dot. Do NOT narrate Hunger, Frenzy, or Clan Bane for this character.\n")
+								fmt.Fprintf(&sb, "Health: %d/%d (%d Superficial, %d Aggravated)\n", hMax-hSup-hAgg, hMax, hSup, hAgg)
+								fmt.Fprintf(&sb, "Willpower: %d/%d (%d Superficial, %d Aggravated)\n", wMax-wSup-wAgg, wMax, wSup, wAgg)
+							default:
+								// Vampire or Thin-Blooded — full vampire mechanics.
+								hunger := getInt("hunger")
+								humanity := getInt("humanity")
+								bp := getInt("blood_potency")
+								stains := getInt("stains")
+								predType := getString("predator_type")
+								clan := getString("clan")
+								if charType == "thin-blooded" {
+									sb.WriteString("CHARACTER TYPE: Thin-Blooded — Hunger maxes at 4 (not 5). No clan Disciplines; uses Thin-Blood Alchemy instead. Blood Potency 0.\n")
+								}
+								fmt.Fprintf(&sb, "Hunger: %d/5 | Humanity: %d | Blood Potency: %d\n", hunger, humanity, bp)
+								fmt.Fprintf(&sb, "Predator Type: %s | Clan: %s\n", predType, clan)
+								fmt.Fprintf(&sb, "Health: %d/%d (%d Superficial, %d Aggravated)\n", hMax-hSup-hAgg, hMax, hSup, hAgg)
+								fmt.Fprintf(&sb, "Willpower: %d/%d (%d Superficial, %d Aggravated)\n", wMax-wSup-wAgg, wMax, wSup, wAgg)
+								fmt.Fprintf(&sb, "Stains: %d\n", stains)
+								if hunger >= 4 {
+									sb.WriteString("WARNING: Hunger is critical. Frenzy risk is high.\n")
+								}
 							}
 						}
 					}
@@ -1639,6 +1664,8 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 	go s.autoUpdateSceneTags(context.Background(), id, fullText)
 	go s.autoUpdateChronicleNight(context.Background(), id, fullText)
 	go s.autoVtMDisciplineRouseChecks(context.Background(), id, lastPlayerMsg, fullText)
+	go s.autoDetectVtMEmbrace(context.Background(), id, fullText)
+	go s.autoDetectVtMNightDOW(context.Background(), id, fullText)
 }
 
 // autoGenerateMap detects if the GM response introduces a new location and, if
@@ -1715,8 +1742,8 @@ Story passage:
 		}
 	}
 
-	// Map generation requires precise SVG output — use the structured AI client
-	// (Claude Haiku), not the narrative Ollama model.
+	// Map generation requires precise SVG output — use the structured AI client,
+	// not the narrative GM model.
 	mapPrompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + loc.Context
 	svgRaw, err := completer.Generate(ctx, mapPrompt, 8192)
 	if err != nil {
@@ -1796,6 +1823,17 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 		return
 	}
 
+	// Determine character type for VtM mortal/ghoul handling.
+	vtmCharType := ""
+	{
+		var charStats map[string]any
+		if json.Unmarshal([]byte(char.DataJSON), &charStats) == nil {
+			if ct, ok := charStats["character_type"].(string); ok {
+				vtmCharType = strings.ToLower(ct)
+			}
+		}
+	}
+
 	// Resolve ruleset via session → campaign.
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil || sess == nil {
@@ -1828,7 +1866,8 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 	}
 
 	// VtM: detect Humanity-violating acts and increment stains (async, non-blocking).
-	if ruleset.Name == "vtm" {
+	// Mortals do not have a Humanity/Stains track.
+	if ruleset.Name == "vtm" && vtmCharType != "mortal" {
 		go s.detectAndApplyVtMStains(context.Background(), sessionID, playerAction+" "+gmText)
 	}
 
@@ -1848,7 +1887,27 @@ Wrath & Glory rules:
 - Wounds/Shock: decrement when the character takes damage; set to 0 minimum.
 `
 	case "vtm":
-		systemNote = `
+		if vtmCharType == "mortal" {
+			systemNote = `
+Vampire: The Masquerade V5 rules — this character is a MORTAL human. Update ONLY what the scene clearly caused:
+
+HEALTH (track superficial and aggravated separately):
+- "health_superficial": increase by 1-3 when the mortal takes blunt, bullet, or non-lethal damage. Decrease by 1-2 when resting/treated. Never exceed health_max.
+- "health_aggravated": increase by 1 when the mortal takes severe injury (fire, grievous wounds). Never exceed health_max.
+
+WILLPOWER (track "willpower_superficial"):
+- Decrease willpower_superficial by 1 when the character pushes past their limits or the GM explicitly says willpower is spent.
+- Restore toward willpower_max when the character rests or has a meaningful moment.
+- Never go below 0 or above willpower_max.
+
+XP:
+- Add 1 XP for any meaningful scene. Add 2 XP for a major milestone. Update "xp" by adding to its current value.
+
+DO NOT touch hunger, humanity, stains, blood_potency, clan, predator_type, or any discipline fields — this character has none.
+Return {} if nothing clearly changed. Only update fields that exist in the current stats JSON.
+`
+		} else {
+			systemNote = `
 Vampire: The Masquerade V5 rules — update ONLY what the scene clearly caused:
 
 HEALTH (track superficial and aggravated separately):
@@ -1865,9 +1924,6 @@ WILLPOWER (track "willpower_superficial"):
 - Restore willpower_superficial toward willpower_max when: the character sleeps for the day, achieves a Conviction, or has a meaningful moment with a Touchstone.
 - Never go below 0 or above willpower_max.
 
-HUMANITY:
-- Decrease "humanity" by 1 AND set "stains" to 0 if the text describes the character's stains equaling or exceeding (11 minus current humanity). This represents a failed Remorse check.
-
 XP:
 - Add 1 XP for any meaningful scene (tense social encounter, surviving danger, significant feeding). Add 2 XP for a major milestone (story arc completed, powerful enemy survived, pivotal breach). Update "xp" by adding to its current value.
 
@@ -1876,6 +1932,7 @@ DISCIPLINES: DO NOT change discipline dot values (animalism, auspex, blood_sorce
 STAINS: DO NOT update stains here — handled separately.
 Return {} if nothing clearly changed. Only update fields that exist in the current stats JSON.
 `
+		}
 	}
 
 	prompt := fmt.Sprintf(`You are a TTRPG rules engine. Based on what just happened in the story, determine which character stats need to change according to the ruleset rules.
@@ -2044,7 +2101,7 @@ Return ONLY a JSON object with the fields that must change and their new values.
 }
 
 // autoSuggestXPSpend fires when XP increases after a GM response.
-// It calls Claude to generate 2–3 ranked advancement suggestions and pushes
+// It calls the AI to generate 2–3 ranked advancement suggestions and pushes
 // them to the frontend as an xp_spend_suggestions WebSocket event.
 // A per-session cap of 20 suggestions is enforced to avoid spam.
 func (s *Server) autoSuggestXPSpend(
@@ -2091,7 +2148,7 @@ func (s *Server) autoSuggestXPSpend(
 		return
 	}
 
-	// Build context for Claude.
+	// Build context for the AI.
 	var statsJSON []byte
 	statsJSON, _ = json.Marshal(stats)
 
@@ -2125,23 +2182,29 @@ Already-owned talents (pipe-delimited): %s
 Archetype starting abilities (do NOT suggest these): %s`,
 			archetypeName, tier, faction, talentsOwned, startingAbilitiesStr)
 	case "vtm":
-		clan, _ := stats["clan"].(string)
-		bloodPotency := 1
-		if v, ok := stats["blood_potency"].(float64); ok {
-			bloodPotency = int(v)
-		}
-		inClanStr := ""
-		if clan != "" {
-			if discs, ok := advancement.VtMInClanDisciplinesFor(clan); ok {
-				inClanStr = strings.Join(discs, ", ")
+		vtmCT, _ := stats["character_type"].(string)
+		if strings.ToLower(vtmCT) == "mortal" {
+			// Mortals spend XP only on attributes and skills — no disciplines or blood potency.
+			systemContext = "Character type: Mortal. Suggest advances in Attributes and Skills only. Do NOT suggest Disciplines, Blood Potency, or any vampire-specific traits."
+		} else {
+			clan, _ := stats["clan"].(string)
+			bloodPotency := 1
+			if v, ok := stats["blood_potency"].(float64); ok {
+				bloodPotency = int(v)
 			}
-		}
-		systemContext = fmt.Sprintf(`Clan: %s
+			inClanStr := ""
+			if clan != "" {
+				if discs, ok := advancement.VtMInClanDisciplinesFor(clan); ok {
+					inClanStr = strings.Join(discs, ", ")
+				}
+			}
+			systemContext = fmt.Sprintf(`Clan: %s
 Blood Potency: %d
 In-clan disciplines (cost 5 XP per dot): %s
 Out-of-clan disciplines cost 7 XP per dot.
 Do NOT suggest raising Blood Potency unless the character has enough XP to spend (cost 10 XP per dot).`,
-			clan, bloodPotency, inClanStr)
+				clan, bloodPotency, inClanStr)
+		}
 	default:
 		// Generic: no additional system context.
 		systemContext = ""
@@ -2188,14 +2251,14 @@ If there are no good suggestions, return an empty JSON array: []
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	raw, err := completer.Generate(ctx, prompt, 768)
+	raw, err := completer.Generate(ctx, prompt, 1536)
 	if err != nil {
 		log.Printf("autoSuggestXPSpend: AI error: %v", err)
 		return
 	}
 
 	// Extract JSON array from response using balanced bracket matching.
-	// Claude sometimes wraps output in markdown fences or adds trailing commentary
+	// The AI sometimes wraps output in markdown fences or adds trailing commentary
 	// with backticks; LastIndex would pull in that extra content.
 	start := strings.Index(raw, "[")
 	if start < 0 {
@@ -2820,6 +2883,7 @@ func (s *Server) handlePatchCombatant(w http.ResponseWriter, r *http.Request) {
 	// Read current values to fill in any unset fields
 	combatants, err := s.db.ListCombatants(0)
 	_ = combatants
+	_ = err
 	// We need to fetch by id — use a simple approach: update with provided values,
 	// defaulting hp_current to -1 sentinel to detect missing. Instead, require
 	// that callers always pass hp_current or we keep existing. Since UpdateCombatant
@@ -3637,13 +3701,30 @@ var vtmMinorBreachRE = regexp.MustCompile(
 )
 
 // stainTriggerRE matches acts that cost Stains in VtM V5.
+// Normal willing feeding does NOT cost Stains — only explicitly harmful or coerced acts do.
 var stainTriggerRE = regexp.MustCompile(
-	`\b(feeding|fed from|forced feeding|killing|killed|diablerie|diablerized|compulsion|breaking.*conviction|violated.*conviction)\b`,
+	`\b(forced feeding|draining|drained dry|killed|slaughter|murder|diablerie|diablerized|breaking.*conviction|violated.*conviction|prey exclusion|broke the masquerade)\b`,
 )
 
 // vtmNewNightRE matches phrases that signal a new night beginning in VtM.
 var vtmNewNightRE = regexp.MustCompile(
 	`\b(as dusk|at dusk|dusk falls|dusk arrives|dusk settles|dusk approaches|nightfall|as night falls|when night falls|the night falls|as the sun sets|the sun sets|sunset arrives|the evening begins|another night|the following night|next night|the next night|a new night|night has fallen|night has come|night has reclaimed|night reclaims|darkness falls|darkness descends|as darkness descends|fall of night|with the fall of night|the city awakens at night|as the darkness|as the night begins|that evening you|the next evening|night descends|night comes|the night arrives|night has settled|as night descends|night (begins|settles|covers|envelops|awakens))\b`,
+)
+
+// vtmStoryDayRE captures an in-story day name from the GM's opening scene.
+var vtmStoryDayRE = regexp.MustCompile(
+	`(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b`,
+)
+
+// vtmStoryDayIndex maps lowercase day name → JS Date.getDay() value (0=Sunday).
+var vtmStoryDayIndex = map[string]int{
+	"sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3,
+	"thursday": 4, "friday": 5, "saturday": 6,
+}
+
+// vtmEmbraceRE matches language that may indicate a mortal character has been Embraced.
+var vtmEmbraceRE = regexp.MustCompile(
+	`(?i)\b(embrace[sd]?|the embrace|your embrace|sire[sd]|siring|turned into a vampire|made you a vampire|grants? you the gift|the gift of undeath|kindred now|one of us now|you are kindred|blood fills your veins|dark gift|welcomed into the embrace)\b`,
 )
 
 // rouseCheckRE matches the player's /rouse or "rouse check" command.
@@ -3779,24 +3860,41 @@ func (s *Server) autoVtMDisciplineRouseChecks(ctx context.Context, sessionID int
 		return
 	}
 
+	// Mortals and ghouls do not use Rouse Checks for Disciplines.
+	charIDStr, _ := s.db.GetSetting("active_character_id")
+	if charIDStr != "" {
+		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
+			if char, err := s.db.GetCharacter(charID); err == nil && char != nil && char.DataJSON != "" {
+				var charStats map[string]any
+				if json.Unmarshal([]byte(char.DataJSON), &charStats) == nil {
+					if ct, ok := charStats["character_type"].(string); ok && strings.ToLower(ct) == "mortal" {
+						return
+					}
+				}
+			}
+		}
+	}
+
+	// Regex pre-filter: skip AI call if no discipline keyword appears in player action or GM text.
+	// This avoids false positives from general vampire narrative that never mentions disciplines.
+	disciplineKeywordRE := regexp.MustCompile(`(?i)\b(animalism|auspex|blood sorcery|celerity|dominate|fortitude|obfuscate|oblivion|potence|presence|protean|discipline|invoke|activate|channel|summon|command|compel|blur|vanish|invisible|shroud|meld|frenzy control|beast)\b`)
+	if !disciplineKeywordRE.MatchString(playerAction) && !disciplineKeywordRE.MatchString(gmText) {
+		return
+	}
+
 	prompt := fmt.Sprintf(`You are a Vampire: The Masquerade V5 rules engine.
 
-Read the player action and GM narration below. Count how many Rouse Checks the character owes.
+Read the player action and GM narration below. Count how many Rouse Checks the character owes for EXPLICITLY ACTIVATED Discipline powers.
 
-V5 ROUSE CHECK RULES:
-- Every use of a Discipline power requires exactly 1 Rouse Check.
+V5 ROUSE CHECK RULES — STRICT CRITERIA:
+- Only count a Rouse Check when a Discipline power is EXPLICITLY activated. The player must declare "I use [Discipline]" OR the GM must narrate that the character activates/invokes/channels a named Discipline power.
 - Disciplines: Animalism, Auspex, Blood Sorcery, Celerity, Dominate, Fortitude, Obfuscate, Oblivion, Potence, Presence, Protean.
-- Celerity: vampiric speed, blur of motion, moving faster than humanly possible.
-- Fortitude: shrugging off damage, supernatural endurance, resisting pain.
-- Potence: supernatural strength, jumping impossible distances, crushing objects.
-- Auspex: reading emotions/auras, detecting supernatural presence, enhanced senses beyond normal vampire range.
-- Obfuscate: becoming invisible or blending into a crowd supernaturally.
-- Dominate: compelling obedience, erasing memories, issuing irresistible commands.
-- Presence: inspiring fear, awe, or attraction supernaturally.
+- DO NOT count: vampires moving quickly (only count if Celerity is named), vampires taking a hit (only count if Fortitude is named), vampires being strong (only count if Potence is named), vampires sensing things (only count if Auspex is named).
+- DO NOT count passive vampire traits (night vision, blood scent, hearing heartbeats, emotional intuition, natural predatory instinct).
+- DO NOT count ambiguous descriptions where a Discipline is not explicitly named or invoked.
 - Blood Surge is NOT counted here — it fires its own Rouse Check separately.
 - Waking from day sleep is NOT counted here — handled separately.
-- Normal vampire senses (smelling blood, hearing heartbeats, seeing in the dark) do NOT require Rouse Checks.
-- If unsure whether something is a Discipline use or a natural vampire ability, do NOT count it.
+- When in doubt, count 0. False negatives are far preferable to false positives.
 
 Player action: %s
 GM narration: %s
@@ -3859,6 +3957,213 @@ func (s *Server) handleVtMBloodSurge(ctx context.Context, sessionID int64) strin
 	}
 	bonus := bloodPotencyBonusDice(bp)
 	return rouseResult + fmt.Sprintf(" [BLOOD SURGE] Add %d bonus dice to the next roll this turn (Blood Potency %d).", bonus, bp)
+}
+
+// autoDetectVtMNightDOW sets the in-story day-of-week for Night 1 on a VtM campaign
+// the first time a GM scene names a weekday. After that it becomes a no-op.
+func (s *Server) autoDetectVtMNightDOW(ctx context.Context, sessionID int64, gmText string) {
+	if !vtmStoryDayRE.MatchString(gmText) {
+		return
+	}
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+	camp, err := s.db.GetCampaign(sess.CampaignID)
+	if err != nil || camp == nil {
+		return
+	}
+
+	ruleset, err := s.db.GetRuleset(camp.RulesetID)
+	if err != nil || ruleset == nil || ruleset.Name != "vtm" {
+		return
+	}
+
+	// Already detected — nothing to do.
+	if camp.ChronicleNightStartDOW >= 0 {
+		return
+	}
+
+	match := vtmStoryDayRE.FindString(gmText)
+	if match == "" {
+		return
+	}
+	dow, ok := vtmStoryDayIndex[strings.ToLower(match)]
+	if !ok {
+		return
+	}
+
+	// Back-calculate: current night is chronicle_night; Night 1 was (chronicle_night-1) days before today's story day.
+	night1DOW := ((dow - (camp.ChronicleNight - 1)) % 7 + 7) % 7
+	if err := s.db.SetCampaignChronicleNightStartDOW(camp.ID, night1DOW); err != nil {
+		log.Printf("autoDetectVtMNightDOW: failed to store DOW: %v", err)
+		return
+	}
+	s.bus.Publish(Event{
+		Type: "campaign_updated",
+		Payload: map[string]any{
+			"campaign_id":               camp.ID,
+			"chronicle_night_start_dow": night1DOW,
+		},
+	})
+	log.Printf("autoDetectVtMNightDOW: campaign %d Night 1 anchored to DOW %d (detected %q on night %d)", camp.ID, night1DOW, match, camp.ChronicleNight)
+}
+
+// vtmEmbracePredatorTypes is the full list of VtM predator types for random assignment.
+var vtmEmbracePredatorTypes = []string{
+	"Alleycat", "Bagger", "Blood Leech", "Cleaner", "Consensualist",
+	"Extortionist", "Graverobber", "Osiris", "Sandman", "Siren",
+	"Farmer", "Montero", "Scene Queen", "Treasure Hunter", "Pursuer", "Witch Hunter",
+}
+
+// vtmEmbraceValidClans is the set of clans a sire can belong to (excludes Thin-Blooded, which is a character type).
+var vtmEmbraceValidClans = map[string]bool{
+	"Brujah": true, "Gangrel": true, "Malkavian": true, "Nosferatu": true,
+	"Toreador": true, "Tremere": true, "Ventrue": true, "Caitiff": true,
+	"Banu Haqim": true, "Hecata": true, "Lasombra": true, "Ministry": true,
+	"Ravnos": true, "Salubri": true, "Tzimisce": true,
+}
+
+// autoDetectVtMEmbrace runs after every GM response for VtM mortal characters.
+// It uses a regex pre-filter and then an AI confirmation step to detect if the
+// mortal has been Embraced. On confirmation it transforms the character into a
+// full Vampire: clan from sire, random predator type, and reset vampire stats.
+func (s *Server) autoDetectVtMEmbrace(ctx context.Context, sessionID int64, gmText string) {
+	// Regex pre-filter — skip AI call if no embrace language present.
+	if !vtmEmbraceRE.MatchString(gmText) {
+		return
+	}
+
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+
+	// Resolve session → campaign → ruleset.
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+	camp, err := s.db.GetCampaign(sess.CampaignID)
+	if err != nil || camp == nil {
+		return
+	}
+	ruleset, err := s.db.GetRuleset(camp.RulesetID)
+	if err != nil || ruleset == nil || ruleset.Name != "vtm" {
+		return
+	}
+
+	// Resolve active character and confirm it is a Mortal.
+	charIDStr, err := s.db.GetSetting("active_character_id")
+	if err != nil || charIDStr == "" {
+		return
+	}
+	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	if err != nil {
+		return
+	}
+	char, err := s.db.GetCharacter(charID)
+	if err != nil || char == nil || char.DataJSON == "" {
+		return
+	}
+	var stats map[string]any
+	if err := json.Unmarshal([]byte(char.DataJSON), &stats); err != nil {
+		return
+	}
+	charType, _ := stats["character_type"].(string)
+	if strings.ToLower(charType) != "mortal" {
+		return
+	}
+
+	// Ask the AI to confirm the Embrace and identify the sire's clan.
+	prompt := fmt.Sprintf(`You are analyzing a Vampire: The Masquerade V5 story segment.
+
+GM NARRATION:
+%s
+
+TASK: Determine whether the PLAYER CHARACTER (a mortal) was definitively Embraced (turned into a Kindred vampire) in this narration.
+
+Respond with a JSON object and nothing else:
+- "embraced": true if the player character was Embraced, false otherwise
+- "clan": the clan name of the sire who performed the Embrace (one of: Brujah, Gangrel, Malkavian, Nosferatu, Toreador, Tremere, Ventrue, Caitiff, Banu Haqim, Hecata, Lasombra, Ministry, Ravnos, Salubri, Tzimisce). Use "Caitiff" if the sire's clan is unknown or ambiguous.
+
+Only set "embraced" to true if the narration clearly describes the player character undergoing the Embrace — do not trigger on NPC embraces or hypothetical references.
+
+Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
+
+	raw, err := completer.Generate(ctx, prompt, 80)
+	if err != nil {
+		log.Printf("autoDetectVtMEmbrace: AI call failed: %v", err)
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return
+	}
+
+	var result struct {
+		Embraced bool   `json:"embraced"`
+		Clan     string `json:"clan"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &result); err != nil || !result.Embraced {
+		return
+	}
+
+	// Validate clan; fall back to Caitiff if unrecognized.
+	sireClan := strings.TrimSpace(result.Clan)
+	if !vtmEmbraceValidClans[sireClan] {
+		sireClan = "Caitiff"
+	}
+
+	// Pick a random predator type.
+	predatorType := vtmEmbracePredatorTypes[mathrand.Intn(len(vtmEmbracePredatorTypes))]
+
+	// Apply the Embrace: transform mortal → vampire.
+	stats["character_type"] = "Vampire"
+	stats["clan"] = sireClan
+	stats["predator_type"] = predatorType
+	stats["hunger"] = float64(1)
+	stats["blood_potency"] = float64(1)
+	stats["bane_severity"] = float64(1)
+	stats["humanity"] = float64(7)
+	stats["stains"] = float64(0)
+	// Set sect to Unaligned if not already set.
+	if sect, _ := stats["sect"].(string); sect == "" {
+		stats["sect"] = "Unaligned"
+	}
+	// Initialise discipline fields to 0 if absent.
+	for _, disc := range []string{
+		"animalism", "auspex", "blood_sorcery", "celerity", "dominate",
+		"fortitude", "obfuscate", "oblivion", "potence", "presence", "protean",
+	} {
+		if _, ok := stats[disc]; !ok {
+			stats[disc] = float64(0)
+		}
+	}
+
+	updated, err := json.Marshal(stats)
+	if err != nil {
+		log.Printf("autoDetectVtMEmbrace: marshal failed: %v", err)
+		return
+	}
+	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+		log.Printf("autoDetectVtMEmbrace: DB update failed: %v", err)
+		return
+	}
+
+	s.bus.Publish(Event{
+		Type: EventCharacterUpdated,
+		Payload: map[string]any{
+			"character_id": charID,
+			"embrace":      true,
+			"clan":         sireClan,
+			"predator_type": predatorType,
+		},
+	})
+	log.Printf("autoDetectVtMEmbrace: character %d embraced into clan %s (predator type: %s)", charID, sireClan, predatorType)
 }
 
 // autoUpdateMasquerade checks GM text for Masquerade breach keywords and decrements

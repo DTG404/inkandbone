@@ -11,7 +11,7 @@ import (
 
 func (s *Server) handleGenerateSessionRecap(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if s.aiClient == nil {
-		return mcplib.NewToolResultError("AI not configured — set ANTHROPIC_API_KEY"), nil
+		return mcplib.NewToolResultError("AI not configured — set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OLLAMA_MODEL"), nil
 	}
 
 	sessID, ok := optInt64(req, "session_id")

@@ -2,7 +2,7 @@
 
 **A private, local AI Game Master for 13 tabletop RPG systems — no cloud, no subscriptions, no limits.**
 
-You type. Claude narrates. Your browser updates live. That's the whole loop — and nothing else on the market does it like this.
+You type in your browser. The AI GM narrates. Your dashboard updates live. That's the whole loop.
 
 ---
 
@@ -12,17 +12,17 @@ Every other AI GM tool is a SaaS product: cloud servers, token limits, monthly s
 
 **It runs on your machine.** Your campaigns, characters, and session logs live in a SQLite database on your computer. Nothing leaves unless you push it. No account required. No waiting room when your tokens run out at a critical moment in the story.
 
-**It uses the full Claude model, not a stripped-down wrapper.** Because ink & bone works through Claude Code's MCP tool layer, Claude reasons about rules, maintains context across the entire conversation history, and makes genuine GM judgment calls. Competitors constrain their AI so heavily to prevent hallucination that they also remove its capability. ink & bone grounds Claude in a structured database — so it remembers everything — without lobotomizing it.
+**It uses capable AI models directly.** ink & bone calls the AI API (DeepSeek, Anthropic, or a local Ollama model) to narrate, make GM judgment calls, and track the story. The AI is grounded in a structured database — character sheets, world notes, NPCs, maps, and rulebook text — so it remembers everything without hallucinating your game state.
 
-**It supports 13 game systems out of the box — and any game you already own.** The rest of the field is almost entirely D&D 5e with a coat of paint. ink & bone ships with Ironsworn, Wrath & Glory, Blades in the Dark, Vampire: The Masquerade, Call of Cthulhu, Shadowrun, Warhammer Fantasy Roleplay, Star Wars Edge of the Empire, Legend of the Five Rings, The One Ring, Paranoia, and more. But the ruleset system is open: if you own a game that isn't on the list, you define its character sheet fields in a single JSON insert and it works immediately — correct field labels, correct input types, correct sheet layout in the browser. You can also upload the official PDF or text of any rulebook and Claude will search it during play, answering rules questions from the actual text rather than guessing.
+**It supports 13 game systems out of the box — and any game you already own.** The rest of the field is almost entirely D&D 5e with a coat of paint. ink & bone ships with Ironsworn, Wrath & Glory, Blades in the Dark, Vampire: The Masquerade, Call of Cthulhu, Shadowrun, Warhammer Fantasy Roleplay, Star Wars Edge of the Empire, Legend of the Five Rings, The One Ring, Paranoia, and more. But the ruleset system is open: if you own a game that isn't on the list, you define its character sheet fields in a single JSON insert and it works immediately — correct field labels, correct input types, correct sheet layout in the browser. You can also upload the official PDF or text of any rulebook and the AI will search it during play, answering rules questions from the actual text rather than guessing.
 
-**It costs fractions of a cent per message.** Using Claude Haiku, a full combat scene costs less than a penny. Competitors charge $10–30/month for token-gated access to a less capable model.
+**It costs fractions of a cent per message.** Using DeepSeek V4 Flash, a full combat scene costs less than a penny. Competitors charge $10–30/month for token-gated access to a less capable model.
 
 ---
 
 ## What is ink & bone? (In Plain English)
 
-You sit down and tell Claude a story about your character. Claude plays everyone else — the shopkeeper, the dragon, the mysterious stranger. Claude describes what happens, rolls the dice when there's uncertainty, tracks your character's health and equipment, and remembers everything that came before.
+You sit down and tell the AI a story about your character. The AI plays everyone else — the shopkeeper, the dragon, the mysterious stranger. The AI describes what happens, rolls the dice when there's uncertainty, tracks your character's health and equipment, and remembers everything that came before.
 
 Your browser dashboard shows it all as it happens: your character's stats, the conversation transcript, dice rolls, combat, maps, NPCs, and world-building notes. Everything syncs live — no refresh, no waiting, no cloud roundtrip.
 
@@ -36,11 +36,11 @@ You've probably played video game RPGs like Baldur's Gate or Skyrim. Tabletop RP
 
 Here's how they work:
 
-**The Setup:** You play one character. Everyone else — the merchant, the guard, the villain, the monsters — is run by the Game Master (GM). In ink & bone, Claude is the GM.
+**The Setup:** You play one character. Everyone else — the merchant, the guard, the villain, the monsters — is run by the Game Master (GM). In ink & bone, the AI is the GM.
 
-**The Flow:** You describe what your character does. "I want to pick the lock on that chest." Claude narrates what happens. "You carefully insert your lockpicks... click. The lock gives way." The GM tells you what you see, hear, and feel. You respond with what you do next.
+**The Flow:** You describe what your character does. "I want to pick the lock on that chest." The AI narrates what happens. "You carefully insert your lockpicks... click. The lock gives way." The GM tells you what you see, hear, and feel. You respond with what you do next.
 
-**Uncertainty and Dice:** When something's outcome is uncertain — will you successfully persuade the king, dodge that fireball, climb that cliff — you roll dice to add chance to the story. Claude rolls the dice, tells you the result, and narrates what happens. Success or failure, the story moves forward.
+**Uncertainty and Dice:** When something's outcome is uncertain — will you successfully persuade the king, dodge that fireball, climb that cliff — you roll dice to add chance to the story. The AI rolls the dice, tells you the result, and narrates what happens. Success or failure, the story moves forward.
 
 **The Goal:** There are no winning and losing states. The goal is to tell an interesting story together. Some campaigns are heroic quests. Others are about survival, politics, or exploration. Some are funny. Some are serious or scary. The rules define how your character works, what they can do, and how the dice work — but the story is always yours.
 
@@ -51,31 +51,28 @@ Here's how they work:
 ## How ink & bone Works (The Big Picture)
 
 ```
-┌──────────────────┐   tell a story    ┌─────────────────────┐
-│  Claude Code     │ ◄──────────────► │  ink & bone app     │
-│  (your GM)       │  save game state  │  (SQLite + tools)   │
-└──────────────────┘                   └─────────────────────┘
-                                               ▲
-                                               │ live updates
-                                               ▼
-                                    ┌──────────────────────┐
-                                    │ localhost:7432       │
-                                    │ Character sheet      │
-                                    │ Combat tracker       │
-                                    │ Session log          │
-                                    │ World notes / maps   │
-                                    └──────────────────────┘
+┌──────────────────────┐   HTTP/SSE    ┌────────────────────┐
+│  Browser (localhost) │ ◄──────────► │  ink & bone server │
+│  Player input        │  live stream  │  (Go + SQLite)     │
+│  Character sheet     │              └─────────┬──────────┘
+│  Combat tracker      │                        │
+│  Session log         │                        │ AI API
+└──────────────────────┘                        ▼
+                                       ┌────────────────────┐
+                                       │ DeepSeek / Claude  │
+                                       │ / Ollama (your GM) │
+                                       └────────────────────┘
 ```
 
-**Step 1: You type a message in Claude Code.** Your message is just plain English: "I want to sneak past the guards" or "Roll for initiative, combat starts now."
+**Step 1: You open your browser to `localhost:7432`.** The dashboard shows your campaign, character sheet, and session controls.
 
-**Step 2: Claude (as GM) responds.** Claude reads your character's sheet, the current game state, and the ruleset. Claude then narrates what happens, rolls dice if needed, and calls tools to update the game.
+**Step 2: You type your action in the browser.** Just plain English: "I want to sneak past the guards" or "I persuade the bartender to talk."
 
-**Step 3: The app saves everything.** All dice rolls, character updates, NPCs, combat turns, and notes are saved to a local SQLite database.
+**Step 3: The server calls the AI (your GM).** The AI reads your character's sheet, the conversation history, the ruleset, and any world notes. It narrates what happens, rolls dice if needed, and updates the game state.
 
-**Step 4: Your browser dashboard updates.** In real time, your browser shows your character sheet, the session transcript, combat status, and anything else Claude changes. No refresh needed — it's all live.
+**Step 4: The response streams to your browser.** The AI's narration appears character-by-character in your browser. All dice rolls, stat changes, NPCs, and items are automatically tracked and displayed in real time via WebSocket.
 
-Repeat. That's it. You play from Claude Code. The browser is your always-open reference.
+Repeat. That's it. The browser is your interface. No coding assistant needed.
 
 ---
 
@@ -84,13 +81,13 @@ Repeat. That's it. You play from Claude Code. The browser is your always-open re
 ### Prerequisites
 
 Choose one AI backend:
-- **Claude Haiku (recommended):** Set `ANTHROPIC_API_KEY` in your shell. Get a free API key at [console.anthropic.com](https://console.anthropic.com). Cost: fractions of a cent per message.
+- **DeepSeek (recommended):** Set `DEEPSEEK_API_KEY` in your environment. Get a key at [platform.deepseek.com](https://platform.deepseek.com). Cost: ~$1.20/month for 20 sessions.
+- **Claude Haiku (fallback):** Set `ANTHROPIC_API_KEY` in your shell. Get a key at [console.anthropic.com](https://console.anthropic.com).
 - **Local Ollama:** Install [Ollama](https://ollama.ai) and run a model locally. No API keys, no cloud calls, completely private.
 
 Other tools:
 - **Go 1.22+** — Download from [golang.org](https://golang.org/dl).
 - **Node.js 18+ and npm 9+** — Download from [nodejs.org](https://nodejs.org).
-- **Claude Code** — Install from [claude.com/claude-code](https://claude.com/claude-code) and configure the `~/bin/ttrpg` wrapper.
 
 ### Quick Start
 
@@ -104,23 +101,56 @@ make install
 
 This builds the Go server with embedded React frontend and installs the binary to `~/bin/ttrpg-bin`.
 
-You must also have a wrapper script at `~/bin/ttrpg` that passes your AI configuration to the binary. See **AI Configuration** below for examples.
+Create a wrapper script at `~/bin/ttrpg` that passes your AI key to the binary:
+
+```bash
+#!/usr/bin/env fish
+set -x DEEPSEEK_API_KEY (pass api-keys/deepseek)
+exec ~/bin/ttrpg-bin $argv
+```
+
+For bash/zsh, use:
+```bash
+#!/bin/bash
+export DEEPSEEK_API_KEY="sk-..."
+exec ~/bin/ttrpg-bin "$@"
+```
+
+Make it executable: `chmod +x ~/bin/ttrpg`
+
+Then start the server and open your browser:
+```bash
+ttrpg
+# Open http://localhost:7432
+```
+
+See **AI Configuration** below for other API backends.
 
 ### AI Configuration
 
 ink & bone supports multiple AI backends. Choose one and configure your wrapper script:
 
-**Option 1: Claude Haiku (Recommended)**
+**Option 1: DeepSeek Flash (Recommended)**
 
-Use Anthropic's Claude Haiku for all GM narration and automation. Fast, accurate, and low-cost.
+Use DeepSeek V4 Flash for all GM narration and automation. Fast, low-cost.
 
 ```bash
 #!/bin/bash
-export ANTHROPIC_API_KEY="your-key-here"
+export DEEPSEEK_API_KEY="sk-..."
 ~/bin/ttrpg-bin "$@"
 ```
 
-**Option 2: Ollama (Single Model)**
+Cost: ~$0.06 per 3-hour session. 20 sessions/month ≈ $1.20.
+
+**Option 2: Claude Haiku (Fallback)**
+
+```bash
+#!/bin/bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+~/bin/ttrpg-bin "$@"
+```
+
+**Option 3: Ollama (Single Model)**
 
 Use a local model (via Ollama) for both GM narration and automation tasks.
 
@@ -130,11 +160,11 @@ export OLLAMA_MODEL="mistral:latest"
 ~/bin/ttrpg-bin "$@"
 ```
 
-Recommended models: `mistral:7b`, `neural-chat:7b`, or any RP-tuned model.
+Recommended models: `dolphin-mixtral`, `neural-chat`, or any RP-tuned model.
 
-**Option 3: Ollama Dual-Model**
+**Option 4: Ollama Dual-Model**
 
-Route GM responses to one Ollama model and automation tasks to another. Useful when you have a narrative model (fast, roleplay-focused) and a reasoning model (stronger instruction-following for JSON tasks).
+Route GM responses to one Ollama model and automation tasks to another.
 
 ```bash
 #!/bin/bash
@@ -143,20 +173,20 @@ export OLLAMA_AI_MODEL="phi4:14b"
 ~/bin/ttrpg-bin "$@"
 ```
 
-**Option 4: Hybrid (Ollama + Claude)**
+**Option 5: Hybrid (Ollama + Claude)**
 
-Use a local Ollama model for GM narration (no API costs for prose) and Claude Haiku for all automation tasks (NPC extraction, map generation, etc.). Best of both worlds.
+Use a local Ollama model for GM narration and Claude Haiku for automation.
 
 ```bash
 #!/bin/bash
 export OLLAMA_GM_MODEL="neural-chat:7b"
-export ANTHROPIC_API_KEY="your-key-here"
+export ANTHROPIC_API_KEY="sk-ant-..."
 ~/bin/ttrpg-bin "$@"
 ```
 
 **Optional Ollama Tuning**
 
-If using Option 1 with Ollama, the GM client uses these defaults for prose quality:
+The GM client uses these defaults for prose quality:
 - `num_ctx`: 16384 (full session history)
 - `temperature`: 0.85 (creative but focused)
 - `repeat_penalty`: 1.15 (prevents repetitive prose)
@@ -170,13 +200,14 @@ Make your wrapper script executable:
 chmod +x ~/bin/ttrpg
 ```
 
-Now start a game from Claude Code:
+Now start the server:
 
-```
-/ttrpg new "My Campaign" ironsworn
+```bash
+~/bin/ttrpg
+# Open http://localhost:7432 in your browser
 ```
 
-This starts the server on `localhost:7432` and opens your browser to the dashboard. You can now play.
+The dashboard lets you create campaigns, characters, and sessions. You can now play.
 
 ### Development
 
@@ -194,13 +225,15 @@ This runs the Go server with hot reload (via `air`) and the React Vite dev serve
 
 ### 1. Create a Campaign
 
-In Claude Code, create a new campaign:
+With the server running, open `http://localhost:7432` in your browser. Click "+ New Campaign" and enter a name and ruleset (e.g., `ironsworn`, `vtm`, `dnd5e`).
 
-```
-/ttrpg new "My Campaign Name" ironsworn
-```
+Alternatively, via curl:
 
-Replace `ironsworn` with any supported ruleset (see list below). The server starts on `:7432` and opens your browser.
+```bash
+curl -X POST http://localhost:7432/api/campaigns \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My Campaign","ruleset":"ironsworn"}'
+```
 
 ### 2. Create a Character
 
@@ -212,19 +245,18 @@ Example for Ironsworn: Edge 2, Heart 1, Iron 3, Shadow 2, Wits 2. Health 5, Spir
 
 ### 3. Start a Session
 
-Click "+ New Session" and give it a title (e.g., "The Lost Library"). This opens a blank session where you and Claude can play together.
+Click "+ New Session" and give it a title (e.g., "The Lost Library"). This opens a blank session where you and the AI GM can play together.
 
 ### 4. Tell Your Story
 
-In Claude Code, type what your character does. Claude reads your message and responds as the GM, narrating what happens next. Your browser updates in real time.
+In the browser, type what your character does in the input bar at the bottom of the session view. The AI reads your message and responds as the GM, narrating what happens next. The text streams character-by-character to your browser.
 
 ```
-In Claude Code:
+In the browser input:
 > I want to search the ancient library for clues about the lost city.
 
-Claude responds:
-> You push through the heavy oak doors of the archive. The smell of leather and aged parchment fills your lungs. Shafts of afternoon light cut through dust motes as you scan the towering shelves. On a low table near the entrance, a leather-bound journal lies open...
-```
+The AI responds:
+> You push through the heavy oak doors of the archive...
 
 **Everything is saved automatically** — your character sheet, the conversation, dice rolls, items, NPCs, and notes all persist in the local SQLite database.
 
@@ -232,14 +264,14 @@ Claude responds:
 
 As you tell your story, you'll discover features unlocking automatically:
 
-- **Dice rolls:** Type a 1d20 or 2d6 roll into Claude's turn, and it auto-executes. History appears in the left sidebar.
-- **Combat:** When a fight starts, the turn order strip appears at the top. Claude manages initiative, HP, and conditions. You see the combat tracker in real time.
-- **Maps:** When a location is described, Claude can generate an SVG map. Click a message to pin it to the map.
-- **NPCs:** When Claude mentions a character's name, it's auto-added to your NPC roster in the right sidebar.
+- **Dice rolls:** Type a 1d20 or 2d6 roll, and it auto-executes. History appears in the left sidebar.
+- **Combat:** When a fight starts, the turn order strip appears at the top. The AI manages initiative, HP, and conditions. You see the combat tracker in real time.
+- **Maps:** When a location is described, the AI can generate an SVG map. Click a message to pin it to the map.
+- **NPCs:** When the GM mentions a character's name, it's auto-added to your NPC roster in the right sidebar.
 - **World Notes:** Click "Draft with AI" to auto-generate lore entries (locations, factions, items, etc.) with tags for easy filtering.
-- **Objectives:** Claude detects story goals (quests, mysteries, personal goals) and adds them to a tracker. Mark them complete or failed.
+- **Objectives:** The AI detects story goals (quests, mysteries, personal goals) and adds them to a tracker. Mark them complete or failed.
 - **Items & Inventory:** When you gain or lose gear, it's auto-tracked. View your full inventory in the left sidebar under items.
-- **Session Recap:** Every 4 GM messages, Claude regenerates a summary of the session in the Journal tab.
+- **Session Recap:** Every 4 GM messages, the AI regenerates a summary of the session in the Journal tab.
 
 ---
 
@@ -295,7 +327,7 @@ At the bottom:
 
 ![Map drawer — AI-generated SVG location map with labeled rooms](docs/ui-map.png)
 
-- **Generate Map button (AI enabled only):** Click to generate a new map using Claude based on recent session context. Auto-selects the new map in the drawer.
+- **Generate Map button (AI enabled only):** Click to generate a new map using the AI based on recent session context. Auto-selects the new map in the drawer.
 
 ### Right Sidebar — Notes, Journal, NPCs, and Objectives
 
@@ -309,7 +341,7 @@ Four tabs showing different campaign data:
 
 **Journal tab (Session Recap):**
 - Textarea for freeform notes about the session.
-- Write your own summary, or click "Generate recap" to have Claude read the entire session and draft a narrative summary.
+- Write your own summary, or click "Generate recap" to have the AI read the entire session and draft a narrative summary.
 - Changes auto-save on blur via PATCH request.
 - AI recap captures the narrative arc, key decisions, character growth, and major events.
 
@@ -317,20 +349,20 @@ Four tabs showing different campaign data:
 - A roster of named NPCs for the current session.
 - Each NPC shows a name label, editable note field (auto-saves on blur), and a delete button.
 - "+ Add NPC" button at the bottom to create new entries.
-- NPCs are AI-managed: auto-added when Claude introduces a new named character, auto-removed when a character is confirmed dead, captured, or gone. Live WebSocket updates when the roster changes.
+- NPCs are AI-managed: auto-added when the AI introduces a new named character, auto-removed when a character is confirmed dead, captured, or gone. Live WebSocket updates when the roster changes.
 
 **Objectives tab (Quest Tracker):**
 - List of active, completed, and failed objectives for the campaign.
 - Click to view full description or edit status.
 - Click "+ New Objective" to add a quest or goal manually.
-- Objectives auto-add when Claude detects a new story goal.
+- Objectives auto-add when the AI detects a new story goal.
 
 **Items tab (Inventory):**
 - **Currency row (pinned at top):** Shows your current balance and currency label (e.g., "Gold"). Click the label or balance to edit inline; saves on blur or Enter. The AI automatically updates the balance when currency changes hands during play, with a 5-second undo toast.
 - All items owned by your character.
 - Shows name, description, quantity, and equipped status.
 - Click to edit or delete items.
-- Items auto-add when Claude mentions you gaining or losing gear.
+- Items auto-add when the AI mentions you gaining or losing gear.
 
 ---
 
@@ -391,19 +423,19 @@ If your favorite game isn't on the list, you can add it:
 
 ink & bone ships with built-in character sheet schemas for all 13 supported systems. Without a rulebook uploaded, you can still:
 
-- Create characters, run sessions, and have Claude narrate the story
+- Create characters, run sessions, and have the AI narrate the story
 - Track stats, health, inventory, combat, maps, and NPCs automatically
 - Roll dice with proper expressions (d4 through d100, pools, modifiers)
 - Get a competent AI GM that applies common-sense interpretations of the rules
 
 **What's missing without the rulebook:**
 
-- Claude cannot cite specific page references or exact rule text
-- Edge-case rules (unusual combat conditions, specific spell interactions, advanced abilities) rely on Claude's general knowledge rather than the actual book, and may be wrong or outdated
+- The AI cannot cite specific page references or exact rule text
+- Edge-case rules (unusual combat conditions, specific spell interactions, advanced abilities) rely on the AI's general knowledge rather than the actual book, and may be wrong or outdated
 - Class-specific abilities, feats, spells, and equipment tables are not indexed
 - Rules clarifications, errata, and system-specific edge cases are not available
 
-For casual play this is fine. For rules-precise, competitive, or rulebook-faithful play, uploading the PDF gives Claude the full text to search.
+For casual play this is fine. For rules-precise, competitive, or rulebook-faithful play, uploading the PDF gives the AI the full text to search.
 
 ---
 
@@ -417,12 +449,12 @@ The foundation. Covers character creation, core resolution mechanics, combat rul
 Examples: *Player's Handbook* (D&D), *Wrath & Glory Core Rulebook*, *Ironsworn*, *Blades in the Dark*, *Call of Cthulhu Keeper Rulebook*, *VtM 5th Edition Core*.
 
 **Game Master's Guide / Keeper's Guide (label: `GM Guide`)**
-Rules and advice for running the game: encounter design, NPC creation, loot tables, campaign structure, secret rules, and setting up adventures. Useful for Claude when adjudicating GM-side mechanics.
+Rules and advice for running the game: encounter design, NPC creation, loot tables, campaign structure, secret rules, and setting up adventures. Useful for the AI when adjudicating GM-side mechanics.
 
 Examples: *Dungeon Master's Guide*, *Call of Cthulhu Keeper's Guide*, *Blades in the Dark* (the book itself doubles as both).
 
 **Bestiary / Monster Manual (label: `Bestiary`)**
-Creature stat blocks, abilities, tactics, lore, and encounter suggestions. Upload this if you want Claude to reference accurate creature stats rather than improvising them.
+Creature stat blocks, abilities, tactics, lore, and encounter suggestions. Upload this if you want the AI to reference accurate creature stats rather than improvising them.
 
 Examples: *Monster Manual* (D&D), *Wrath & Glory Threat Assessment: Xenos*, *VtM Anarch Cookbook*, *WFRP Bestiary*.
 
@@ -432,12 +464,12 @@ Expands character options: new classes, subclasses, archetypes, races, backgroun
 Examples: *Tasha's Cauldron of Everything*, *Xanathar's Guide*, *VtM Chicago By Night* (clans + coterie options), *Wrath & Glory Forsaken System Guide* (new archetypes), *Shadowrun Street Grimoire* (magic rules).
 
 **Campaign Setting (label: `Setting: [name]`)**
-World-building lore: geography, factions, history, politics, religions, and plot hooks specific to a setting. Gives Claude deep context for narrating the world accurately.
+World-building lore: geography, factions, history, politics, religions, and plot hooks specific to a setting. Gives the AI deep context for narrating the world accurately.
 
 Examples: *Forgotten Realms Campaign Setting*, *VtM Chicago By Night*, *Wrath & Glory Gilead System*, *Eberron: Rising from the Last War*.
 
 **Adventure Module / Campaign Book (label: `Adventure: [name]`)**
-Pre-written scenarios, dungeons, encounters, NPCs, and story beats. Upload the adventure you're running so Claude can reference the actual plot, maps, and encounter stats.
+Pre-written scenarios, dungeons, encounters, NPCs, and story beats. Upload the adventure you're running so the AI can reference the actual plot, maps, and encounter stats.
 
 Examples: *Curse of Strahd*, *Death on the Reik* (WFRP), *The Long Night* (IoS), *The Fall of Delta Green*.
 
@@ -524,40 +556,40 @@ GET /api/rulesets/{id}/rulebook
 
 ## Features & Automation
 
-### AI GM (Claude Haiku)
+### AI GM
 
-When you send a message, Claude reads:
+When you send a message, the AI reads:
 
 - Your character sheet (all fields and current values).
 - The full conversation history.
 - The ruleset schema and rules context.
 - Your campaign description and world notes.
 
-Claude then narrates what happens, applying rules as needed, and responds via Server-Sent Events (SSE). The text streams character-by-character to your browser. A system prompt injects your character's name so Claude consistently uses the correct name when referring to you.
+The AI then narrates what happens, applying rules as needed, and responds via Server-Sent Events (SSE). The text streams character-by-character to your browser. A system prompt injects your character's name so the AI consistently uses the correct name when referring to you.
 
-**Stream cleanup:** Em-dashes in Claude's output are automatically stripped programmatically before display.
+**Stream cleanup:** Em-dashes in the AI's output are automatically stripped programmatically before display.
 
 ### Automation Goroutines
 
 After every GM response, background tasks fire automatically (no player action required):
 
-**extractNPCs** — Claude's text is analyzed for named characters. New NPCs are added to the session roster. NPCs confirmed dead, captured, or permanently gone are automatically removed. Names appear in the NPCs tab on the right sidebar.
+**extractNPCs** — The GM's text is analyzed for named characters. New NPCs are added to the session roster. NPCs confirmed dead, captured, or permanently gone are automatically removed. Names appear in the NPCs tab on the right sidebar.
 
-**autoGenerateMap** — When Claude describes a new location with a proper name, an SVG map is generated and added to the campaign map gallery. You can view it and place pins on locations mentioned in the story.
+**autoGenerateMap** — When the GM describes a new location with a proper name, an SVG map is generated and added to the campaign map gallery. You can view it and place pins on locations mentioned in the story.
 
 **autoUpdateCharacterStats** — Detects story events that affect your character (taking damage, gaining XP, level-up, acquiring abilities, etc.). Applies rule-based stat updates automatically per ruleset. Changes appear instantly in the character sheet. When XP increases, triggers XP advancement suggestions (see below).
 
 **autoUpdateRecap** — Every 4 GM responses, the session journal entry is regenerated with a fresh summary capturing narrative arc, key decisions, and character growth.
 
-**autoDetectObjectives** — Claude's response is analyzed for newly introduced story goals (quests, mysteries, personal objectives). New objectives are added to the Objectives tab automatically.
+**autoDetectObjectives** — The GM's response is analyzed for newly introduced story goals (quests, mysteries, personal objectives). New objectives are added to the Objectives tab automatically.
 
-**autoExtractItems** — When Claude describes items you gain or lose, they're automatically added to or removed from your inventory (Items tab).
+**autoExtractItems** — When the GM describes items you gain or lose, they're automatically added to or removed from your inventory (Items tab).
 
-**checkAndExecuteRoll** — Before Claude responds, the player's action is analyzed. If the ruleset requires a dice roll for that action (e.g., attack roll in combat, climb check, persuasion roll), the roll is enforced first. Claude sees the result and narrates accordingly. Keeps story moving without manual dice rolling.
+**checkAndExecuteRoll** — Before the AI responds, the player's action is analyzed. If the ruleset requires a dice roll for that action (e.g., attack roll in combat, climb check, persuasion roll), the roll is enforced first. The AI sees the result and narrates accordingly. Keeps story moving without manual dice rolling.
 
 **autoUpdateTension** — After every GM response, the session's tension level automatically increments if the text contains crisis keywords (ambush, betrayal, catastrophe, danger, doom, enemy, escape, failure, fear, fight, flee, loss, peril, threat, trapped, wounded, etc.) or when a dice roll critically fails. The tension tracker is visible in the session UI and influences narrative pacing. You can manually adjust tension via the UI at any time.
 
-**autoUpdateCurrency** — After every GM response, Claude analyzes the text for explicit currency transactions (e.g., "you receive 30 gold", "costs 15 coin"). If a specific number and a currency word appear together, the character's balance is updated automatically. A 5-second undo toast appears in the inventory panel so you can reverse unintended changes. No update fires if no transaction is found.
+**autoUpdateCurrency** — After every GM response, the AI analyzes the text for explicit currency transactions (e.g., "you receive 30 gold", "costs 15 coin"). If a specific number and a currency word appear together, the character's balance is updated automatically. A 5-second undo toast appears in the inventory panel so you can reverse unintended changes. No update fires if no transaction is found.
 
 **autoUpdateSceneTags** — After every GM response, the scene text is scanned for environment keywords (dungeon, tavern, forest, battle, etc.) and the session's active scene tags are updated. Scene tags drive ambient audio track selection without requiring any manual input.
 
@@ -571,7 +603,7 @@ All automation runs in the background without interrupting your gameplay. Update
 
 ### NPC Personality System
 
-World notes with the `npc` category can store a personality profile as structured JSON. This allows you to define NPC traits that Claude incorporates into every turn:
+World notes with the `npc` category can store a personality profile as structured JSON. This allows you to define NPC traits that the AI incorporates into every turn:
 
 **To set an NPC personality:**
 
@@ -584,21 +616,21 @@ Content-Type: application/json
 }
 ```
 
-The personality JSON is injected into Claude's world context block before every GM turn. Any valid JSON object is accepted — use whatever fields describe your NPC best. Claude will reference personality traits when the NPC appears in the story.
+The personality JSON is injected into the AI's world context block before every GM turn. Any valid JSON object is accepted — use whatever fields describe your NPC best. The AI will reference personality traits when the NPC appears in the story.
 
 ### World Context Injection
 
-When you send a player action, Claude receives an enriched world context block that includes:
+When you send a player action, the AI receives an enriched world context block that includes:
 
-- `[ACTIVE OBJECTIVES]` — All active quests and story goals for the campaign, so Claude tracks narrative threads without you having to remind them.
-- `[NPC: Name]` personality cards — For every world note tagged as `npc` with a non-empty personality JSON, Claude receives the personality definition and incorporates it into NPC dialogue and actions.
-- `[RULEBOOK REFERENCES]` — If a rulebook has been uploaded for the campaign's ruleset, up to 5 matching chunks are searched from the player's message (keywords are expanded to mechanic terms, e.g., "attack" also searches "combat" and "damage") and injected here. Claude is bound by a non-negotiable `RULEBOOK ADHERENCE` directive to apply these rules exactly — no softening, no improvising contradictory mechanics.
+- `[ACTIVE OBJECTIVES]` — All active quests and story goals for the campaign, so the AI tracks narrative threads without you having to remind them.
+- `[NPC: Name]` personality cards — For every world note tagged as `npc` with a non-empty personality JSON, the AI receives the personality definition and incorporates it into NPC dialogue and actions.
+- `[RULEBOOK REFERENCES]` — If a rulebook has been uploaded for the campaign's ruleset, up to 5 matching chunks are searched from the player's message (keywords are expanded to mechanic terms, e.g., "attack" also searches "combat" and "damage") and injected here. The AI is bound by a non-negotiable `RULEBOOK ADHERENCE` directive to apply these rules exactly — no softening, no improvising contradictory mechanics.
 
 This ensures NPCs stay consistent, plot threads remain visible, and all mechanical rulings are grounded in the actual rulebook text.
 
 ### GM Session Tools
 
-Four AI-powered endpoints let you get Claude's analysis of the campaign and session. All require `ANTHROPIC_API_KEY` to be set:
+Four AI-powered endpoints let you get the AI's analysis of the campaign and session. All require the AI client to be configured:
 
 **POST /api/sessions/{id}/improvise** — Generate an improvised scene suggestion, NPC complication, or plot twist from the last 5 messages. Returns `{"result":"..."}` with a 2-3 sentence suggestion.
 
@@ -606,7 +638,7 @@ Four AI-powered endpoints let you get Claude's analysis of the campaign and sess
 
 **POST /api/sessions/{id}/detect-threads** — Analyze the full session transcript and identify unresolved narrative threads, loose ends, and plot hooks for future sessions. Returns `{"result":"..."}` with a list of thread recommendations.
 
-**POST /api/campaigns/{id}/ask** — Ask Claude a freeform question about your campaign. Body: `{"question":"..."}`. Claude uses world notes as context to answer. Returns `{"result":"..."}` with the answer.
+**POST /api/campaigns/{id}/ask** — Ask the AI a freeform question about your campaign. Body: `{"question":"..."}`. The AI uses world notes as context to answer. Returns `{"result":"..."}` with the answer.
 
 All four endpoints are handy for GM prep, campaign planning, and breaking writer's block mid-session.
 
@@ -630,7 +662,7 @@ Replace `"action"` with `"theme"` to roll the theme table. Custom rulesets can p
 - `GET /api/sessions/{id}/tension` — View current tension level
 - `PATCH /api/sessions/{id}/tension` — Manually set tension (body: `{"tension_level":N}`)
 
-Tension auto-increments when Claude's responses contain crisis keywords (ambush, betrayal, catastrophe, danger, doom, escape, failure, fear, fight, loss, peril, threat, trapped, wounded) or on critical dice failures. You can override it anytime via the UI.
+Tension auto-increments when the AI's responses contain crisis keywords (ambush, betrayal, catastrophe, danger, doom, escape, failure, fear, fight, loss, peril, threat, trapped, wounded) or on critical dice failures. You can override it anytime via the UI.
 
 **Relationship Web** — Track named relationships between characters and factions to drive roleplaying and plot complications:
 
@@ -719,7 +751,7 @@ Supported scene tags (13 total): `tavern`, `dungeon`, `forest`, `city`, `ocean`,
 - **React 18 + TypeScript:** Vite-bundled frontend, embedded in the binary.
 - **WebSocket:** Live dashboard updates from server to browser.
 - **SSE (Server-Sent Events):** Streaming GM responses for character-by-character prose display.
-- **AI:** Claude Haiku (Anthropic API, MCP tools) OR local Ollama models (single-model, dual-model, or hybrid modes).
+- **AI:** DeepSeek, Anthropic Claude, or local Ollama models (single-model, dual-model, hybrid, or MCP modes).
 - **Dice library:** Dice roll expression parsing and evaluation.
 
 ### Project Layout
@@ -730,7 +762,7 @@ inkandbone/
 ├── internal/
 │   ├── api/                # HTTP handlers, WebSocket hub, event bus, automation goroutines
 │   ├── db/                 # SQLite schema, migrations, query layer
-│   ├── ai/                 # Claude API integration, system prompts, SSE streaming
+│   ├── ai/                 # AI client implementations, system prompts, SSE streaming
 │   └── utils/              # Dice roller, ruleset validation, rulebook parsing
 ├── web/                    # React/TypeScript frontend (Vite)
 │   ├── src/
@@ -771,16 +803,16 @@ Key tables:
 
 ### The browser shows a blank page
 
-Ensure the server is running and listening on `localhost:7432`. Check that `ANTHROPIC_API_KEY` is set in your environment.
+Ensure the server is running and listening on `localhost:7432`. Check that your AI API key is set (e.g. `DEEPSEEK_API_KEY`).
 
 ```bash
-echo $ANTHROPIC_API_KEY
+echo $DEEPSEEK_API_KEY
 ```
 
 If empty, set it before running `ttrpg`:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-..."
+export DEEPSEEK_API_KEY="sk-..."
 ```
 
 ### Dice rolls don't execute
@@ -789,11 +821,11 @@ Check that the ruleset has dice roll rules defined. Some systems don't enforce a
 
 ### Maps aren't generating
 
-Maps require AI to be enabled (ANTHROPIC_API_KEY must be set). If AI is enabled, Claude analyzes the last few messages for location names and generates an SVG map. This can take a few seconds.
+Maps require AI to be enabled (an API key must be set). If AI is enabled, the AI analyzes the last few messages for location names and generates an SVG map. This can take a few seconds.
 
 ### Character stats aren't updating
 
-The automation goroutine `autoUpdateCharacterStats` runs after every GM response. It analyzes Claude's text for events that affect your character (damage, healing, level-up, etc.). If updates don't appear, check that the ruleset schema has the correct field names.
+The automation goroutine `autoUpdateCharacterStats` runs after every GM response. It analyzes the AI's text for events that affect your character (damage, healing, level-up, etc.). If updates don't appear, check that the ruleset schema has the correct field names.
 
 ### WebSocket connection drops
 

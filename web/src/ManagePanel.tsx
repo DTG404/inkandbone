@@ -70,7 +70,7 @@ export function ManagePanel({
   // Rulebooks
   const [rulebookSources, setRulebookSources] = useState<RulebookSource[]>([])
   const [rulebookFile, setRulebookFile] = useState<File | null>(null)
-  const [rulebookSourceLabel, setRulebookSourceLabel] = useState('Core Rulebook')
+  const [rulebookSourceLabel, setRulebookSourceLabel] = useState('')
   const [uploadingRulebook, setUploadingRulebook] = useState(false)
   const [rulebookMsg, setRulebookMsg] = useState('')
 
@@ -277,6 +277,7 @@ export function ManagePanel({
       const result = await uploadRulebook(campaign.ruleset_id, rulebookFile, rulebookSourceLabel)
       setRulebookMsg(`Uploaded "${result.source}" — ${result.chunks_created} chunks indexed`)
       setRulebookFile(null)
+      setRulebookSourceLabel('')
       loadRulebookSources(selectedCampaignId)
     } catch (e) {
       setError(String(e))

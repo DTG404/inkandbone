@@ -13,7 +13,7 @@ type Server struct {
 	db       *db.DB
 	bus      *api.Bus
 	srv      *server.MCPServer
-	aiClient ai.Completer // nil when ANTHROPIC_API_KEY is unset
+	aiClient ai.Completer // nil when no AI key is configured
 }
 
 // New creates the MCP server and registers all tools.

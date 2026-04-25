@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 export function useWebSocket(url: string, onMessage: (data: unknown) => void): { lastEvent: unknown } {
   const [lastEvent, setLastEvent] = useState<unknown>(null)
   const onMessageRef = useRef(onMessage)
-  onMessageRef.current = onMessage
+  useEffect(() => { onMessageRef.current = onMessage })
 
   useEffect(() => {
     let ws: WebSocket

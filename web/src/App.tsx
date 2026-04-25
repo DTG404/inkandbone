@@ -213,7 +213,7 @@ function ProseJournal({
             <button
               className="prose-pin-btn"
               title="Place as map pin"
-              onClick={() => setPinModal({ content: m.content.replace(/[#*_`\[\]]/g, '').slice(0, 60) })}
+              onClick={() => setPinModal({ content: m.content.replace(/[#*_`[\]]/g, '').slice(0, 60) })}
             >
               📍
             </button>
@@ -301,13 +301,18 @@ interface ChronicleNightTrackerProps {
 
 function ChronicleNightTracker({ campaign }: ChronicleNightTrackerProps) {
   const night = campaign.chronicle_night ?? 1
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  const dayLabel = days[(night - 1) % 7]
+  const startDOW = campaign.chronicle_night_start_dow ?? -1
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+  // Show the day label only once the GM has narrated Night 1 and we've detected the in-story day.
+  const dayLabel = startDOW >= 0
+    ? ' — ' + days[(startDOW + night - 1) % 7]
+    : ''
 
   return (
     <div className="chronicle-night-tracker">
       <span className="chronicle-label" title={`Chronicle night ${night}`}>
-        Night {night} <span className="chronicle-day">— {dayLabel}</span>
+        Night {night}<span className="chronicle-day">{dayLabel}</span>
       </span>
     </div>
   )
@@ -342,6 +347,7 @@ export default function App() {
   const [aiTalentDescs, setAiTalentDescs] = useState<Record<string, string>>({})
   const [rulesetName, setRulesetName] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const loadGenRef = useRef(0)
 
   // Derived: character's current XP (or Karma) balance, parsed from data_json.
   const charXPBalance = (() => {
@@ -387,12 +393,17 @@ export default function App() {
   }, [])
 
   const loadContext = useCallback(() => {
+    const gen = ++loadGenRef.current
     fetchContext()
       .then((data) => {
+        if (loadGenRef.current !== gen) return // stale — a newer fetch already resolved
         setCtx(data)
         setMessages(data.recent_messages ?? [])
       })
-      .catch(() => setError('Could not load game state'))
+      .catch(() => {
+        if (loadGenRef.current !== gen) return
+        setError('Could not load game state')
+      })
   }, [])
 
   useEffect(() => {
@@ -412,10 +423,10 @@ export default function App() {
       setXpPanelDismissed(false)
     }
     if (event?.type === 'campaign_updated') {
-      const p = (data as { payload?: { chronicle_night?: number } }).payload
-      if (p?.chronicle_night !== undefined) {
+      const p = (data as { payload?: { chronicle_night?: number; chronicle_night_start_dow?: number } }).payload
+      if (p?.chronicle_night !== undefined || p?.chronicle_night_start_dow !== undefined) {
         setCtx(prev => prev && prev.campaign
-          ? { ...prev, campaign: { ...prev.campaign, chronicle_night: p.chronicle_night! } }
+          ? { ...prev, campaign: { ...prev.campaign, ...p } }
           : prev
         )
       }

@@ -5,6 +5,7 @@ export interface Campaign {
   description: string
   active: boolean
   chronicle_night: number
+  chronicle_night_start_dow: number  // 0=Sun…6=Sat, -1=undetected
   created_at: string
 }
 

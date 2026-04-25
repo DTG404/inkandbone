@@ -1924,6 +1924,9 @@ WILLPOWER (track "willpower_superficial"):
 - Restore willpower_superficial toward willpower_max when: the character sleeps for the day, achieves a Conviction, or has a meaningful moment with a Touchstone.
 - Never go below 0 or above willpower_max.
 
+HUMANITY:
+- Do NOT update humanity here — handled by the stain and Remorse system separately.
+
 XP:
 - Add 1 XP for any meaningful scene (tense social encounter, surviving danger, significant feeding). Add 2 XP for a major milestone (story arc completed, powerful enemy survived, pivotal breach). Update "xp" by adding to its current value.
 
@@ -3703,7 +3706,7 @@ var vtmMinorBreachRE = regexp.MustCompile(
 // stainTriggerRE matches acts that cost Stains in VtM V5.
 // Normal willing feeding does NOT cost Stains — only explicitly harmful or coerced acts do.
 var stainTriggerRE = regexp.MustCompile(
-	`\b(forced feeding|draining|drained dry|killed|slaughter|murder|diablerie|diablerized|breaking.*conviction|violated.*conviction|prey exclusion|broke the masquerade)\b`,
+	`\b(forced feeding|forcing|fed from|draining|drained dry|killed|slaughter|murder|diablerie|diablerized|breaking.*conviction|violated.*conviction|prey exclusion|broke the masquerade|unwilling)\b`,
 )
 
 // vtmNewNightRE matches phrases that signal a new night beginning in VtM.

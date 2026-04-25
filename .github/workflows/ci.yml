@@ -30,6 +30,9 @@ jobs:
         run: npm ci
         working-directory: web
 
+      - name: Build web (for Go embed)
+        run: mkdir -p web/dist && cd web && npm run build
+
       - name: Lint
         uses: golangci/golangci-lint-action@v7
         with:

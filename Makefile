@@ -6,11 +6,11 @@ dev:
 	air
 
 # Install npm dependencies (idempotent — uses lockfile)
-node_modules:
+web/node_modules:
 	cd web && npm ci
 
 # Build production binary (React first, then Go with embedded assets)
-build: node_modules
+build: web/node_modules
 	cd web && npm run build
 	go build -o ttrpg ./cmd/ttrpg
 
@@ -25,12 +25,12 @@ test:
 	go test ./... -v
 
 # Lint Go with golangci-lint and web with ESLint
-lint: node_modules
+lint: web/node_modules
 	golangci-lint run ./...
 	cd web && npm run lint
 
 # Dependency vulnerability audit
-audit: node_modules
+audit: web/node_modules
 	govulncheck ./...
 	cd web && npm audit --audit-level=high
 

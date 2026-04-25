@@ -31,13 +31,22 @@ jobs:
         working-directory: web
 
       - name: Lint
-        run: make lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11
+          skip-cache: true
+
+      - name: Web lint
+        run: cd web && npm run lint
 
       - name: Audit
-        run: make audit
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+          cd web && npm audit --audit-level=high
 
       - name: Test
-        run: make test
+        run: go test ./... -v
 
       - name: Secrets scan
         uses: gitleaks/gitleaks-action@v2

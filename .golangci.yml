@@ -8,8 +8,3 @@ linters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude:
-    - ST1000
-    - ST1016
-    - S1040
-    - QF1012

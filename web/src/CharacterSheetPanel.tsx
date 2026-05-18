@@ -7,6 +7,11 @@ interface SchemaField {
   key: string
   label: string
   type: 'text' | 'number' | 'textarea'
+  category?: 'attribute' | 'track' | 'skill' | 'identity' | 'resource' | 'notes'
+  min?: number
+  max?: number
+  options?: string[]
+  default?: string
 }
 
 interface CharacterSheetPanelProps {
@@ -36,25 +41,24 @@ function isCharacterUpdatedEvent(ev: unknown): ev is CharacterUpdatedEvent {
   return typeof (p as Record<string, unknown>)['id'] === 'number'
 }
 
-const ATTRIBUTE_KEYS = new Set(['edge', 'heart', 'iron', 'shadow', 'wits'])
-const TRACK_KEYS     = new Set(['health', 'spirit', 'supply', 'momentum'])
 
-function AttributePips({ value }: { value: number }) {
+
+function AttributePips({ value, max = 5, field }: { value: number; max?: number; field?: SchemaField }) {
+  const pipMax = field?.max ?? max
   return (
     <div className="attr-pips">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className={`pip ${i <= value ? 'filled' : 'empty'}`} />
+      {Array.from({ length: pipMax }, (_, i) => (
+        <div key={i} className={`pip ${i < value ? 'filled' : 'empty'}`} />
       ))}
     </div>
   )
 }
 
-function TrackBar({ fieldKey, value }: { fieldKey: string; value: number }) {
-  const isMomentum = fieldKey === 'momentum'
-  const max = isMomentum ? 10 : 5
+function TrackBar({ fieldKey, value, max: maxOverride, field }: { fieldKey: string; value: number; max?: number; field?: SchemaField }) {
+  const max = field?.max ?? maxOverride ?? 5
   const filled = Math.max(0, Math.min(max, value))
-  const colorClass = isMomentum ? 'filled-momentum' : 'filled-health'
-  const displayValue = isMomentum ? value : `${value}/${max}`
+  const colorClass = 'filled-health'
+  const displayValue = `${value}/${max}`
 
   return (
     <div className="track-row">
@@ -524,14 +528,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     try {
       const parsed = JSON.parse(ruleset?.schema_json ?? '[]') as unknown
       if (!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null) {
-        const legacy = parsed as Record<string, unknown>
-        if (Array.isArray(legacy['fields'])) {
-          return (legacy['fields'] as string[]).map((key) => ({
-            key,
-            label: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
-            type: 'text' as const,
-          }))
-        }
+        return []
       }
       if (!Array.isArray(parsed)) return []
       return parsed as SchemaField[]
@@ -545,34 +542,12 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     setFields(next)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      if (schema.length > 0) {
-        const updates: Record<string, unknown> = {}
-        schema.forEach((f) => {
-          const v = next[f.key]
-          updates[f.key] = f.type === 'number' ? (v === '' ? null : Number(v)) : v
-        })
-        patchCharacter(character!.id, updates).catch(console.error)
-      } else {
-        // VtM (schema-free): send ALL current fields so UpdateCharacterData (full-replace) doesn't lose stats.
-        const numericKeys = new Set([
-          'hunger','blood_potency','bane_severity','humanity','stains','xp',
-          'strength','dexterity','stamina','charisma','manipulation','composure',
-          'intelligence','wits','resolve','health_max','health_superficial','health_aggravated',
-          'willpower_max','willpower_superficial','willpower_aggravated',
-          'athletics','brawl','craft','drive','firearms','larceny','melee','stealth','survival',
-          'animal_ken','etiquette','insight','intimidation','leadership','performance',
-          'persuasion','streetwise','subterfuge','academics','awareness','finance',
-          'investigation','medicine','occult','politics','technology',
-          'animalism','auspex','blood_sorcery','celerity','dominate','fortitude',
-          'obfuscate','oblivion','potence','presence','protean',
-          'bond_strength','thin_blood_alchemy',
-        ])
-        const updates: Record<string, unknown> = {}
-        for (const [k, v] of Object.entries(next)) {
-          updates[k] = numericKeys.has(k) ? (v === '' ? null : Number(v)) : v
-        }
-        patchCharacter(character!.id, updates).catch(console.error)
-      }
+      const updates: Record<string, unknown> = {}
+      schema.forEach((f) => {
+        const v = next[f.key] ?? f.default ?? ''
+        updates[f.key] = f.type === 'number' ? (v === '' ? null : Number(v)) : v
+      })
+      patchCharacter(character!.id, updates).catch(console.error)
     }, 500)
   }
 
@@ -587,9 +562,9 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     return <VtMCharacterSheet character={character} fields={fields} onChange={handleChange} afterTracks={afterTracks} />
   }
 
-  const attributeFields = schema.filter((f) => ATTRIBUTE_KEYS.has(f.key))
-  const trackFields     = schema.filter((f) => TRACK_KEYS.has(f.key))
-  const otherFields     = schema.filter((f) => !ATTRIBUTE_KEYS.has(f.key) && !TRACK_KEYS.has(f.key))
+  const attributeFields = schema.filter((f) => f.category === 'attribute')
+  const trackFields     = schema.filter((f) => f.category === 'track')
+  const otherFields     = schema.filter((f) => f.category !== 'attribute' && f.category !== 'track')
 
   return (
     <>
@@ -621,8 +596,8 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         <div>
           {attributeFields.map((f) => (
             <div key={f.key} className="attr-row">
-              <span className="attr-label">{f.key}</span>
-              <AttributePips value={Number(fields[f.key] ?? 0)} />
+              <span className="attr-label">{f.label || f.key}</span>
+              <AttributePips value={Number(fields[f.key] ?? 0)} field={f} />
             </div>
           ))}
         </div>
@@ -634,8 +609,9 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
           {trackFields.map((f) => (
             <TrackBar
               key={f.key}
-              fieldKey={f.key}
+              fieldKey={f.label || f.key}
               value={Number(fields[f.key] ?? 0)}
+              field={f}
             />
           ))}
         </div>
@@ -643,8 +619,9 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
 
       {/* Other fields — number fields in 2-col grid, text/textarea full width */}
       {(() => {
-        const numFields = otherFields.filter((f) => f.type === 'number')
-        const wideFields = otherFields.filter((f) => f.type !== 'number')
+        const numFields = otherFields.filter((f) => f.type === 'number' && !f.options)
+        const selectFields = otherFields.filter((f) => f.options && f.options.length > 0)
+        const wideFields = otherFields.filter((f) => f.type !== 'number' && (!f.options || f.options.length === 0))
         const labelStyle: React.CSSProperties = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--gold-dim)', fontFamily: 'var(--serif)', display: 'flex', flexDirection: 'column', gap: '2px' }
         const inputStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '12px', padding: '0.15rem 0.3rem', width: '100%' }
         return (
@@ -656,6 +633,8 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
                     {field.label}
                     <input
                       type="number"
+                      min={field.min}
+                      max={field.max}
                       value={fields[field.key] ?? ''}
                       onChange={(e) => handleChange(field.key, e.target.value)}
                       style={inputStyle}
@@ -664,6 +643,21 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
                 ))}
               </div>
             )}
+            {selectFields.map((field) => (
+              <label key={field.key} style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {field.label}
+                <select
+                  value={fields[field.key] ?? ''}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">— select —</option>
+                  {field.options!.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
             {wideFields.map((field) => (
               <label key={field.key} style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 {field.label}

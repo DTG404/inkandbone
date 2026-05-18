@@ -181,6 +181,30 @@ func CharacterOptions(system string) map[string][]string {
 			},
 		}
 
+	case "dune":
+		return map[string][]string{
+			"archetype": {
+				"Analyst", "Athlete", "Commander", "Courtier", "Duelist",
+				"Empath", "Envoy", "Herald", "Infiltrator", "Messenger",
+				"Protector", "Scholar", "Scout", "Sergeant", "Smuggler",
+				"Spy", "Steward", "Strategist", "Tactician", "Warrior",
+			},
+			"house": {
+				"Atreides", "Harkonnen", "Corrino", "Ordos", "Richese",
+				"Fenring", "Vernius", "Moritani", "Hundro", "Wallach",
+			},
+			"faction": {
+				"House Noble", "Bene Gesserit", "Spacing Guild", "Fremen",
+				"Mentat", "Suk Doctor", "Swordmaster of Ginaz", "Tleilaxu",
+				"Ixian Technician", "Smuggler", "Landsraad Noble",
+			},
+			"role": {
+				"Ruler", "Heir", "Consort", "Advisor", "Spymaster",
+				"Marshal", "Swordmaster", "Envoy", "Treasurer",
+				"Scholar", "Councilor", "Warmaster", "Chief Physician",
+			},
+		}
+
 	case "paranoia":
 		return map[string][]string{
 			"management_style": {

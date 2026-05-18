@@ -139,6 +139,10 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 		rs, err := s.db.GetRuleset(camp.RulesetID)
 		if err == nil && rs != nil {
 			stats := ruleset.RollStats(rs.Name, body.Overrides["archetype"])
+			// If RollStats doesn't know this system, try schema_json defaults.
+			if len(stats) == 0 && rs.SchemaJSON != "" {
+				stats = ruleset.RollStatsFromSchema(rs.SchemaJSON)
+			}
 			if len(stats) > 0 {
 				// Apply user-selected overrides (non-empty values only).
 				for k, v := range body.Overrides {

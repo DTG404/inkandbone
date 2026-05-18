@@ -118,8 +118,8 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 // Each TTRPG system may have different source PDF structure, so chunking is per-ruleset.
 func chunkRulebook(rulesetName, text, source string) []db.RulebookChunk {
 	switch strings.ToLower(rulesetName) {
-	case "vtm":
-		// VtM PDFs (commercial print) extract as plain prose via pdftotext — no markdown headings.
+	case "vtm", "dune":
+		// These systems' PDFs extract as plain prose — no markdown headings in the extracted text.
 		// Split on paragraph boundaries up to a max chunk size.
 		return chunkByParagraphs(text, source)
 	default:

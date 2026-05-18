@@ -92,13 +92,7 @@ func (s *Server) handleCreateCharacter(_ context.Context, req mcplib.CallToolReq
 	if err != nil || rs == nil {
 		return mcplib.NewToolResultError("could not load ruleset for random stats"), nil
 	}
-	var schema struct {
-		System string `json:"system"`
-	}
-	if err := json.Unmarshal([]byte(rs.SchemaJSON), &schema); err != nil {
-		return mcplib.NewToolResultError("invalid ruleset schema: " + err.Error()), nil
-	}
-	stats := rollStats(schema.System, "")
+	stats := rollStats(rs.Name, "")
 	if len(stats) > 0 {
 		dataJSON, err := json.Marshal(stats)
 		if err != nil {
@@ -107,7 +101,7 @@ func (s *Server) handleCreateCharacter(_ context.Context, req mcplib.CallToolReq
 		if err := s.db.UpdateCharacterData(charID, string(dataJSON)); err != nil {
 			return mcplib.NewToolResultError("save stats: " + err.Error()), nil
 		}
-		msg += fmt.Sprintf(" (stats rolled for %s)", schema.System)
+		msg += fmt.Sprintf(" (stats rolled for %s)", rs.Name)
 	}
 
 	s.bus.Publish(api.Event{Type: api.EventCharacterCreated, Payload: map[string]any{"character_id": charID, "name": name}})

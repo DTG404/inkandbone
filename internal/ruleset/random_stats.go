@@ -1,6 +1,7 @@
 package ruleset
 
 import (
+	"encoding/json"
 	"math/rand"
 	"sort"
 	"strings"
@@ -245,6 +246,11 @@ func randPick(options []string) string {
 // given ruleset system. Every schema field is populated — text fields are
 // randomly chosen from canonical options. An unrecognised system returns an
 // empty map.
+//
+// If a system isn't handled by the switch below, RollStats falls back to
+// reading "default" values from the schema_json if provided. This allows
+// new rulesets to be added without Go code changes — just define defaults
+// in the migration SQL.
 func RollStats(system, archetype string) map[string]any {
 	switch system {
 	case "dnd5e":
@@ -426,6 +432,9 @@ func RollStats(system, archetype string) map[string]any {
 		}
 	case "wrath_glory":
 		return rollWrathGloryStats(archetype)
+	case "dune":
+		return duneStats()
+
 	case "blades":
 		return bladesStats()
 
@@ -451,6 +460,43 @@ func RollStats(system, archetype string) map[string]any {
 	default:
 		return map[string]any{}
 	}
+}
+
+// schemaDefaultField is a single field definition from a structured schema.
+type schemaDefaultField struct {
+	Key     string   `json:"key"`
+	Type    string   `json:"type"`
+	Default string   `json:"default,omitempty"`
+	Options []string `json:"options,omitempty"`
+}
+
+// schemaDefaults is the top-level structure we parse from schema_json.
+// It's always an array of field definitions in the structured format.
+type schemaDefaults []schemaDefaultField
+
+// RollStatsFromSchema generates starting stats purely from schema_json
+// field defaults. This allows adding new rulesets without any Go code changes.
+// Fields with a "default" value use it directly; fields with "options" but no
+// default pick randomly; everything else gets a zero/empty value.
+func RollStatsFromSchema(schemaJSON string) map[string]any {
+	var fields schemaDefaults
+	if err := json.Unmarshal([]byte(schemaJSON), &fields); err != nil {
+		return map[string]any{}
+	}
+	stats := make(map[string]any, len(fields))
+	for _, f := range fields {
+		switch {
+		case f.Default != "":
+			stats[f.Key] = f.Default
+		case len(f.Options) > 0:
+			stats[f.Key] = randPick(f.Options)
+		case f.Type == "number":
+			stats[f.Key] = 0
+		default:
+			stats[f.Key] = ""
+		}
+	}
+	return stats
 }
 
 // rollWrathGloryStats generates a W&G character using the wgArchetypes table.
@@ -800,4 +846,93 @@ func rollVtMV5Stats() map[string]any {
 	}
 	ApplyVtMPredatorType(stats["predator_type"].(string), stats)
 	return stats
+}
+
+// duneStats generates a starting Dune: Adventures in the Imperium character.
+// Drives start at 6, one raised to 8 and one lowered to 4.
+// Skills: primary=6, secondary=5, remaining three get 5, 5, 4 in shuffled order.
+// Archetype is randomly chosen; primary and secondary skills are derived from it.
+func duneStats() map[string]any {
+	duneArchetypes := []struct {
+		name      string
+		primary   string
+		secondary string
+	}{
+		{"Analyst", "discipline", "understand"},
+		{"Athlete", "move", "discipline"},
+		{"Commander", "communicate", "battle"},
+		{"Courtier", "communicate", "understand"},
+		{"Duelist", "battle", "move"},
+		{"Empath", "understand", "communicate"},
+		{"Envoy", "communicate", "move"},
+		{"Herald", "discipline", "communicate"},
+		{"Infiltrator", "discipline", "move"},
+		{"Messenger", "move", "communicate"},
+		{"Protector", "discipline", "battle"},
+		{"Scholar", "understand", "discipline"},
+		{"Scout", "move", "understand"},
+		{"Sergeant", "battle", "communicate"},
+		{"Smuggler", "move", "battle"},
+		{"Spy", "understand", "move"},
+		{"Steward", "communicate", "discipline"},
+		{"Strategist", "understand", "battle"},
+		{"Tactician", "battle", "understand"},
+		{"Warrior", "battle", "discipline"},
+	}
+	arch := duneArchetypes[rand.Intn(len(duneArchetypes))]
+
+	// Drives: all start at 6, one raised to 8, one lowered to 4
+	driveKeys := []string{"duty", "faith", "justice", "power", "truth"}
+	drives := make(map[string]int, 5)
+	for _, k := range driveKeys {
+		drives[k] = 6
+	}
+	driveRaise := driveKeys[rand.Intn(len(driveKeys))]
+	drives[driveRaise] = 8
+	driveLower := driveKeys[rand.Intn(len(driveKeys))]
+	for driveLower == driveRaise {
+		driveLower = driveKeys[rand.Intn(len(driveKeys))]
+	}
+	drives[driveLower] = 4
+
+	// Skills: primary=7, secondary=6, remaining three get 5,5,4 shuffled
+	allSkills := []string{"battle", "communicate", "discipline", "move", "understand"}
+	remaining := make([]string, 0, 3)
+	for _, s := range allSkills {
+		if s != arch.primary && s != arch.secondary {
+			remaining = append(remaining, s)
+		}
+	}
+	rand.Shuffle(len(remaining), func(i, j int) { remaining[i], remaining[j] = remaining[j], remaining[i] })
+	skillVals := map[string]int{
+		arch.primary:   7,
+		arch.secondary: 6,
+		remaining[0]:   5,
+		remaining[1]:   5,
+		remaining[2]:   4,
+	}
+
+	result := map[string]any{
+		"archetype":          arch.name,
+		"house":              "",
+		"role":               "",
+		"faction":            "",
+		"ambition":           "",
+		"drive_statement":    "",
+		"personality_traits": "",
+		"focuses":            "",
+		"talents":            "",
+		"assets":             "",
+		"determination":      2,
+		"advancement":        0,
+		"wounds":             6,
+		"notes":              "",
+	}
+	for k, v := range drives {
+		result[k] = v
+	}
+	for k, v := range skillVals {
+		result[k] = v
+	}
+	return result
 }

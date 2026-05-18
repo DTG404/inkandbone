@@ -384,17 +384,19 @@ A "ruleset" is the game system you're playing. Each has different character shee
 
 **Shadowrun** (`shadowrun`) — Cyberpunk + fantasy. Hacking, magic, and street samurai.
 
-**Warhammer Fantasy Roleplay** (`whfrp`) — Gritty medieval fantasy with career progression.
+**Warhammer Fantasy Roleplay** (`wfrp`) — Gritty medieval fantasy with career progression.
 
-**Star Wars: Edge of the Empire** (`sweoote`) — Star Wars expanded universe, scoundrels and rogues.
+**Star Wars: Edge of the Empire** (`starwars`) — Star Wars expanded universe, scoundrels and rogues.
 
 **Legend of the Five Rings** (`l5r`) — Japanese-inspired fantasy with honor mechanics.
 
-**The One Ring** (`lotr`) — Middle-earth journeys and fellowships.
+**The One Ring** (`theonering`) — Middle-earth journeys and fellowships.
 
 **Paranoia** (`paranoia`) — Cold War sci-fi satire. Backstabbing and high lethality.
 
 **Dungeons & Dragons 5th Edition** (`dnd5e`) — High fantasy with classes, levels, and classic monsters.
+
+**Dune: Adventures in the Imperium** (`dune`) — Modiphius 2d20 system. Political intrigue, desert survival, spice, and noble Houses.
 
 **Custom Ruleset** — Define your own fields in JSON and add them directly to the database.
 

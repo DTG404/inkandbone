@@ -39,19 +39,22 @@ describe('CharacterSheetPanel', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders fields from legacy {system, fields:[]} schema format', async () => {
-    const legacyRuleset = {
+  it('renders fields from structured schema format', async () => {
+    const structuredRuleset = {
       id: 2,
       name: 'dnd5e',
-      schema_json: JSON.stringify({ system: 'dnd5e', fields: ['hp', 'proficiency_bonus'] }),
+      schema_json: JSON.stringify([
+        { key: 'level', label: 'Level', type: 'number', category: 'resource' },
+        { key: 'proficiency_bonus', label: 'Proficiency Bonus', type: 'number', category: 'resource' },
+      ]),
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(legacyRuleset),
+      json: () => Promise.resolve(structuredRuleset),
     }))
     render(<CharacterSheetPanel character={mockCharacter} rulesetId={2} lastEvent={null} />)
-    await waitFor(() => expect(screen.getByLabelText('Hp')).toBeTruthy())
-    expect(screen.getByLabelText('Proficiency bonus')).toBeTruthy()
+    await waitFor(() => expect(screen.getByLabelText('Level')).toBeTruthy())
+    expect(screen.getByLabelText('Proficiency Bonus')).toBeTruthy()
   })
 
   it('fetches ruleset and renders fields', async () => {

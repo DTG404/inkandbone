@@ -47,5 +47,5 @@ func TestRulesets_SeededByMigration(t *testing.T) {
 	for i, r := range list {
 		names[i] = r.Name
 	}
-	assert.ElementsMatch(t, []string{"dnd5e", "ironsworn", "vtm", "coc", "cyberpunk", "shadowrun", "wfrp", "starwars", "l5r", "theonering", "wrath_glory", "blades", "paranoia"}, names)
+	assert.ElementsMatch(t, []string{"dnd5e", "ironsworn", "vtm", "coc", "cyberpunk", "shadowrun", "wfrp", "starwars", "l5r", "theonering", "wrath_glory", "blades", "paranoia", "my_ruleset", "dune"}, names)
 }

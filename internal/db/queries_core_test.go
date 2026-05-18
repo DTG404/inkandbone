@@ -44,7 +44,7 @@ func TestRulesets(t *testing.T) {
 
 	list, err := d.ListRulesets()
 	require.NoError(t, err)
-	assert.Len(t, list, 13)
+	assert.Len(t, list, 15)
 }
 
 func TestRulesetGMContext(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRulesetGMContext(t *testing.T) {
 	allRulesets := []string{
 		"dnd5e", "ironsworn", "vtm", "coc", "cyberpunk",
 		"shadowrun", "wfrp", "starwars", "l5r", "theonering",
-		"wrath_glory", "blades", "paranoia",
+		"wrath_glory", "blades", "paranoia", "dune",
 	}
 
 	for _, name := range allRulesets {

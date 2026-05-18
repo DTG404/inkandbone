@@ -42,6 +42,6 @@ secrets-scan:
 clean:
 	rm -rf ttrpg tmp/ web/dist/
 
-# Run everything: lint, audit, test, build, secrets scan
-check: lint audit test secrets-scan build
+# Run everything: build (web→Go), lint, audit, test, secrets scan
+check: build lint audit test secrets-scan
 	@echo "=== All checks passed ==="

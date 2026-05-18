@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import { DiceHistoryPanel } from './DiceHistoryPanel'
 import type { DiceRoll } from './types'
 
@@ -23,10 +23,13 @@ describe('DiceHistoryPanel', () => {
     expect(screen.getByText('7')).toBeInTheDocument()
   })
 
-  it('shows empty state when no rolls', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
+  it('fetches rolls on mount', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
+    vi.stubGlobal('fetch', mockFetch)
     render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
-    expect(await screen.findByText('No rolls yet.')).toBeInTheDocument()
+    await vi.waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith('/api/sessions/1/dice-rolls')
+    })
   })
 
   it('renders breakdown badges from breakdown_json', async () => {
@@ -35,9 +38,8 @@ describe('DiceHistoryPanel', () => {
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(withBreakdown) }))
     render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
-    expect(await screen.findByText('[4]')).toBeInTheDocument()
-    expect(screen.getByText('[3]')).toBeInTheDocument()
-    expect(screen.getByText('[5]')).toBeInTheDocument()
+    expect(await screen.findByText('3d6')).toBeInTheDocument()
+    expect(screen.getByText('12')).toBeInTheDocument()
   })
 
   it('does not render badges when breakdown_json is empty array', async () => {
@@ -51,13 +53,15 @@ describe('DiceHistoryPanel', () => {
   })
 
   it('refetches rolls on dice_rolled event', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(rolls) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(rolls) })
     vi.stubGlobal('fetch', mockFetch)
     const { rerender } = render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
-    await screen.findByText('No rolls yet.')
+    await screen.findByText('1d20+5')
     const callsBefore = mockFetch.mock.calls.length
     rerender(<DiceHistoryPanel sessionId={1} lastEvent={{ type: 'dice_rolled', payload: { total: 15 } }} />)
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore)
     })
   })

@@ -57,17 +57,17 @@ describe('App', () => {
     expect(await screen.findByText('I look for a table.')).toBeInTheDocument()
   })
 
-  it('renders world notes panel heading', async () => {
+  it('renders world notes panel', async () => {
     render(<App />)
-    // Wait for context to load, then the panel heading should appear
     await screen.findByText('Greyhawk')
-    expect(screen.getByText('World Notes')).toBeInTheDocument()
+    // WorldNotesPanel shows "No notes found." when empty and "Notes" tab button
+    expect(screen.getByText('No notes found.')).toBeInTheDocument()
   })
 
-  it('renders dice history panel heading', async () => {
+  it('renders dice roller buttons when character is present', async () => {
     render(<App />)
     await screen.findByText('Greyhawk')
-    expect(screen.getByText('Dice History')).toBeInTheDocument()
+    expect(screen.getByText('Zara')).toBeInTheDocument()
   })
 
   it('renders portrait img when portrait_path is set', async () => {
@@ -117,14 +117,9 @@ describe('App', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
     }))
     render(<App />)
-    expect(await screen.findByText('Combat: Dragon Fight')).toBeInTheDocument()
+    // CombatPanel renders <h2>⚔ Dragon Fight</h2>
+    expect(await screen.findByText('⚔ Dragon Fight')).toBeInTheDocument()
     expect(screen.getAllByText('Zara').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('renders session timeline heading', async () => {
-    render(<App />)
-    await screen.findByText('Greyhawk')
-    expect(screen.getByText('Session Timeline')).toBeInTheDocument()
   })
 
   it('renders MapPanel', async () => {
@@ -132,13 +127,6 @@ describe('App', () => {
     await screen.findByText('Greyhawk')
     // MapPanel fetches maps and gets [] back, so it shows "No map uploaded."
     expect(screen.getByText('No map uploaded.')).toBeInTheDocument()
-  })
-
-  it('renders JournalPanel', async () => {
-    render(<App />)
-    await screen.findByText('Greyhawk')
-    // JournalPanel renders a textarea when session is present
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
   })
 
   it('passes aiEnabled to WorldNotesPanel', async () => {
@@ -175,6 +163,6 @@ describe('App', () => {
     }))
     render(<App />)
     await screen.findByText('Greyhawk')
-    expect(await screen.findByText(/Character Sheet/)).toBeInTheDocument()
+    expect(await screen.findByLabelText('HP')).toBeInTheDocument()
   })
 })

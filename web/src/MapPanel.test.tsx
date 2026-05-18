@@ -46,7 +46,7 @@ describe('MapPanel', () => {
     )
     render(<MapPanel campaignId={1} lastEvent={null} />)
 
-    const img = await screen.findByRole('img', { name: 'Campaign map' })
+    const img = await screen.findByRole('img', { name: 'Dungeon' })
     expect(img).toHaveAttribute('src', '/api/files/maps/dungeon.png')
 
     const buttons = await screen.findAllByRole('button')

@@ -509,6 +509,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     } catch {
       setFields({})
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character?.id])
 
   useEffect(() => {

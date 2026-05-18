@@ -24,7 +24,7 @@ afterEach(cleanup)
 describe('CombatPanel', () => {
   it('renders encounter name and all combatants', () => {
     render(<CombatPanel combat={combat} />)
-    expect(screen.getByText('Combat: Bandit Ambush')).toBeInTheDocument()
+    expect(screen.getByText('⚔ Bandit Ambush')).toBeInTheDocument()
     expect(screen.getByText('Kael')).toBeInTheDocument()
     expect(screen.getByText('Bandit')).toBeInTheDocument()
   })
@@ -45,7 +45,8 @@ describe('CombatPanel', () => {
 
   it('renders condition badges', () => {
     render(<CombatPanel combat={combat} />)
-    expect(screen.getByText('frightened')).toBeInTheDocument()
+    // Condition renders as a badge button with the condition name
+    expect(screen.getByTitle('Remove frightened')).toBeInTheDocument()
   })
 
   it('applies red hp bar class when HP is at or below 25%', () => {

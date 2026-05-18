@@ -1,4 +1,4 @@
-.PHONY: dev build install test clean lint audit secrets-scan
+.PHONY: dev build install test clean lint audit secrets-scan check
 
 # Run Go server (air hot reload) + Vite dev server concurrently
 dev:
@@ -20,9 +20,10 @@ install: build
 	cp ttrpg ~/bin/ttrpg-bin
 	@echo "Installed to ~/bin/ttrpg-bin"
 
-# Run all Go tests
+# Run all Go tests and web tests
 test:
 	go test ./... -v
+	cd web && npm test -- --run
 
 # Lint Go with golangci-lint and web with ESLint
 lint: web/node_modules
@@ -40,3 +41,7 @@ secrets-scan:
 
 clean:
 	rm -rf ttrpg tmp/ web/dist/
+
+# Run everything: lint, audit, test, build, secrets scan
+check: lint audit test secrets-scan build
+	@echo "=== All checks passed ==="

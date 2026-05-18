@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
+  lint-test-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -42,11 +50,13 @@ jobs:
       - name: Web lint
         run: cd web && npm run lint
 
-      - name: Audit
+      - name: Go vulnerability audit
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-          cd web && npm audit --audit-level=high
+
+      - name: Web dependency audit
+        run: cd web && npm audit --audit-level=high
 
       - name: Test
         run: go test ./... -v
@@ -56,5 +66,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go, javascript
+          queries: +security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go,javascript"
+
+      - name: Build production binary
         run: make build

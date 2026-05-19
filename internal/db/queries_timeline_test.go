@@ -30,7 +30,7 @@ func TestGetSessionTimeline_mergesAndSorts(t *testing.T) {
 	sessID, err := d.CreateSession(campID, "S1", "2026-04-03")
 	require.NoError(t, err)
 
-	_, err = d.CreateMessage(sessID, "user", "Hello", false)
+	_, err = d.CreateMessage(sessID, "user", "Hello", false, nil)
 	require.NoError(t, err)
 	_, err = d.LogDiceRoll(sessID, "1d20+5", 18, "[13]")
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestGetSessionTimeline_sortedByTimestamp(t *testing.T) {
 
 	_, err = d.LogDiceRoll(sessID, "1d6", 4, "[4]")
 	require.NoError(t, err)
-	_, err = d.CreateMessage(sessID, "assistant", "The die lands on 4.", false)
+	_, err = d.CreateMessage(sessID, "assistant", "The die lands on 4.", false, nil)
 	require.NoError(t, err)
 
 	entries, err := d.GetSessionTimeline(sessID)

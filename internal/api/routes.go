@@ -357,7 +357,7 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		respondError(w, "content is required", http.StatusBadRequest)
 		return
 	}
-	msgID, err := s.db.CreateMessage(id, body.Role, body.Content, body.Whisper)
+	msgID, err := s.db.CreateMessage(id, body.Role, body.Content, body.Whisper, nil)
 	if err != nil {
 		respondError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -694,7 +694,7 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgID, err := s.db.CreateMessage(id, "assistant", response, false)
+	msgID, err := s.db.CreateMessage(id, "assistant", response, false, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -883,7 +883,7 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		fullText = fallback
 	}
 
-	msgID, err := s.db.CreateMessage(id, "assistant", fullText, false)
+	msgID, err := s.db.CreateMessage(id, "assistant", fullText, false, nil)
 	if err != nil {
 		return
 	}

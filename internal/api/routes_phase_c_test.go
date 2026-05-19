@@ -114,7 +114,7 @@ func TestHandleDetectThreads_ok(t *testing.T) {
 	stub := &stubCompleter{response: "1. The stolen relic has not been recovered.\n2. The innkeeper's secret remains unknown."}
 	s := newTestServerWithAI(t, stub)
 	_, sessID := seedCampaign(t, s.db)
-	_, err := s.db.CreateMessage(sessID, "user", "We investigate the burned-down library.", false)
+	_, err := s.db.CreateMessage(sessID, "user", "We investigate the burned-down library.", false, nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost,

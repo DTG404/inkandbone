@@ -103,7 +103,7 @@ func (s *Server) handleEndSession(_ context.Context, req mcplib.CallToolRequest)
 // Silently skips if no narrative or no valid session ID is provided.
 func (s *Server) logNarrative(req mcplib.CallToolRequest, sessionID int64) {
 	if n := optStr(req, "narrative"); n != "" && sessionID != 0 {
-		if _, err := s.db.CreateMessage(sessionID, "assistant", n, false); err == nil {
+		if _, err := s.db.CreateMessage(sessionID, "assistant", n, false, nil); err == nil {
 			s.bus.Publish(api.Event{Type: api.EventMessageCreated, Payload: map[string]any{"session_id": sessionID, "content": n}})
 		}
 	}

@@ -329,7 +329,7 @@ func TestGetTimeline_empty(t *testing.T) {
 func TestGetTimeline_withData(t *testing.T) {
 	s := newTestServer(t)
 	_, sessID := seedCampaign(t, s.db)
-	_, err := s.db.CreateMessage(sessID, "user", "A brave move.", false)
+	_, err := s.db.CreateMessage(sessID, "user", "A brave move.", false, nil)
 	require.NoError(t, err)
 	_, err = s.db.LogDiceRoll(sessID, "2d6", 9, "[4,5]")
 	require.NoError(t, err)
@@ -603,7 +603,7 @@ func TestHandleGMRespondStream_FailureDirection(t *testing.T) {
 	_, sessID := seedCampaign(t, s.db)
 
 	// Seed a user message so handleGMRespondStream has something to respond to.
-	_, err := s.db.CreateMessage(sessID, "user", "I try to kick down the door.", false)
+	_, err := s.db.CreateMessage(sessID, "user", "I try to kick down the door.", false, nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost,

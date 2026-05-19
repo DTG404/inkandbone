@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -866,4 +867,14 @@ func formatCharStatsShort(dataJSON string) string {
 		return ""
 	}
 	return " (" + strings.Join(parts, ", ") + ")"
+}
+
+// formatCharNames returns a comma-separated list of character names from a charNameMap.
+func formatCharNames(nameMap map[int64]string) string {
+	names := make([]string, 0, len(nameMap))
+	for _, name := range nameMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }

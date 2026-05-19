@@ -738,7 +738,22 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 	} else {
 		reminder = "[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
 	}
-	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + "\n\n" + reminder
+	var multiPrompt string
+	if len(charNameMap) > 1 {
+		multiPrompt = fmt.Sprintf(`
+[MULTI-CHARACTER SESSION]
+Multiple player characters are active in this session. Each player controls their own character independently.
+
+NARRATION RULES:
+- Characters present: %s
+- When narrating a specific character's action or perception, use their name: "Nyx studies the envelope..." or "Kael circles around the alley..."
+- When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
+- Rotate focus between characters naturally. Give each character moments of attention.
+- If a character is NOT present in the current scene, do not narrate their actions. Only narrate characters who are present and active.
+- End the response addressing the character who just acted.
+`, formatCharNames(charNameMap))
+	}
+	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
 
 	response, err := gmResponder.Respond(r.Context(), systemPrompt, history, 2048)
 	if err != nil {
@@ -952,7 +967,22 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 	} else {
 		reminder = "[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
 	}
-	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + "\n\n" + reminder
+	var multiPrompt string
+	if len(charNameMap) > 1 {
+		multiPrompt = fmt.Sprintf(`
+[MULTI-CHARACTER SESSION]
+Multiple player characters are active in this session. Each player controls their own character independently.
+
+NARRATION RULES:
+- Characters present: %s
+- When narrating a specific character's action or perception, use their name: "Nyx studies the envelope..." or "Kael circles around the alley..."
+- When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
+- Rotate focus between characters naturally. Give each character moments of attention.
+- If a character is NOT present in the current scene, do not narrate their actions. Only narrate characters who are present and active.
+- End the response addressing the character who just acted.
+`, formatCharNames(charNameMap))
+	}
+	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

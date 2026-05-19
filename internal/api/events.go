@@ -41,6 +41,8 @@ const (
 	EventSecretsUpdated       EventType = "secrets_updated"
 	EventCalendarUpdated         EventType = "calendar_updated"
 	EventCampaignConfigUpdated   EventType = "campaign_config_updated"
+	EventExpectedAction         EventType = "expected_action"
+	EventTyping                 EventType = "typing"
 )
 
 // Event is published by MCP tool handlers and broadcast to WebSocket clients.

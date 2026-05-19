@@ -210,6 +210,8 @@ func (s *Server) registerRoutes() {
 	// Campaign config (GM Screen)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/config", s.handleGetCampaignConfig)
 	s.mux.HandleFunc("PATCH /api/campaigns/{id}/config", s.handlePatchCampaignConfig)
+	// Multiplayer: typing indicator for player agents
+	s.mux.HandleFunc("POST /api/sessions/{id}/typing", s.handleTyping)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

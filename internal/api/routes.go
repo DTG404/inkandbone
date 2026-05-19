@@ -718,13 +718,15 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 
 	worldCtx := s.buildWorldContext(r.Context(), id)
 
-	// Determine if multi-character session and get last speaker name
+	// Determine if multi-character session and get last speaker name and ID
 	var lastSpeakerName string
+	var lastSpeakerID int64
 	if len(charNameMap) > 1 {
 		for i := len(msgs) - 1; i >= 0; i-- {
 			if msgs[i].Role == "user" && !msgs[i].Whisper && msgs[i].CharacterID != nil {
 				if name, ok := charNameMap[*msgs[i].CharacterID]; ok {
 					lastSpeakerName = name
+					lastSpeakerID = *msgs[i].CharacterID
 					break
 				}
 			}
@@ -754,6 +756,13 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 		"message_id": msgID,
 		"role":       "assistant",
 	}})
+	if lastSpeakerID > 0 {
+		s.bus.Publish(Event{Type: EventExpectedAction, Payload: map[string]any{
+			"session_id":     id,
+			"character_id":   lastSpeakerID,
+			"character_name": lastSpeakerName,
+		}})
+	}
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -923,13 +932,15 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		worldCtx += "\n" + vtmCommandResult
 	}
 
-	// Determine if multi-character session and get last speaker name
+	// Determine if multi-character session and get last speaker name and ID
 	var lastSpeakerName string
+	var lastSpeakerID int64
 	if len(charNameMap) > 1 {
 		for i := len(msgs) - 1; i >= 0; i-- {
 			if msgs[i].Role == "user" && !msgs[i].Whisper && msgs[i].CharacterID != nil {
 				if name, ok := charNameMap[*msgs[i].CharacterID]; ok {
 					lastSpeakerName = name
+					lastSpeakerID = *msgs[i].CharacterID
 					break
 				}
 			}
@@ -977,6 +988,13 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		"message_id": msgID,
 		"role":       "assistant",
 	}})
+	if lastSpeakerID > 0 {
+		s.bus.Publish(Event{Type: EventExpectedAction, Payload: map[string]any{
+			"session_id":     id,
+			"character_id":   lastSpeakerID,
+			"character_name": lastSpeakerName,
+		}})
+	}
 
 	go s.extractNPCs(context.Background(), id, fullText)
 	go s.autoGenerateMap(context.Background(), id, fullText)
@@ -996,6 +1014,33 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 	go s.autoVtMDisciplineRouseChecks(context.Background(), id, lastPlayerMsg, fullText)
 	go s.autoDetectVtMEmbrace(context.Background(), id, fullText)
 	go s.autoDetectVtMNightDOW(context.Background(), id, fullText)
+}
+
+// handleTyping broadcasts a typing indicator from a player agent (e.g. Nyx).
+// POST /api/sessions/{id}/typing  {"character_id":5,"status":"thinking"}
+func (s *Server) handleTyping(w http.ResponseWriter, r *http.Request) {
+	sessionID, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		CharacterID int64  `json:"character_id"`
+		Status      string `json:"status"` // "thinking" or "done"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CharacterID == 0 {
+		http.Error(w, "character_id required", http.StatusBadRequest)
+		return
+	}
+	if body.Status == "" {
+		body.Status = "thinking"
+	}
+	s.bus.Publish(Event{Type: EventTyping, Payload: map[string]any{
+		"session_id":    sessionID,
+		"character_id":  body.CharacterID,
+		"status":        body.Status,
+	}})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // autoGenerateMap detects if the GM response introduces a new location and, if

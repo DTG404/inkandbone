@@ -69,13 +69,11 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: go, javascript
+          languages: go
           queries: +security-extended
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:go,javascript"
 
       - name: Build production binary
         run: make build

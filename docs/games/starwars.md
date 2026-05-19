@@ -1,41 +1,58 @@
-# Star Wars: Edge of the Empire — First Adventure Walkthrough
+# Star Wars: Edge of the Empire — How to Play
 
-## System Overview
+You're a smuggler, bounty hunter, or outcast in the Outer Rim. The Empire is distant but its reach is long. You owe a debt to a Hutt, your ship needs repairs, and there's a cargo run that could solve all your problems if nothing goes wrong. Something always goes wrong.
 
-Star Wars: Edge of the Empire is a narrative RPG set at the fringes of the galaxy — smugglers, bounty hunters, hired guns, and outcasts making their way in the shadow of the Empire. The AI acts as your Game Master, narrating the outer rim and its seedier ports, voicing Hutts and Imperial agents, and adjudicating a dice system built around storytelling as much as success or failure.
+## The Character Sheet
 
-## Setting Up Your Campaign
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone auto-rolls your six characteristics (starting at 2, three raised to 3), calculates Wound and Strain thresholds, Soak, and starting Obligation.
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `starwars`. Name it after your crew or ship — "The Broken Hyperdrive", "Kessel Debts", "Far Edge of the Rim".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically sets all six Characteristics (each at 2, with three randomly raised to 3), calculates Wound Threshold, Strain Threshold, Soak, and rolls starting Obligation. Tell the AI your Species, Career, and Specialization so it can shape your talents and role in the story. Adjust any values with `update_character`.
-3. **Start a session.** Name it after the job — "The Nar Shaddaa Run", "Who Owns the Hyperdrive?", "One Last Job for Teemo".
+**Characteristics** are Brawn, Agility, Intellect, Cunning, Willpower, Presence. Each rated 1-5. These are the core of every dice pool.
 
-## Suggested Opening Prompt
+**Wounds** are physical damage. **Strain** is mental/social exhaustion. Exceed either threshold and you're incapacitated. The AI tracks both.
 
-> "I'm playing Vel Ryn, a Twi'lek Smuggler (Pilot specialization) with Agility 3, Cunning 3. I owe a debt to a Hutt crime lord named Teemo. A contact named Pash has a cargo run that could clear part of what I owe — pick up a crate of unspecified goods on Mos Shuuta and deliver it to Ryloth. I'm in a cantina on Mos Shuuta waiting for Pash."
+**Soak** reduces incoming damage. **Defense** (Melee/Ranged) adds difficulty dice to incoming attacks.
 
-The AI will set the scene, introduce Pash, and surface the first complication.
+**Obligation** is the debt that drives you — to a Hutt, a crime lord, a family member. At the start of each session, the AI rolls to see if your Obligation comes due. If it does, a complication from your past surfaces.
 
-## Key Mechanics to Establish Early
+**Credits** buy ship repairs, information, and bribes.
 
-- **Narrative dice:** The system uses custom dice — Ability (green d8), Proficiency (yellow d12), Difficulty (purple d8), Challenge (red d12), Boost (blue d6), Setback (black d6), Force (white d12). Tell the AI which skill you're using and your ranks; it will construct the pool and narrate results.
-- **Success/Failure and Advantage/Threat:** Dice produce symbols. Net successes determine if you succeed. Net Advantage/Threat determines side effects — even a failed roll can produce Advantage (something good happens anyway) or a success can produce Threat (something goes wrong).
-- **Destiny Pool:** The table starts with Force dice. Light side results go in the pool for players, dark side for the GM. Spend to flip dice results or fuel special abilities.
-- **Obligation:** Your Obligation is a number. At the start of each session, roll percentile — if it matches your Obligation type, a complication related to your past arises. Pay it down by earning credits or completing story goals.
-- **Strain and Wounds:** Physical harm causes Wounds (hits on the body track). Mental/social/exertion causes Strain. Exceed either threshold and you're incapacitated.
+**Force Rating** — if you're Force-sensitive, this is your connection to the Force. Even a rating of 1 gives you access to basic Force powers.
 
-## A Classic First Session Arc
+## The Dice System
 
-**Act 1 — The Job:** Meet the contact, accept the cargo run, hear about the complications the contact isn't fully admitting to. Ask the AI to describe Mos Shuuta's layout.
+Edge of the Empire uses custom narrative dice with symbols rather than numbers. The AI handles the dice math — you just tell it what you're trying and which skill you're using.
 
-**Act 2 — The Obstacle:** Imperial patrols, a rival crew, a locked hangar, or a contact with a last-minute demand. Negotiate, bluff, or fight your way through with Charm, Deception, Coercion, or Brawl.
+When you roll, the AI narrates both **success/failure** and **advantage/threat**. A failed roll with advantage means something good happens despite the failure. A success with threat means you accomplish your goal but something goes wrong.
 
-**Act 3 — The Escape:** Get the cargo to the ship and leave atmosphere. One chase or combat scene. Hyperspace jump with complications unresolved — because there are always complications.
+> *"I got the door open (success), but my lockpick broke off in the lock (threat). Now I can't close it behind me."*
 
-## Tips
+This happens on every roll. Every result pushes the story forward.
 
-- Name your ship early. The AI will make it feel like a character too.
-- Advantage and Threat on failed rolls are where the story gets interesting. Don't ignore them.
-- If you're Force-sensitive, tell the AI — it will weave in Force die opportunities.
-- Obligation creates organic drama. Let the AI trigger it; it's not punishment, it's story fuel.
-- Credits matter. Maintain your ship, pay for repairs, and keep enough to bribe the right people.
+## Playing
+
+Open the browser. Get your session started:
+
+> *I lean against the bar, blaster hidden under my jacket. The information broker I'm meeting is a Rodian in a red vest. I scan the crowd and wait.*
+
+The AI sets the scene — the cantina, the patrons, the Rodian arriving with two bodyguards you weren't told about. The negotiation begins.
+
+When you take action, the AI determines your dice pool based on your characteristics, skills, and circumstances. Boost dice (blue) from advantages, Setback dice (black) from complications. The AI narrates every symbol.
+
+## What a Session Looks Like
+
+**The Job:** A contact offers work. The pay is good. The complications are not fully disclosed. Your Obligation may come up.
+
+**The Obstacle:** A locked hangar, an Imperial patrol, a rival crew. Negotiate, bluff, sneak, or fight. The narrative dice system makes every approach interesting.
+
+**The Getaway:** Get the cargo (or the target, or the information) to the ship and leave. One chase or combat scene. Hyperspace with complications unresolved.
+
+**The Reckoning:** Pay down Obligation or watch it grow. Repair the ship. Rest. Take the next job.
+
+## Key Rules
+
+- **Narrative dice:** Every roll produces success/failure AND advantage/threat independently. The AI interprets all of it.
+- **Destiny Pool:** A shared pool of Force points. The AI starts with some. Players have some. Spend to upgrade dice or activate abilities.
+- **Obligation:** When it triggers, a complication arises. Pay it down with credits or story actions.
+- **Strain:** Mental and social damage. Exceed your Strain Threshold and you're out of action until someone helps you recover.
+- **Critical Injuries:** When damage exceeds your Wound Threshold, you take a Critical Injury. The AI rolls on the critical table.
+- **Ship combat:** If you have a ship, it's a character too. The AI tracks hull trauma, system strain, and crew.

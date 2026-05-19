@@ -1,42 +1,62 @@
-# D&D 5th Edition — First Adventure Walkthrough
+# D&D 5th Edition — How to Play
 
-## System Overview
+You're an adventurer. There's a world in trouble, dungeons to explore, monsters to fight, treasure to find. The AI is your Dungeon Master — it narrates the world, voices the NPCs, runs combat, and adjudicates the rules.
 
-Dungeons & Dragons 5th Edition is the world's most popular tabletop RPG. The AI acts as your Dungeon Master, narrating the world, voicing NPCs, adjudicating rules, and running combat. You describe your character's actions; the AI tells you what happens.
+## Your Character Sheet
 
-## Setting Up Your Campaign
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone auto-rolls abilities (4d6 drop lowest for each of the six), sets Level 1, HP 10, AC 10, Proficiency Bonus 2.
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `dnd5e`. Name it something evocative — "The Sunken Coast", "Shattered Crown", "Embers of the Empire".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically rolls your six ability scores (4d6 drop lowest), sets level to 1, HP to 10, and AC to 10. Tell the AI your race, class, and background so it can narrate appropriately. Adjust any values with `update_character`.
-3. **Start a session.** Name your first session something like "The Road to Thornwall" or "A Stranger in Neverwinter".
+**The six ability scores** — STR, DEX, CON, INT, WIS, CHA — are what you roll against. Each is a pip rating (3-20). Your class determines which ones matter most.
 
-## Suggested Opening Prompt
+**HP** is your health bar. Rest to recover it.
 
-Tell the AI your character's background and how they arrived at the adventure's starting point:
+**Level** determines your power. When your XP reaches thresholds (300 → level 2, 900 → level 3, etc.), you can level up. Leveling increases your HP by 5, and your Proficiency Bonus auto-computes as `floor((level-1)/4)+2`.
 
-> "I'm playing Kael, a human Fighter (soldier background) arriving at the town of Thornwall after a week on the road. I've heard there's work — something about missing villagers and lights in the old keep. I walk into the first tavern I see."
+**AC** is your Armor Class. Enemies need to roll this high to hit you.
 
-The AI will set the scene, introduce NPCs, and let the adventure develop naturally from there.
+**Proficiency Bonus** is computed from your level automatically. It applies to attacks with weapons you're proficient in, skills you're trained in, and saving throws.
 
-## Key Mechanics to Establish Early
+**Skills, Inventory, Spells, Features** are free-text. List what your character has and can do.
 
-- **Ability checks:** Tell the AI which skill you want to use ("I try to intimidate the guard — rolling Intimidation"). The AI will call for a DC and interpret your roll.
-- **Combat:** When a fight starts, tell the AI you're initiating combat. Describe your action each round (attack, spell, dash, hide, etc.) and roll your dice.
-- **Advantage/Disadvantage:** If a situation calls for it, the AI will tell you to roll with advantage (roll twice, take higher) or disadvantage (take lower).
-- **Short and long rests:** Ask the AI when it makes sense to rest. Short rests recover some HP via Hit Dice; long rests fully restore HP and spell slots.
-- **Death saving throws:** If you drop to 0 HP, roll a d20 each turn — three successes stabilizes you, three failures means death.
+## Playing
 
-## A Classic First Session Arc
+Open the browser. Get your campaign, character, and session active. Type what your character does:
 
-**Act 1 — The Tavern Hook:** The innkeeper or a worried farmer approaches you. People have gone missing near the old keep on the hill. A reward is offered.
+> *I grip my sword and step through the doorway. "Who's there?" I call into the darkness.*
 
-**Act 2 — Investigation:** Talk to locals, gather clues, maybe discover the keep is occupied by goblin scouts — or something worse.
+The AI describes what happens, asks for rolls when there's uncertainty, and builds the world around you.
 
-**Act 3 — The Keep:** Clear the first floor. Find a prisoner. Discover a note hinting at a larger threat. End the session on a cliffhanger.
+When combat breaks out, the AI tracks initiative. The turn order strip appears at the top of the story column — each combatant listed with initiative order. The active combatant is highlighted. Dead ones (0 HP) are dimmed. On your turn, describe what you do:
 
-## Tips
+> *I swing my longsword at the goblin in front of me.*
 
-- Ask the AI to describe the environment before acting — "What do I see in this room?"
-- If you forget a rule, ask the AI: "How does the Shove action work?"
-- Track your spell slots, hit dice, and any limited-use abilities in the journal tab.
-- Let the AI surprise you. Don't plan too far ahead.
+The AI resolves the attack, applies damage, and moves to the next turn.
+
+## How the AI Runs D&D
+
+The AI manages encounters, NPCs, exploration, traps, puzzles, and social interactions. It tracks your HP changes, spell slots (if you list them in your notes), and conditions.
+
+**Dice rolls** use standard expressions: `1d20`, `2d6+3`, `1d8-1`. Type them inline in your message and the AI rolls them.
+
+**XP and leveling** happen through story. When you defeat enemies or complete objectives, the automation detects the XP change and applies it. When you have enough XP for the next level, the ⬆ Advance button in the header lights up. Click it for AI-suggested advancements.
+
+**Combat** is turn-based. The AI tracks initiative order, HP, conditions, and death saves. When you drop to 0 HP, the AI starts death saving throws.
+
+## What a Session Looks Like
+
+**The hook.** Someone needs something done. A villager at the tavern, a patron with a job, a rumor about ruins nearby.
+
+**The journey.** Travel to the location. The AI describes the journey — the environment, encounters along the way, chances to gather information.
+
+**The dungeon or encounter.** Explore. The AI describes what you see. You decide what to investigate, what to fight, what to avoid. One combat encounter tests your resources.
+
+**The reward.** Treasure, information, a clue to a bigger threat, a level-up. The session ends with a thread pulling you toward the next one.
+
+## Key Rules
+
+- **Ability checks:** The AI sets a DC. You roll d20 + ability modifier + proficiency (if trained).
+- **Advantage/Disadvantage:** Roll twice, take the higher or lower. The AI tells you when this applies.
+- **Short rests:** Recover some HP using Hit Dice. Tell the AI when you rest.
+- **Long rests:** Full HP recovery, spell slots back. The AI decides if it's safe.
+- **Death saves:** At 0 HP, roll d20 each turn. 10+ is a success, 1 is two failures, 20 is conscious with 1 HP. Three successes = stable. Three failures = death.
+- **Leveling up:** XP thresholds follow the standard 5e progression. Your AI will suggest what to increase.

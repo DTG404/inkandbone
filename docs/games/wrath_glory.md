@@ -1,41 +1,60 @@
-# Warhammer 40,000: Wrath & Glory — First Adventure Walkthrough
+# Wrath & Glory — How to Play
 
-## System Overview
+The 41st Millennium. A galaxy at war. You are an agent of the Imperium — a Sister of Battle, a Space Marine, an Inquisitorial Acolyte, a sanctioned Psyker, or a desperate Guardsman — fighting the enemies of humanity: xenos, heretics, and the corrupting influence of the Warp.
 
-Wrath & Glory is a tabletop RPG set in the grim darkness of the 41st millennium — a universe of endless war, xenos threats, heresy, and the undying faith of the Imperium of Man. You play agents of the Imperium (or, rarely, allies at the fringes of it), undertaking missions that range from exterminating a genestealer cult to investigating a planetary governor's possible corruption. The AI acts as your Game Master (Warden), narrating hive cities and void stations, voicing Inquisitors and corrupted cultists, and managing the brutal dice system of Wrath & Glory.
+Wrath & Glory is built for mixed-tier parties. A Primaris Marine and a hive ganger can fight alongside each other — the Marine faces entire squads while the ganger handles the flank. The AI (Warden) calibrates threats to the party's composition.
 
-## Setting Up Your Campaign
+## The Character Sheet
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `wrath_glory`. Name it after your mission or cell — "The Gilded Knife", "Purge at Hive Tertius", "The Warden's Reach".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically rolls your seven Attributes (1d3+3 each), derives Initiative from Agility, Resilience from Toughness, Determination from Willpower, and sets starting Wounds and Shock. Tell the AI your Tier, Archetype, and Keywords so it can frame your role in the 41st Millennium. Adjust any values with `update_character`.
-3. **Start a session.** Name it after the briefing — "Throne Warrant 114-Sigma", "The Silence on Ferrus IV", "What the Pict-Feeds Missed".
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone picks an Archetype (27 defined), rolls attributes at minimum +1d3, derives all secondary stats (Defence, Resilience, Determination, Resolve, Conviction, Influence), sets Wounds and Shock based on Tier, and pre-populates starting talents.
 
-## Suggested Opening Prompt
+**Attributes** are the core: Strength, Agility, Toughness, Intellect, Willpower, Fellowship, Initiative. Each rated 3-10 depending on your Archetype and Tier.
 
-> "I'm playing Sister Vael, a Sister of Battle (Tier 2) with Strength 4, Agility 4, Toughness 5, Intellect 3, Willpower 5, Fellowship 3. Wounds 10, Shock 5. I've been sent by my Inquisitor to investigate rumors of heretical preaching in a hive city's under-district. I arrive in plain clothes — difficult for a Sister, but necessary. The address is a disused promethium refinery."
+**Skills** cover everything from Weapon Skill and Ballistic Skill to Tech, Medicae, and Psychic Mastery. Each rated 0-5.
 
-The AI will describe the refinery and its approaches, and let you begin the investigation.
+**Wounds** is your health pool. **Shock** is your mental/endurance buffer that absorbs fatigue before it hits Wounds.
 
-## Key Mechanics to Establish Early
+**Wrath** is a personal metacurrency — you earn Wrath tokens when your Wrath die shows a 6, and spend them for heroic actions.
 
-- **Dice pool:** Roll a number of d6s equal to your Attribute + Skill. Count dice showing 4, 5, or 6 as successes (Icons). Most tests have a Difficulty (number of successes needed). Each extra Icon beyond the threshold is a Shift — use Shifts to enhance results.
-- **Wrath and Glory:** Before rolling, take one die from your pool and make it the Wrath Die. If the Wrath Die shows a 6, it's an Exalted Icon — it counts double. If it shows a 1, add a Complication. The Warden has a Glory pool (starts at 0, grows through your actions and failures) and can spend Glory to add complications or empower enemies.
-- **Combat:** Initiative is rolled (Initiative attribute + d6 pool). Attacks use Ballistic Skill or Weapon Skill + Agility vs. a target's Defence. Damage minus Resilience = Wounds taken. At 0 Wounds, roll on the Critical Wound table.
-- **Corruption and Ruin:** Exposure to the warp generates Corruption. The Warden tracks Ruin — a campaign-level threat meter that rises as things go wrong. High Ruin summons escalating horrors.
-- **Keywords:** Your character has Keywords (Imperium, Adeptus Sororitas, etc.) that unlock faction-specific abilities, determine allegiances, and affect how NPCs react to you.
+**Glory** is the party's resource, not the Warden's. It grows through your successes and desperate actions. Spend Glory to add dice, create assets, or trigger narrative effects.
 
-## A Classic First Session Arc
+**Ruin** is the Warden's threat meter. As the campaign progresses and things go wrong, Ruin rises. High Ruin means escalating horrors — daemonic incursions, Ork WAAAGHs, Tyranid splinter fleets.
 
-**Act 1 — The Brief:** Your Inquisitor (or cell leader) issues orders. Establish your mission, your cover if any, and what resources you have. Gather initial intelligence with Awareness and Scholar rolls.
+**Keywords** define who and what you are: IMPERIUM, ADEPTUS ASTARTES, ADEPTA SORORITAS, CHAOS, AELDARI, etc. They unlock faction-specific interactions and determine how NPCs react to you.
 
-**Act 2 — The Investigation:** Infiltrate the location. Question witnesses, examine evidence. One tense encounter — a guard you must avoid, a cultist who spots your rosette, a locked door hiding something worse.
+## Dice and the Wrath Die
 
-**Act 3 — The Confrontation:** Find the heresy at its source. One combat or dramatic resolution. The immediate threat is contained. A thread remains — a name, a symbol, a supply crate with an off-world origin. The Inquisition's work is never done.
+Every dice pool is Attribute + Skill in d6s. Each 4-6 is a success (called an Icon).
 
-## Tips
+Before rolling, designate one die as the **Wrath Die**. If it shows a 6, it's an Exalted Icon (counts double) and you gain a Wrath token. If it shows a 1, the Warden adds a Complication — something goes wrong alongside your result.
 
-- State your Keywords and Archetype at session start — the Warden (AI) will use them to tailor the world's reaction.
-- Glory spent by the Warden is not punishment — it's dramatic escalation. Embrace the chaos.
-- Wrath & Glory supports mixed parties (humans and Space Marines together) by making high-Tier characters face proportionally larger threats. Let the AI calibrate.
-- The Imperium is corrupt, bureaucratic, and brutal. Roleplay the moral weight of serving it.
-- Faith Points and Wrath abilities are powerful and thematic. Ask the AI to remind you when they apply.
+Excess Icons beyond the required number are **Shifts**. Spend Shifts to improve the result — extra damage, faster completion, reduced risk.
+
+## Playing
+
+Open the browser. Get your cell active. The Inquisitor has a mission:
+
+> *I approach the promethium refinery's main entrance, bolter held low but ready. My armour's auspex reads the structure as abandoned, but the heat signatures tell a different story. I signal the team to hold while I scan for ambushes using my Awareness.*
+
+The AI describes the refinery, the signs of habitation, the cultist symbols spray-painted on the walls. When you act — Awareness to scan, Scholar to identify the symbols, Intimidation to question a captive — you build your pool and roll with the Wrath Die.
+
+## The Mission
+
+**The Briefing:** Your Inquisitor or cell leader issues orders. The target, the cover, the resources available. Intelligence is never complete.
+
+**The Investigation:** Infiltrate the location. Examine evidence. Question witnesses. One tense encounter — a guard, a locked door, a moment that could go loud.
+
+**The Confrontation:** Find the heresy at its source. Combat. The AI tracks Initiative, Wounds, Shock, and conditions. Your Wrath die adds drama to every roll.
+
+**The Thread:** The immediate threat is contained. A name, a symbol, a shipping manifest with an impossible origin. The Inquisition's work continues.
+
+## Key Rules
+
+- **Dice pools:** Attribute + Skill in d6s. 4-6 = success. Excess successes = Shifts.
+- **Wrath Die:** One die per pool. 6 = Exalted Icon + Wrath token. 1 = Complication.
+- **Wrath tokens:** Personal resource. Spend to reroll, add dice, or activate archetype abilities.
+- **Glory:** Party resource. Spent by players for bonuses. Earned through heroic action.
+- **Ruin:** Campaign threat meter. The Warden uses it to escalate the story.
+- **Corruption:** Warp exposure causes Corruption. At thresholds, test or gain a mutation. Not all corruption is visible.
+- **Mixed tiers:** Tier 1 (Guardsman) through Tier 4 (Primaris Marine) can fight together. Higher tiers face proportionally larger threats.
+- **Shifts:** Spend excess successes on extra damage, effects, or tactical advantages.

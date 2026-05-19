@@ -1,41 +1,58 @@
-# Legend of the Five Rings (FFG 5th Edition) — First Adventure Walkthrough
+# Legend of the Five Rings — How to Play
 
-## System Overview
+Rokugan is an empire of honor, duty, and ritual. You are a samurai — beholden to your clan, your lord, and your family name. A wrong word at court can be as deadly as a sword strike. The AI acts as your Game Master, narrating the political and spiritual dramas of the Emerald Empire.
 
-Legend of the Five Rings is a samurai drama RPG set in Rokugan — an empire of rigid honor, court intrigue, and the ever-present threat of spiritual corruption. You play a samurai beholden to your clan and lord, navigating a world where social failure and spiritual compromise can be as lethal as a blade. The AI acts as your Game Master, narrating court ceremonies and battlefield violence alike, and adjudicating a dice system built around dramatic tension.
+## The Character Sheet
 
-## Setting Up Your Campaign
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone sets your Rings (Air 2, Earth 2, Fire 2, Water 2, Void 1), School Rank 1, Endurance 8, Composure 8, Focus 3, Vigilance 2, and starting Honor/Glory/Status values.
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `l5r`. Name it after your clan or setting — "The Crane's Court", "Winter in the Shadowlands", "The Lion's Gambit".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically sets your five Rings (Air 2, Earth 2, Fire 2, Water 2, Void 1), School Rank to 1, and starting Honor, Glory, and Status values. Tell the AI your Clan, Family, and School so it can adjust your social standing and skills appropriately. Adjust any values with `update_character`.
-3. **Start a session.** Name it after the dramatic framing — "The Winter Court Arrives", "A Letter Sealed in Black", "Duty Before Death".
+**The Rings** — Air, Earth, Fire, Water, Void — are your elemental attributes. Each ring governs two skills. When you make a check, you use the appropriate ring + skill dice pool.
 
-## Suggested Opening Prompt
+**Endurance** is your physical stamina. Exhaustion, hardship, and damage reduce it. **Composure** is your social and emotional resilience. Social pressure and strife reduce it.
 
-> "I'm playing Doji Ren, a Crane Clan courtier from the Doji family, School Rank 1. Air 3, Water 2, Fire 2, Earth 2, Void 1. Honor 55, Glory 45, Status 30. I've been sent to attend a provincial winter court hosted by a minor Unicorn lord. I arrive at the gates of Shiro Utaku Shiko at dusk with my traveling clothes dusted from the road."
+**Focus** matters in duels. **Vigilance** is your awareness. High Vigilance means you're hard to surprise.
 
-The AI will describe the court, introduce your host and rival attendees, and surface the first political tension.
+**Honor** is your internal moral code. Violating it costs Honor. Living by it earns Honor. **Glory** is your public reputation. **Status** is your rank in the imperial hierarchy. These three social tracks determine how NPCs treat you.
 
-## Key Mechanics to Establish Early
+## How Dice Work
 
-- **Ring and skill checks:** Assemble a dice pool of Ring dice (d12s) equal to the Ring used, plus Skill dice (d6s) equal to your rank in the relevant skill. Roll them all and keep a number of dice equal to the Ring value. Each die shows success symbols, explosive success, or opportunity symbols.
-- **Strife:** Many actions generate Strife — emotional and social pressure. When Strife exceeds your Composure, you become Compromised and must choose: Outburst (clear Strife dramatically, with social consequences) or hold it in.
-- **Honor, Glory, and Status:** These are your three social tracks. Honor reflects personal virtue and affects Void. Glory is public reputation. Status is your rank in the imperial hierarchy. Violating your Honor obligations has mechanical consequences.
-- **The Void:** The Void Ring represents clarity and presence. Spend Void Points to add additional kept dice to a roll or to activate certain techniques.
-- **Dueling:** Iaijutsu duels are dramatic rituals. Assessment, Focus, and Strike phases each involve separate rolls and social positioning. Ask the AI to walk you through your first duel step by step.
+Every roll uses Ring dice (d12s) + Skill dice (d6s). You roll a number of d12s equal to your Ring rating, plus a number of d6s equal to your skill rank. You keep a number of dice equal to your Ring rating.
 
-## A Classic First Session Arc
+Each die can show: success (sword symbol), explosive success (burst symbol — counts and the die explodes), opportunity (circle symbol — triggers technique bonuses or narrative advantages), or strife (a mask symbol — emotional stress).
 
-**Act 1 — Arrival:** Greet your host with the proper ceremonies. Meet the other attendees — identify allies and rivals. Use Social skills (Courtesy, Etiquette, Composition) to make your first impressions.
+**Strife** is key: many actions generate Strife. When your Strife exceeds your Composure, you become Compromised. You must either take an Outburst (clear Strife but suffer social consequences) or hold it in (keeping the Strife).
 
-**Act 2 — The Intrigue:** A rumor surfaces — a stolen letter, a betrothal dispute, a Scorpion agent with unclear motives. Use Investigate, Sentiment, and Courtesy to uncover what's really happening beneath the polite surface.
+## Playing
 
-**Act 3 — The Confrontation:** A scene of tension — a public accusation, a challenge to a duel, or a moment that forces you to choose between clan duty and personal honor. End with your character's position changed in some way: a new ally, an enemy made, a secret learned at cost.
+Open the browser. Get your character active. You arrive at Winter Court:
 
-## Tips
+> *I bow to the Imperial Chancellor with the precise depth required for my station. "This humble servant is grateful for the opportunity to present the Crane Clan's position on the border dispute."*
 
-- Tell the AI your School Techniques at the start — they are unique and powerful, and the AI needs to know them to apply them correctly.
-- Social conflicts and physical conflicts use the same dice system but different skills. Take both seriously.
-- Opportunity symbols (the swirl) can trigger technique bonuses or narrative advantages even on failed rolls — ask the AI to narrate them.
-- Honor loss is cumulative and slow to recover. Consider what your character values before acting.
-- The Shadowlands Taint exists as a threat beyond the Wall. Don't seek it out in session one. It will find you eventually.
+The AI responds with the Chancellor's reaction, the reactions of other clan representatives, and the undercurrents of the political situation. Every word you say in character carries weight.
+
+When you make a check, tell the AI your intent and approach. It determines the ring and skill. The AI narrates the result — not just success/failure, but the opportunities and strife generated.
+
+## Court and Combat
+
+**Court** is where most of the action happens. Social skills (Courtesy, Etiquette, Composition) navigate the intricate social landscape. Investigate uncovers secrets. Sentiment reads the emotions of others.
+
+**Duels** are ritualized combat. The iaijutsu duel has three phases: Assessment, Focus, and Strike. Each involves different rolls and positioning. The AI walks you through your first duel step by step.
+
+**Skirmishes** use the same dice system as court, just with different skills. Martial skills (Martial, Tactics) resolve combat encounters.
+
+## What a Session Looks Like
+
+**Arrival:** You arrive at a new court, a new post, or a new situation. Greet your host. Identify allies and rivals.
+
+**The Intrigue:** A rumor surfaces — a stolen letter, a betrothal dispute, a Scorpion agent with unclear motives. Uncover what's happening beneath the surface.
+
+**The Confrontation:** A scene of tension — a public accusation, a duel challenge, a choice between duty and personal honor. Your position in the court changes as a result.
+
+## Key Rules
+
+- **Roll + Keep:** Roll Ring d12s + Skill d6s. Keep Ring d12s. Success + opportunities + strife.
+- **Strife:** Exceeds Composure? You're Compromised. Outburst or hold it in.
+- **Opportunities:** Spend on technique triggers, narrative benefits, or extra successes. Even on a failed roll, opportunities help.
+- **Void Points:** Spend 1 Void to add kept dice to a roll or activate school techniques. Recover during rest.
+- **Honor matters:** Acting against your Honor has mechanical consequences. The AI tracks them.
+- **School Techniques:** Your school gives you unique techniques. Tell the AI at the start so it can incorporate them.

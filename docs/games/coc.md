@@ -1,41 +1,54 @@
-# Call of Cthulhu (7th Edition) — First Adventure Walkthrough
+# Call of Cthulhu — How to Play
 
-## System Overview
+You are an investigator in the 1920s. You have a job, a skill set, and a fragile grasp on reality. You are about to encounter something that invalidates all three.
 
-Call of Cthulhu is a horror RPG in which ordinary people investigate the unknown — and pay a price for what they find. The AI acts as the Keeper, narrating the investigation, voicing NPCs, and tracking your slow slide toward madness. Survival is not guaranteed. Understanding may be worse than death.
+CoC is not a combat game. It is an investigation game where combat is something you survive, not win. The horror comes from uncovering truths that break your character's mind.
 
-## Setting Up Your Campaign
+## The Character Sheet
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `coc`. Set the era — 1920s is classic, but modern day or other periods work. Name it after the investigation — "The Haunting of Corbitt House", "Shadows Over Arkham".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically rolls all attributes (3d6×5 for most, (2d6+6)×5 for INT/SIZ/EDU), calculates HP from CON and SIZ, and sets Sanity equal to your POW score. Tell the AI your Occupation so it knows which skills to develop through play. Adjust any values with `update_character`.
-3. **Start a session.** Name it after the case — "A Client With Cold Hands", "The Letter from Miskatonic".
+Create your investigator through **⚙ Manage → Characters → + New Character**. Inkandbone generates attributes using standard CoC methods: 3d6×5 for most stats, (2d6+6)×5 for INT and SIZ. HP comes from CON + SIZ. Sanity equals POW.
 
-## Suggested Opening Prompt
+**The eight attributes** are percentile: STR, CON, SIZ, DEX, APP, INT, POW, EDU. Each ranges from 15 to 90. Your skill values in the notes field should match your occupation.
 
-> "I'm playing Dr. Eleanor Cross, a professor of archaeology at Miskatonic University, 1926. I've received an urgent telegram from a former student who claims to have found something in a Providence estate he's been hired to catalog. He's scared. The telegram cuts off mid-sentence. I arrive at the Providence address on a gray October afternoon."
+**HP** is your health. At 0, you're dying. Healing takes time.
 
-The AI will describe the scene, introduce witnesses, and give you the first investigative thread.
+**Sanity** is the number that matters most. It starts at POW. Witnessing the unnatural costs SAN points. At 0 SAN, your investigator is permanently insane — they go to the asylum or worse.
 
-## Key Mechanics to Establish Early
+**Luck** is a resource you spend to alter fate. Subtract from your Luck pool to reduce a roll result or survive something lethal. Luck does not replenish easily.
 
-- **Skill rolls:** Roll percentile dice (d100) under your skill value for a success. Half the skill = Hard success. One-fifth = Extreme success. Higher difficulty requires Hard or Extreme.
-- **Opposed rolls:** Both parties roll; the one with more successes wins. Ties go to higher skill value.
-- **Luck:** Spend Luck points (equal to your Luck stat) to reduce a roll's result or to survive certain automatic failures. Luck doesn't replenish easily.
-- **Sanity:** Encountering the unnatural costs Sanity. The AI will call for a Sanity roll when you witness something horrifying — roll under your current SAN or lose points. Reach 0 and you are permanently insane.
-- **Combat:** Fast and lethal. Firearms do serious damage. Melee requires a Fighting roll. Monsters often require Impale or Extreme successes to meaningfully harm — or cannot be harmed at all.
+**MP** is magic points. You probably won't use them in your first session. If you do, something has already gone terribly wrong.
 
-## A Classic First Session Arc
+## Playing the Investigation
 
-**Act 1 — The Scene:** Arrive at the location, examine the environment, interview any available witnesses. Use Library Use, Spot Hidden, Listen, and Persuade to gather the first facts.
+Open the browser. Get your campaign, character, and session loaded. The story begins with a mystery — a letter, a disappearance, a strange death.
 
-**Act 2 — The Clues:** Follow two or three leads — a locked room, a coded journal, a witness with something to hide. Each clue surfaces one piece of a larger, disturbing picture.
+> *I approach the old house on Providence Street. The windows are dark. The front door is ajar. I listen for any sound before pushing it open.*
 
-**Act 3 — The Revelation:** Something reveals itself — an entity, a cult ritual, a body that shouldn't exist. Make your first Sanity roll. Decide whether to run, fight, or learn more (at a cost). End with an unresolved threat that demands a next session.
+The AI describes what you find. It calls for rolls when you search, question, or confront. Rolls are d100 — roll under your skill value. Under half your skill is a Hard success. Under one-fifth is Extreme.
 
-## Tips
+When you fail an important roll, you can **Push** it — reroll with worse consequences on failure. The AI will describe what pushing looks like (you spend more time, make more noise, call in a favor) and what the stakes are.
 
-- Note your key skills at character creation — they define what your investigator is good at and what the AI will call on you to roll.
-- Avoid combat whenever possible. Most monsters will kill you. Fleeing is always an option.
-- Push rolls: if you fail, you can push the roll (re-roll) but the consequences of a pushed failure are far worse.
-- Track your Sanity carefully. The AI will describe deteriorating behavior as it drops below certain thresholds.
-- Ask the AI about any mythos lore you uncover — your investigator may not understand it yet, but you should.
+## How the Keeper Runs It
+
+The AI tracks Sanity. When you encounter something unnatural, it calls for a Sanity roll. The loss depends on what you see — a corpse might cost 0/1d2 (you lose nothing on a success, 1d2 on failure), a mythos creature might cost 1d3/1d10.
+
+The AI also tracks Luck spends, pushing rolls, and combat lethality. Gunfire does serious damage. Monsters often can't be harmed normally. Running is always the correct tactical decision.
+
+## The First Case
+
+**Start with a hook.** A former student sends a telegram that cuts off mid-sentence. A client claims their house is haunted. A newspaper article about a strange death catches your investigator's attention.
+
+**Investigate.** Follow the clues. Talk to witnesses. Search libraries, basements, and police records. Each clue reveals a small part of a larger picture that gets more disturbing the more you learn.
+
+**Confront the revelation.** Something reveals itself. A cult ritual. An entity. A truth that breaks what you thought was real. You decide: fight, flee, or learn more at a cost.
+
+**End with a thread.** The case isn't closed. There's a loose end that demands another session. Your Sanity is lower than when you started. You know more than you wanted to.
+
+## Rules to Remember
+
+- **Skill rolls:** d100 under your skill value. Hard = half or under. Extreme = one-fifth or under.
+- **Push a roll:** Reroll a failure with worse consequences if you fail again.
+- **Spend Luck:** Subtract from Luck to reduce a roll after you see it. Spend 1 point to reduce by 1.
+- **Sanity loss:** The AI tracks it. When you hit certain thresholds, your investigator develops phobias, manias, or worse.
+- **Combat is lethal:** A revolver does 1d10 damage. A shotgun does 4d6/2d6. A monster's claw does 1d6+damage bonus. You have around 12 HP.
+- **You cannot fight the mythos.** You can survive it, delay it, or contain it. You cannot defeat it.

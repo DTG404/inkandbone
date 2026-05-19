@@ -1,41 +1,70 @@
-# Vampire: The Masquerade (V5) — First Adventure Walkthrough
+# Vampire: The Masquerade (V5) — How to Play
 
-## System Overview
+You are a vampire. Kindred. One of the Damned. You hunt, you feed, you struggle against the Beast inside you, and you navigate the brutal politics of an immortal society hidden within the mortal world. The AI is your Storyteller.
 
-Vampire: The Masquerade is a gothic horror RPG in which you play the undead — Kindred who feed on mortals, struggle against their inner Beast, and navigate the brutal politics of vampire society. The AI acts as your Storyteller, voicing NPCs, ruling on Disciplines, and managing the tension between your humanity and the hunger that drives you.
+V5 replaces blood points with Hunger. You don't count how much blood you have — you track how desperately you need it. Hunger colors every roll, every Discipline activation, every moment of stress.
 
-## Setting Up Your Campaign
+## The Character Sheet
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `vtm`. Name it after your city and coterie — "Chicago Nights", "The New Orleans Accord", "Ashes of London".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically sets Generation to 13, Humanity to 7, Blood Pool to 10, and Willpower to 3. Tell the AI your Clan, Concept, and Disciplines so it can narrate your powers and social standing. Adjust any values with `update_character`.
-3. **Start a session.** Name it something atmospheric — "The Embrace Remembered", "Court of Blood".
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone generates all V5 fields: attribute priorities distributed, skills zeroed, Health (Stamina+3) and Willpower (Composure+Resolve) tracks set.
 
-## Suggested Opening Prompt
+**Hunger** (0-5) is red squares at the top of your sheet. At 1-2, you're controlled. At 3, you're hungry. At 4-5, you're dangerous — frenzy risk is critical, and Hunger dice dominate your pools. Vampires max at 5. Thin-Blooded max at 4. Mortals and Ghouls don't have Hunger.
 
-> "I'm playing Sebastian Vane, a Toreador Embraced six months ago in New York. My sire has gone missing. An elder named Madame Beaumont has summoned me to Elysium — the neutral ground where Kindred meet. I've never attended before. I arrive at the address, a converted theater, just after midnight."
+**The nine attributes** split into Physical (Strength, Dexterity, Stamina), Social (Charisma, Manipulation, Composure), and Mental (Intelligence, Wits, Resolve). Each is rated 1-5. You get one primary group at 4/3/2, secondary at 3/3/2, tertiary at 2/2/2.
 
-The AI will set the Elysium scene, introduce elder NPCs, and surface the first complication.
+**The 27 skills** split the same way: Physical (Athletics through Survival), Social (Animal Ken through Subterfuge), and Mental (Academics through Technology). Each rated 0-5.
 
-## Key Mechanics to Establish Early
+**Disciplines** are your supernatural powers: Animalism, Auspex, Blood Sorcery, Celerity, Dominate, Fortitude, Obfuscate, Oblivion, Potence, Presence, Protean. Thin-Blooded get Alchemy instead.
 
-- **Dice pools:** Roll a pool of d10s equal to Attribute + Ability. Count successes (7 or higher). Difficulties default to 6. One success = barely, three = solid, five = exceptional.
-- **Spending blood:** Spend blood points to fuel Disciplines, heal, or boost Physical Attributes. You regain blood by feeding — tell the AI when you hunt.
-- **Humanity and the Beast:** If you act against your Humanity rating, you risk losing it. If you frenzy, the Beast takes control. The AI will call for Self-Control or Courage rolls in tense moments.
-- **Disciplines:** Tell the AI which Discipline you're activating and at what level. The AI will apply the mechanical effect and narrate it.
-- **The Masquerade:** Never expose vampiric nature to mortals. The AI tracks your infractions — three serious violations can mean a Blood Hunt.
+**Health** is a damage track — superficial (/) fills from the left, aggravated (X) fills from the right. Click boxes to toggle. **Willpower** works the same way.
 
-## A Classic First Session Arc
+**Humanity** is your moral compass (7 is default). **Stains** accumulate when you violate your Convictions. At 10 Stains, you make a Remorse check or risk degeneration.
 
-**Act 1 — Elysium:** Navigate the politics. Meet your Primogen, read the room, avoid offending elders. Use Social dice pools — Manipulation + Subterfuge to gather information, Charisma + Empathy to read intentions.
+**Clan** determines your curse, your in-clan Disciplines, and your place in Kindred society. **Predator Type** determines your feeding style and starting Discipline spread.
 
-**Act 2 — The Assignment:** An elder gives you a task that can't be refused — find a missing Nosferatu, retrieve a stolen relic, investigate a Sabbat rumor in the warehouse district.
+## Hunger and Rouse Checks
 
-**Act 3 — The Hunt:** Pursue the lead into mortal society. Spend blood, risk the Masquerade, face a choice that tests your Humanity. End with a Willpower roll or a consequence that will ripple forward.
+Hunger is the core V5 mechanic. Every time you activate a Discipline, you make a **Rouse Check**: roll 1 die. If it exceeds your Hunger, nothing happens. If it's equal to or below, Hunger increases by 1.
 
-## Tips
+The AI detects `/rouse` in your messages and performs Rouse Checks automatically.
 
-- Track your Blood Pool (max = 10 + extra for low Generation) and spend carefully.
-- Describe your feeding method — it establishes character and the AI will remember it.
-- Ask the AI about your standing with each faction — Camarilla politics reward those who pay attention.
-- Humanity is slow to lose and hard to regain. Think before you act with violence.
-- Dementation, Thaumaturgy, and Vicissitude have unusual rules — ask the AI to walk you through them the first time.
+When you make a roll where your vampiric nature matters, a number of dice equal to your Hunger become **Hunger dice** — rolled separately and tracked. If a Hunger die shows 1 on a failed roll, it's a **Bestial Failure**. If a Hunger die shows 10 on a successful roll, it's a **Messy Critical** — you succeed, but the Beast leaks through, and your Clan Compulsion triggers.
+
+## How the AI Runs V5
+
+The AI handles everything V5-specific automatically. It tracks your Hunger, performs Rouse Checks, identifies Hunger dice in your pools, catches Messy Criticals and Bestial Failures, triggers Clan Compulsions, and narrates the Beast.
+
+When the Storyteller describes a new night falling, the **Chronicle Night** counter in the header advances by 1. Phrases like "dusk falls", "nightfall", or "darkness descends" trigger this.
+
+The AI scans narration for **Masquerade breaches** — witnessed feeding, cameras, supernatural displays. Each breach decrements the session's Masquerade Integrity (0-10, starts at 10). Low Masquerade means the Second Inquisition gets closer.
+
+## Playing
+
+Open the browser. Get your coterie and session active. Elysium awaits:
+
+> *I step into the converted theater, the weight of unlife settled into my bones. Madame Beaumont hasn't arrived yet. I scan the room — Toreador pose near the stage, a Nosferatu lurks in the shadows of the balcony, a Ventrue holds court at the bar. I need information about my sire's disappearance.*
+
+The AI describes the scene, the NPCs, the tensions. When you act — Manipulation + Subterfuge to gather information, Charisma + Persuasion to sway an elder — roll your pool, and the AI counts successes.
+
+When you activate a power, type `/rouse` and the AI checks.
+
+When you feed, describe it. The AI determines Hunger reduction: a sip (a victim later, no risk) reduces by 1, a proper feed reduces by 2, a desperate gullet feed reduces by 3.
+
+## The Chronicle
+
+**Elysium:** Meet the local Kindred. Learn the power structure. Don't offend anyone with higher status than you.
+
+**The Assignment:** An elder gives you a task — find a missing Nosferatu, retrieve a stolen artifact, investigate a rumor. Something they don't want to handle personally.
+
+**The Hunt:** The task pushes you into mortal society. You'll need to feed, maintain the Masquerade, use your Disciplines, and make choices that test your Humanity.
+
+**The Reckoning:** The task resolves. Your standing changes. Your Hunger is higher or lower. Your Humanity may have slipped. The Chronicle continues.
+
+## Key Rules
+
+- **Dice pools:** Attribute + Skill in d10s. Count 6+ as successes. Difficulty can reduce effective dice.
+- **Rouse Checks:** 1 die vs Hunger. Equal or under = Hunger +1.
+- **Hunger dice:** Your Hunger rating in dice are marked. If a Hunger die shows 1 on a failure = Bestial Failure. Shows 10 on a success = Messy Critical + Clan Compulsion.
+- **Frenzy:** When fire, extreme Hunger (4-5), or supernatural fear triggers it, roll Composure + Resolve.
+- **Feeding:** Describe how you feed. Sip = -1 Hunger. Proper feed = -2. Deep feed = -3. Never below 0.
+- **XP:** Attributes cost new dots × 5. Skills cost new dots × 3. In-clan Disciplines cost new dots × 5. Out-of-clan cost × 7.

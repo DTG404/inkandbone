@@ -1,41 +1,55 @@
-# Warhammer Fantasy Roleplay (4th Edition) — First Adventure Walkthrough
+# Warhammer Fantasy Roleplay — How to Play
 
-## System Overview
+You are not a hero. You are a Rat Catcher, a Soldier, a Physician, or a Beggar — someone trying to survive in the Empire, a land of plague, corruption, and war. The world is grim, dangerous, and unjust. You are not going to save it. You might make it through the week.
 
-Warhammer Fantasy Roleplay is a grim, perilous RPG set in the Empire — a corrupt, plague-ridden, daemon-haunted pseudo-medieval Europe where common people struggle to survive forces that would destroy them body and soul. The AI acts as your Game Master, running the filthy streets and dark woods, voicing merchants, witch hunters, and corrupted nobles, and adjudicating a system where even a successful life is fragile.
+WFRP is percentile-based. Your characteristics are percentages. You roll d100 under your stat to succeed. Combat is fast, brutal, and best avoided. The AI runs the Empire — its filthy cities, haunted forests, and the inescapable shadow of Chaos.
 
-## Setting Up Your Campaign
+## The Character Sheet
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `wfrp`. Name it after your starting town or threat — "Troubles in Bögenhafen", "Death on the Reik", "The Ubersreik Five".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically rolls all ten characteristics (2d10+20 each) and sets starting Wounds, Fate, Fortune, Resilience, and Resolve. Tell the AI your Species and Career so it can frame your place in the Empire. Adjust any values with `update_character`.
-3. **Start a session.** Name it after the first episode — "A Fishy Business", "By Night in Ubersreik".
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone rolls all ten characteristics (2d10+20), sets Wounds to 10, Fate and Fortune to 2, Resilience and Resolve to 1.
 
-## Suggested Opening Prompt
+**Characteristics** (all percentile): WS (Weapon Skill), BS (Ballistic Skill), S (Strength), T (Toughness), Ag (Agility), I (Initiative), Dex, Int, WP (Willpower), Fel (Fellowship). Each ranges from 20 to 40+.
 
-> "I'm playing Britta Holze, a Human Rat Catcher (Career Level 1) with WS 31, BS 28, S 30, T 38, Ag 40, I 35, Dex 29, Int 28, WP 33, Fel 30, Wounds 12. I'm in the town of Ubersreik during market week. My last three clients haven't paid. I'm looking for work in the less reputable parts of the market square."
+**Wounds** is your health. At 0, you take Critical Wounds. The AI rolls on the crit table. It is not good.
 
-The AI will establish the town, surface a rumor or job offer, and let you investigate.
+**Fate** is your get-out-of-death-free. Spend 1 to survive something lethal. They don't come back easily.
 
-## Key Mechanics to Establish Early
+**Fortune** recharges each session. Spend it to add a d6 to any roll or flip the digits on a d100 result (turning a 37 into a 73).
 
-- **Skill tests:** Roll d100 under your Characteristic + Skill Advances. Roll equal to or below = success. Roll 10 or more below with matching tens and units = Critical success. Opposed tests compare degrees of success.
-- **Advantage:** Each successful action in combat or tense social situations earns +1 Advantage, giving +10 to the next test. Enemies use it too. Losing Advantage (taking a hit, failing) strips it.
-- **Wounds:** Damage = weapon's damage rating + Strength Bonus − opponent's Toughness Bonus. When Wounds reach 0, roll on the Critical Wounds table. It is bad.
-- **Corruption:** Exposure to Chaos or dark magic causes Corruption Points. Enough corruption causes a Corruption test — fail and gain a mutation. The AI tracks this as the campaign progresses.
-- **Careers:** Your career defines which skills and talents you can advance, and your social status. Advancing within and between careers is the WFRP progression system.
+**Resilience** helps you resist corruption. **Resolve** helps you resist fear and intimidation.
 
-## A Classic First Session Arc
+**Career** defines what you can do and how NPCs treat you. A Rat Catcher is not treated like a Knight.
 
-**Act 1 — The Job:** Someone hires you for something unglamorous — escort a merchant, clear a cellar, find a missing person. Low stakes that reveal the setting's texture.
+## How Play Works
 
-**Act 2 — The Complication:** The job is entangled with something larger — a cult, a corrupt official, a beast that shouldn't exist. Perception, Gossip, and Charm to dig out the truth.
+Open the browser. Get your character active. You're in a town during market week:
 
-**Act 3 — The Resolution:** Confront the complication. One fight if necessary (brief and dangerous). Collect payment. Discover the thread that leads to the next session. No one feels entirely safe.
+> *I sidle up to the merchant's stall, pretending to examine a rusty dagger. I keep my ears open — someone here knows about the disappearances.*
 
-## Tips
+The AI calls for tests — Gossip to pick up rumors, Perception to spot watchers, Charm to get information. Each test is d100 against your relevant characteristic.
 
-- WFRP is not D&D. Combat is fast, brutal, and best avoided. Use social skills and cleverness.
-- Fate Points are your safety net — spend one to avoid death. They replenish slowly.
-- Fortune Points recharge every session and can be spent to add a die or flip a test result.
-- Your Career background defines how NPCs treat you. A Rat Catcher is not treated like a Knight.
-- Embrace the grittiness — the world is supposed to feel oppressive. The wins matter more for it.
+**Advantage** tracks in combat and tense scenes. Every success gives +1 Advantage (+10 to your next related test). Getting hit or failing strips it. The AI tracks it for both sides.
+
+**Combat** works like this: you and the enemy build Advantage. First strike is usually decisive. Damage is weapon damage + Strength Bonus - target's Toughness Bonus. At 0 Wounds, the AI rolls on the Critical Wound table. It hurts.
+
+## The Career System
+
+Your Career defines which skills and talents you can advance. You don't just level up — you progress within your career, then switch to a new one. The AI can help you find the path to your next career.
+
+Advancing within a career costs XP. The XP thresholds and costs are tracked automatically. The ⬆ Advance button appears when you can afford an improvement.
+
+## What a Session Looks Like
+
+**The Job:** Someone hires you for something unglamorous — escort a cart, search a cellar, find a missing person. Low stakes, low pay.
+
+**The Complication:** The job is entangled with something larger. A cult in the cellar. A corrupt official who doesn't want the person found. A beast in the woods that shouldn't exist.
+
+**The Resolution:** Confront the complication. One fight (short, brutal). Get paid (maybe less than promised). Discover the thread that leads to the next session. No one feels safe.
+
+## Key Rules
+
+- **Skill tests:** d100 under your Characteristic. Success = roll at or under. Critical = roll 10 or more below with matching tens (e.g., 22 vs 33).
+- **Advantage:** +1 per success (+10 to next test). Lose on failure or hit.
+- **Critical Wounds:** At 0 Wounds, roll on the crit table. Even a "light" crit can mean losing a limb.
+- **Corruption:** Chaos exposure gives Corruption Points. Enough = mutation. The AI tracks this over the campaign.
+- **Fate Points:** Your safety net. Spend to avoid death. They almost never come back.

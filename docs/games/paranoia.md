@@ -1,44 +1,52 @@
-# Paranoia (2017 Edition) — First Adventure Walkthrough
+# Paranoia — How to Play
 
-## System Overview
+You are a loyal citizen of Alpha Complex. The Computer is your friend. You have been chosen as a Troubleshooter to solve The Computer's problems. You are also a mutant, a member of a secret society, and probably a traitor. Your fellow Troubleshooters are all of the above too. Nobody admits any of it.
 
-Paranoia is a satirical RPG set in Alpha Complex — an underground city run by an insane artificial intelligence called The Computer. You are a Troubleshooter: a loyal citizen tasked with solving The Computer's problems. You are also almost certainly a member of a secret society, a mutant, and/or a traitor. Your fellow Troubleshooters are probably all of the above too. The AI acts as your Game Master (Friend Computer's humble representative), assigning missions, voicing The Computer and its NPCs, and cheerfully adjudicating your inevitable demises.
+## The Character Sheet
 
-The tone is darkly comic. Expect to die. You have six clones.
+Create your citizen through **⚙ Manage → Characters → + New Character**. Include your sector and clone number in the name — something like `TOBY-R-KWK-4`. Inkandbone rolls your six stats at 1d6 each, assigns Security Clearance INFRARED, and gives you starting Credits.
 
-## Setting Up Your Campaign
+**Violence, Treachery, Happiness, Straight, Moxie** — your five stats. Each rated 1-6. Violence solves problems messily. Treachery solves them cleverly. Happiness proves your loyalty. Straight is suspicious competence. Moxie is the luck of the incompetent.
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `paranoia`. Name it after the mission briefing — "Troubleshooter Clearance: Green", "Malfunction in Sector KWK", "The Computer Is Your Friend".
-2. **Create your character.** Use the `create_character` tool with just your character's name (include your sector and clone number, e.g., `TOBY-R-KWK-4`) — ink & bone automatically rolls your six stats (1d6 each), sets Clone Number to 1, Security Clearance to INFRARED, and assigns starting Credits. Tell the AI your secret society affiliation and mutant power — do not let The Computer hear about either. Adjust any values with `update_character`.
-3. **Start a session.** The Computer assigns your mission. It is never optional. Name the session after the mission — "Find the Missing Widget", "Investigate Happiness Shortfall in Sector JNK", "Terminate All Traitors (Including This Briefing)".
+**Credits** buy things. Things break. **Clone Number** tracks how many lives you have left (starts at 1, up to 6. The Computer provides). **Treason Points** accumulate. At the threshold, The Computer executes you.
 
-## Suggested Opening Prompt
+**Secret Society** — you have one. Do not tell anyone. **Power Group** — your department. Everyone hates the other departments.
 
-> "I'm playing TOBY-R-KWK-1. Security Clearance INFRARED. I've just been summoned to a briefing room with four other Troubleshooters I've never met. The briefing officer, a sweating RED-Clearance clerk named JIMS-R-KWK, tells us a nutrient dispenser in Sector MNX has been acting strangely — dispensing unauthorized flavors. The Computer believes this is evidence of Communist sabotage. We are to investigate and report all traitors."
+## Playing Paranoia
 
-The AI will run the briefing, assign equipment (never quite right for the mission), and send you out into Alpha Complex.
+Paranoia is a comedy. The fun is in the absurdity, not the tactics. Play it like a sitcom where everyone dies.
 
-## Key Mechanics to Establish Early
+Open the browser. Get your session going. The Computer has assigned a mission. The mission briefing is playing on a video screen that glitches. Equipment is being issued. Some of it is broken. One item is technically treasonous to possess at your clearance level. Nobody mentions this.
 
-- **Skill checks:** Roll 2d6. Each die showing your stat value or lower = a success. Two successes = great, one = partial, zero = failure (with The Computer's special attention on you now).
-- **Moxie:** Your cunning and ability to improvise. Spend Moxie points to reroll dice, add dice, or avoid consequences. They refresh between missions.
-- **Treason Points:** The Computer tracks treason. Accumulate enough and you will be summarily executed. Everything is potentially treasonous — asking questions, not asking questions, owning unapproved equipment, being in the wrong corridor at the wrong time.
-- **Clone death:** When you die (and you will), your next clone reports for duty. You retain your memories and personality. You do not retain the equipment your previous clone was holding when it exploded.
-- **Secret societies and mutant powers:** These exist. Use them carefully. Accuse your teammates of treason before they accuse you. Maintain plausible deniability.
+> *I salute the briefing officer with enthusiasm appropriate for a loyal citizen. I accept the mission to investigate the unauthorized flavor dispenser. I ask for a list of approved flavors, to better identify the treasonous ones.*
 
-## A Classic First Session Arc
+The AI runs the briefing with escalating bureaucratic nonsense. Your secret society handler (also treasonous) may contact you with a conflicting mission. The Computer may call to ask if you've seen any traitors yet.
 
-**Act 1 — The Briefing:** The Computer assigns the mission through a video screen that occasionally glitches. Equipment is issued. Some of it is broken. One item belongs to a different clearance level and is technically treasonous to possess. Nobody mentions this.
+## How the GM Runs Paranoia
 
-**Act 2 — The Investigation:** Enter Sector MNX. Interview NPCs who are all clearly hiding something and terrified of your team. Discover that the situation is far stranger (and more treasonous) than described. Possibly arrest each other. Definitely break something important.
+The AI knows this is a comedy. It leans into the absurdity. Everything is bureaucratic, everything has paperwork, everything is monitored.
 
-**Act 3 — The Resolution:** Mission technically accomplished, or at least the biggest immediate threat is resolved (or destroyed). Return to debrief. Write your official report. Do not mention the parts that would implicate you. Commend your teammates' excellent work while subtly noting their suspicious behavior. Receive commendations and/or summary re-education.
+**2d6** resolve actions. Roll your stat or under. Two successes is great, one is partial, zero is failure — and The Computer is now paying attention to you.
 
-## Tips
+**Moxie** rerolls or adds dice. Spend them when you need to look competent in front of The Computer.
 
-- Paranoia is a comedy. Play it for laughs. The fun is in the absurdity, not the tactics.
-- Accuse your fellow Troubleshooters of treason — but do it when you can't be blamed for it.
-- The Computer is always right. Even when it's obviously wrong. Especially when it's obviously wrong.
-- Secret society missions from your secret society handler will directly conflict with your official mission. Choose which one to pursue — and whether to betray your handler.
-- Ask the AI to describe Alpha Complex in excessive, bureaucratic detail. It makes the world funnier.
-- Friend Computer is watching. The Computer loves you. Please report any suspicious behavior. Have a nice daycycle.
+**Treason** is a resource. Accumulating it means you're being noticed. Too much means execution. But you can also accuse others to deflect attention.
+
+**Clones.** When you die (and you will), your next clone arrives. You keep your memories. You do not keep the equipment your previous clone was holding when it exploded.
+
+## The Mission Structure
+
+**Phase 1 — Briefing:** The Computer assigns the mission through a screen that occasionally glitches. Equipment is distributed. One item is wrong. The team is told to cooperate. Everyone knows cooperation is how you get stabbed in the back.
+
+**Phase 2 — Investigation:** Enter the affected sector. Everything is worse than described. Citizens are terrified and hiding things. The problem is bigger, stranger, and more treasonous than the briefing suggested. The team will accuse each other.
+
+**Phase 3 — Resolution:** Accomplish the mission or destroy the evidence. Preferably both. Return for debriefing. Write your report. Do not mention the treasonous parts. Receive commendations for your loyalty and/or summary execution, depending on how well your report covered up what actually happened.
+
+## Survival Tips
+
+- Accuse first. If you wait to be accused, you've already lost.
+- Everything is treasonous. Choose which treasons to commit carefully.
+- Your secret society mission conflicts with your official mission. That's by design.
+- Ask the AI to describe everything in excessive bureaucratic detail. It makes the game funnier.
+- When you die, your next clone is briefed on your mission. Play them slightly differently — different phobias, different catchphrases.
+- The Computer is always right. Especially when it's obviously wrong. Especially when being right gets someone else executed instead of you.

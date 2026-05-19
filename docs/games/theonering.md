@@ -1,41 +1,67 @@
-# The One Ring (2nd Edition) — First Adventure Walkthrough
+# The One Ring — How to Play
 
-## System Overview
+Middle-earth, between The Hobbit and The Lord of the Rings. The Shadow is growing, but the Free Peoples still hold hope. You are a Hero — a dwarf, an elf, a hobbit, or a man — who ventures into the wild, resists the Shadow, and carries light into dark places. The AI is your Loremaster.
 
-The One Ring is a tabletop RPG set in Middle-earth after the events of The Hobbit, before The Lord of the Rings. You play Heroes from the Free Peoples — dwarves, hobbits, elves, rangers, and men — who venture into the wild, resist the growing Shadow, and carry hope against a darkening world. The AI acts as your Loremaster, narrating the lands of Wilderland and beyond, voicing companions and enemies, and adjudicating a dice system tuned to both epic adventure and intimate community.
+## The Character Sheet
 
-## Setting Up Your Campaign
+Create through **⚙ Manage → Characters → + New Character**. Inkandbone rolls Body, Heart, Wits (1d3+1 each), derives Endurance (20+Body) and Hope (8+Heart), sets Valour and Wisdom to 1, Fellowship to 18.
 
-1. **Create a campaign.** Use the `create_campaign` tool with ruleset `theonering`. Name it after your region or company — "The Wilderland Company", "Songs from the Misty Mountains", "East of the Anduin".
-2. **Create your character.** Use the `create_character` tool with just your character's name — ink & bone automatically rolls your three Attributes (Body, Heart, Wits, each 1d3+1) and derives Endurance maximum (20+Body) and Hope maximum (8+Heart). Tell the AI your Culture and Calling so it can shape your skills and place in Middle-earth. Adjust any values with `update_character`.
-3. **Start a session.** Name it after your first journey — "The Road to Dale", "Under the Eaves of Mirkwood", "A Gathering at the Inn of the Prancing Pony".
+**Body, Heart, Wits** are your three attributes. Body governs physical actions. Heart governs courage and social bonds. Wits governs perception and knowledge. Each is rated 2-8.
 
-## Suggested Opening Prompt
+**Endurance** is your physical stamina. Travel, combat, and hardship reduce it. At 0, you become Weary — all roll results of 1-3 count as 0.
 
-> "I'm playing Aldric, a Man of the Lake, Wanderer calling. Body 4, Heart 3, Wits 3. Endurance 24, Hope 12, Shadow 0. The Loremaster told me there are reports of Orc activity in the forest roads northeast of Esgaroth. I've agreed to escort a merchant's wagon to a Woodmen settlement three days into the forest. We set out at dawn."
+**Hope** is your spiritual strength. Spend a point of Hope to add a Hope die (d6) to any roll. If Hope hits 0 or your Shadow rises above your Hope, you risk Falling into Shadow.
 
-The AI will describe the journey's opening, call for Travel rolls, and introduce the first complication on the road.
+**Shadow** accumulates from dark deeds, cursed places, and the will of the Enemy. Enough Shadow triggers a Bout of Madness — a crisis that reveals your Miserable or Wretched condition.
 
-## Key Mechanics to Establish Early
+**Valour** advances through heroic actions. **Wisdom** advances through lore and insight. Both unlock new combat stances and cultural virtues.
 
-- **The Fellowship Phase:** Between adventures, Heroes return to their Patron and Fellowship Focus — a community that anchors them. This is where Advancement rolls happen, Shadow is cleansed, and bonds are renewed. Tell the AI when you want to enter Fellowship Phase.
-- **Journeys:** Traveling across Middle-earth uses the Journey rules. The company chooses roles (Guide, Scout, Lookout, Hunter) and makes rolls against hazards. Failure generates Fatigue (reducing Endurance) or Shadow.
-- **Action rolls:** Roll the Feat Die (a custom d12 with Sauron and Gandalf runes) + Skill Dice (d6s equal to your skill rank). The Feat Die result + any 6s from Skill Dice = successes vs. a Target Number. A Gandalf rune (12) = automatic great success. A Sauron rune (1) = automatic failure with Shadow consequences.
-- **Endurance and Hope:** Endurance is your physical resilience — wounds, fatigue, and hardship reduce it. Hope is your spiritual strength — spend it to add Hope dice (d6s) to any roll. If Hope falls to 0 or Shadow rises above Hope, you risk falling into Shadow (corruption).
-- **The Shadow:** Exposure to dark deeds, haunted places, and the will of the Enemy generates Shadow points. Enough Shadow causes a Bout of Madness — a crisis that reveals your Miserable or Wretched condition.
+## How Dice Work
 
-## A Classic First Session Arc
+Every roll uses the Feat Die (a d12 with special faces) plus Skill Dice (d6s equal to your skill rank).
 
-**Act 1 — The Road:** Begin the journey. Assign roles, make the first Travel roll. The Loremaster introduces a hazard — a washed-out bridge, a patrol of Orcs at a distance, a strange traveler asking questions.
+The Feat Die has two special results:
+- **Gandalf rune (natural 12):** Automatic great success. The best possible outcome.
+- **Sauron rune (natural 1):** Automatic failure with Shadow consequences.
 
-**Act 2 — The Encounter:** The hazard becomes a scene — a parley, an ambush, a discovery of something that shouldn't be in the forest. Use your skills: Awe for presence, Explore for navigation, Scan for danger, Battle for combat.
+Your Feat Die result + any 6s from Skill Dice = your total vs a Target Number.
 
-**Act 3 — The Arrival:** Reach the destination. Complete the task. Learn something that suggests the Shadow is closer than the merchant knew. End with a reason to return — a new Fellowship focus, an unresolved threat, a companion met.
+## Playing
 
-## Tips
+Open the browser. Get your character active. You're on a journey:
 
-- Track Shadow points from the first session — they accumulate slowly and matter later.
-- The Gandalf rune makes otherwise impossible tasks succeed. Don't burn Hope to guarantee easy rolls; save it for dramatic moments.
-- Fellowship Phase is not downtime — it's the thematic heart of the game. Lean into it.
-- Describe your character's reactions to the beauty and danger of Middle-earth. The AI will respond to tone.
-- Ask the AI about the cultures and geography of the region you're traveling through. Middle-earth is richly textured; use it.
+> *I adjust my pack and study the trail ahead. The forest presses close on both sides. "We should reach the old road by midday," I tell my companions. "Keep your eyes on the treeline."*
+
+The AI establishes the journey. You choose roles (Guide, Scout, Lookout, Hunter). The Loremaster describes the terrain and introduces hazards — a washed-out bridge, Orc scouts, a strange traveler.
+
+When you act, the AI calls for the appropriate skill roll. Travel rolls for navigation. Explore for finding the way. Battle for combat. Awe for presence. Riddle for uncovering secrets.
+
+## Journeys and Fellowships
+
+The One Ring has two phases of play:
+
+**The Adventure Phase** is the journey itself — traveling through Wilderland, facing dangers, discovering places, fighting the Shadow. This is where most of the action happens.
+
+**The Fellowship Phase** happens between adventures. Your character returns to a safe haven, a patron, or a Fellowship Focus — a person or place that anchors them. During Fellowship Phase, you:
+- Make Advancement rolls to improve skills
+- Heal Shadow by performing your Calling's recovery activity
+- Fulfill your Fellowship Focus (renewing bonds)
+
+The AI recognizes when you're between adventures and can run Fellowship Phase activities.
+
+## What a Session Looks Like
+
+**The Road:** Begin a journey. Assign roles. Make the first Travel roll. The Loremaster introduces a hazard.
+
+**The Encounter:** The hazard becomes a scene — a parley, an ambush, a discovery. Use your skills: Awe, Battle, Enhearten, or Riddle.
+
+**The Arrival:** Reach the destination. Complete your task. Learn something about the growing Shadow. End with a reason to return — a Fellowship Focus, an unresolved threat.
+
+## Key Rules
+
+- **The Gandalf rune** makes impossible tasks succeed. Save your Hope for when you don't roll it.
+- **The Sauron rune** causes automatic failure and Shadow. You cannot reroll it without Hope.
+- **Weary:** When Endurance hits 0, all 1-3 results on Skill Dice count as 0 until you rest.
+- **Shadow:** Track it from session 1. At 0 Hope or Shadow ≥ Hope, you risk Falling into Shadow.
+- **Fellowship Phase:** Not downtime — it's the thematic heart of the game. Advancement, healing, and community happen here.
+- **Hope spending:** Spend a point to add a d6 to any roll. You can spend multiple Hope on the same roll.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings } from './api'
@@ -24,6 +24,7 @@ import { GMToolsPanel } from './GMToolsPanel'
 import { XPSuggestionsPanel } from './XPSuggestionsPanel'
 import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
+import { CharacterSelector } from './CharacterSelector'
 import { setAmbientTrack } from './audio/ambient'
 import { wgTalentDescription } from './wgTalentData'
 import './App.css'
@@ -166,6 +167,7 @@ interface ProseJournalProps {
   searchQuery?: string
   activeMapId: number | null
   activeMapImagePath: string | null
+  charactersList: { id: number; name: string }[]
 }
 
 // Ensure "What do you do?" at the end of GM responses is always its own paragraph
@@ -180,8 +182,14 @@ function ProseJournal({
   searchQuery = '',
   activeMapId,
   activeMapImagePath,
+  charactersList = [],
 }: ProseJournalProps) {
   const [pinModal, setPinModal] = useState<{ content: string } | null>(null)
+  const charNameMap = useMemo(() => {
+    const map: Record<number, string> = {}
+    for (const c of charactersList) map[c.id] = c.name
+    return map
+  }, [charactersList])
 
   if (messages.length === 0) {
     return <p className="empty">The story has not yet begun.</p>
@@ -206,9 +214,12 @@ function ProseJournal({
       )
     } else {
       const isWhisper = m.whisper === true
+      const speakerName = m.character_id != null && charNameMap[m.character_id]
+        ? charNameMap[m.character_id]
+        : characterName
       nodes.push(
         <div key={m.id} className={`prose-player${isWhisper ? ' prose-player--whisper' : ''}`}>
-          <div className="prose-player-label">{characterName} speaks</div>
+          <div className="prose-player-label">{speakerName} speaks</div>
           <p className="prose-player-text">
             {searchQuery ? highlightText(m.content, searchQuery) : m.content}
           </p>
@@ -320,6 +331,9 @@ export interface SessionViewProps {
   handleSpendXP: (characterId: number, field: string, newValue: number) => Promise<void>
   lastEvent: unknown
   setCtx: React.Dispatch<React.SetStateAction<GameContext | null>>
+  charactersList: { id: number; name: string }[]
+  selectedCharacterId: number | null
+  onCharacterSelect: (id: number) => void
 }
 
 export function SessionView({
@@ -361,6 +375,9 @@ export function SessionView({
   handleSpendXP,
   lastEvent,
   setCtx,
+  charactersList,
+  selectedCharacterId,
+  onCharacterSelect,
 }: SessionViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
@@ -572,6 +589,11 @@ export function SessionView({
 
       {/* Left Sidebar */}
       <aside className="sidebar-left">
+        <CharacterSelector
+          characters={charactersList}
+          selectedId={selectedCharacterId}
+          onSelect={onCharacterSelect}
+        />
         <CharacterSheetPanel
           character={ctx?.character ?? null}
           rulesetId={ctx?.campaign?.ruleset_id ?? null}
@@ -639,6 +661,7 @@ export function SessionView({
             searchQuery={searchQuery}
             activeMapId={activeMapId}
             activeMapImagePath={activeMapImagePath}
+            charactersList={charactersList}
           />
           {streamingText && (
             <div className="prose-gm streaming">

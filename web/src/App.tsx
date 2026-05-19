@@ -8,6 +8,7 @@ import AudioControls, { getAudioMuted } from './AudioControls'
 import { playDiceRoll, playNotification, playCombatStart } from './audio/sounds'
 import { setAmbientTrack } from './audio/ambient'
 import { SessionView } from './SessionView'
+import { CharacterSelector } from './CharacterSelector'
 import './App.css'
 
 const WS_URL = `ws://${window.location.host}/ws`
@@ -82,6 +83,11 @@ export default function App() {
   const [showTalentsPanel, setShowTalentsPanel] = useState(false)
   const [aiTalentDescs, setAiTalentDescs] = useState<Record<string, string>>({})
   const [rulesetName, setRulesetName] = useState<string | null>(null)
+  const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(() => {
+    const stored = localStorage.getItem('active_player_character_id')
+    return stored ? Number(stored) : null
+  })
+  const [charactersList, setCharactersList] = useState<{ id: number; name: string }[]>([])
   const loadGenRef = useRef(0)
 
   // Derived: character's current XP (or Karma) balance, parsed from data_json.
@@ -92,6 +98,14 @@ export default function App() {
       return Number(cd.xp ?? cd.karma ?? 0) || 0
     } catch { return 0 }
   })()
+
+  useEffect(() => {
+    if (selectedCharacterId) {
+      localStorage.setItem('active_player_character_id', String(selectedCharacterId))
+    } else {
+      localStorage.removeItem('active_player_character_id')
+    }
+  }, [selectedCharacterId])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -126,6 +140,18 @@ export default function App() {
       .then((data: { ai_enabled: boolean }) => setAiEnabled(data.ai_enabled))
       .catch(() => setAiEnabled(false))
   }, [])
+
+  useEffect(() => {
+    if (!ctx?.campaign?.id) { setCharactersList([]); return }
+    fetch(`/api/campaigns/${ctx.campaign.id}/characters`)
+      .then(r => r.json())
+      .then(chars => {
+        if (Array.isArray(chars)) {
+          setCharactersList(chars.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })))
+        }
+      })
+      .catch(() => setCharactersList([]))
+  }, [ctx?.campaign?.id])
 
   const loadContext = useCallback(() => {
     const gen = ++loadGenRef.current
@@ -177,7 +203,7 @@ export default function App() {
     setInput('')
     setWhisperMode(false)
     try {
-      await sendMessage(ctx.session.id, text, isWhisper)
+      await sendMessage(ctx.session.id, text, isWhisper, selectedCharacterId)
       loadContext()
       if (!isWhisper) {
         setGmResponding(true)
@@ -194,7 +220,7 @@ export default function App() {
       setSending(false)
       setGmResponding(false)
     }
-  }, [input, ctx, sending, loadContext, whisperMode])
+  }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId])
 
   const handleGenerateMap = useCallback(async () => {
     if (!ctx?.campaign || !aiEnabled || generatingMap) return
@@ -265,6 +291,11 @@ export default function App() {
         <span className="h-char">{ctx.character?.name ?? 'No character'}</span>
         <span className="h-sep">›</span>
         <span className="h-session">{ctx.session?.title ?? 'No session'}</span>
+        <CharacterSelector
+          characters={charactersList}
+          selectedId={selectedCharacterId}
+          onSelect={setSelectedCharacterId}
+        />
         <button
           className="h-theme"
           onClick={() => setTheme(t => t === 'worn-grimoire' ? 'parchment' : 'worn-grimoire')}
@@ -397,6 +428,9 @@ export default function App() {
         handleSpendXP={handleSpendXP}
         lastEvent={lastEvent}
         setCtx={setCtx}
+        charactersList={charactersList}
+        selectedCharacterId={selectedCharacterId}
+        onCharacterSelect={setSelectedCharacterId}
       />
     </div>
   )

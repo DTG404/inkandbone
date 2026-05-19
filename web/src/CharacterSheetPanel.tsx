@@ -22,6 +22,7 @@ interface CharacterSheetPanelProps {
   rulesetId: number | null
   lastEvent: unknown
   afterTracks?: React.ReactNode
+  characterOverride?: Character | null
 }
 
 interface CharacterUpdatedPayload {
@@ -508,7 +509,8 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
   )
 }
 
-export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTracks }: CharacterSheetPanelProps) {
+export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTracks, characterOverride }: CharacterSheetPanelProps) {
+  const effectiveCharacter = characterOverride ?? character
   const [ruleset, setRuleset] = useState<Ruleset | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
   const [computedValues, setComputedValues] = useState<Record<string, number>>({})
@@ -523,26 +525,26 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
   }, [rulesetId])
 
   useEffect(() => {
-    if (!character) return
+    if (!effectiveCharacter) return
     try {
-      const data = JSON.parse(character.data_json || '{}') as Record<string, unknown>
+      const data = JSON.parse(effectiveCharacter.data_json || '{}') as Record<string, unknown>
       setFields(Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')])))
     } catch {
       setFields({})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [character?.id])
+  }, [effectiveCharacter?.id])
 
   useEffect(() => {
     if (!isCharacterUpdatedEvent(lastEvent)) return
-    if (lastEvent.payload.id !== character?.id) return
+    if (lastEvent.payload.id !== effectiveCharacter?.id) return
     if (lastEvent.payload.data_json) {
       try {
         const data = JSON.parse(lastEvent.payload.data_json) as Record<string, unknown>
         setFields(Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')])))
       } catch { /* ignore */ }
     }
-  }, [lastEvent, character?.id])
+  }, [lastEvent, effectiveCharacter?.id])
 
   useEffect(() => {
     const schema: SchemaField[] = (() => {
@@ -566,7 +568,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     setComputedValues(nextComputed)
   }, [fields, ruleset?.schema_json])
 
-  if (!character) return null
+  if (!effectiveCharacter) return null
 
   const schema: SchemaField[] = (() => {
     try {
@@ -597,19 +599,19 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         const v = next[f.key] ?? f.default ?? ''
         updates[f.key] = f.type === 'number' ? (v === '' ? null : Number(v)) : v
       })
-      patchCharacter(character!.id, updates).catch(console.error)
+      patchCharacter(effectiveCharacter!.id, updates).catch(console.error)
     }, 500)
   }
 
   function handlePortraitChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    uploadPortrait(character!.id, file).catch(console.error)
+    uploadPortrait(effectiveCharacter!.id, file).catch(console.error)
   }
 
   const isVtM = ruleset?.name?.toLowerCase() === 'vtm'
   if (isVtM) {
-    return <VtMCharacterSheet character={character} fields={fields} onChange={handleChange} afterTracks={afterTracks} />
+    return <VtMCharacterSheet character={effectiveCharacter} fields={fields} onChange={handleChange} afterTracks={afterTracks} />
   }
 
   const attributeFields = schema.filter((f) => f.category === 'attribute' && isFieldVisible(f))
@@ -624,14 +626,14 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     <>
       {/* Portrait */}
       <div className="portrait-wrap">
-        {character.portrait_path ? (
+        {effectiveCharacter.portrait_path ? (
           <img
             className="portrait-circle"
-            src={`/api/files/${character.portrait_path}`}
-            alt={character.name}
+            src={`/api/files/${effectiveCharacter.portrait_path}`}
+            alt={effectiveCharacter.name}
           />
         ) : (
-          <div className="portrait-placeholder-circle">{character.name[0] ?? '?'}</div>
+          <div className="portrait-placeholder-circle">{effectiveCharacter.name[0] ?? '?'}</div>
         )}
         <label className="portrait-change">
           <input

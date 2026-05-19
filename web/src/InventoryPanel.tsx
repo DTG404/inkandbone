@@ -7,6 +7,7 @@ interface InventoryPanelProps {
   characterCurrencyBalance: number
   characterCurrencyLabel: string
   lastEvent: unknown
+  characterIdOverride?: number | null
 }
 
 interface CurrencyToast {
@@ -21,7 +22,9 @@ export function InventoryPanel({
   characterCurrencyBalance,
   characterCurrencyLabel,
   lastEvent,
+  characterIdOverride,
 }: InventoryPanelProps) {
+  const effectiveCharacterId = characterIdOverride ?? characterId
   const [items, setItems] = useState<Item[]>([])
   const [addName, setAddName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -55,16 +58,16 @@ export function InventoryPanel({
   }, [characterCurrencyLabel, editingLabel])
 
   useEffect(() => {
-    if (characterId === null) return
-    fetchItems(characterId).then(setItems).catch(() => setItems([]))
-  }, [characterId])
+    if (effectiveCharacterId === null) return
+    fetchItems(effectiveCharacterId).then(setItems).catch(() => setItems([]))
+  }, [effectiveCharacterId])
 
   useEffect(() => {
     const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
     if (!ev) return
 
-    if (ev.type === 'item_updated' && characterId !== null) {
-      fetchItems(characterId).then(setItems).catch(() => {})
+    if (ev.type === 'item_updated' && effectiveCharacterId !== null) {
+      fetchItems(effectiveCharacterId).then(setItems).catch(() => {})
     }
 
     if (ev.type === 'character_updated') {
@@ -93,15 +96,15 @@ export function InventoryPanel({
         if (typeof p.currency_label === 'string') setLabel(p.currency_label as string)
       }
     }
-  }, [lastEvent, characterId, label])
+  }, [lastEvent, effectiveCharacterId, label])
 
   async function handleUndoToast() {
-    if (!toast || characterId === null) return
+    if (!toast || effectiveCharacterId === null) return
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(null)
     setBalance(toast.prevBalance)
     try {
-      await patchCurrency(characterId, { currency_balance: toast.prevBalance })
+      await patchCurrency(effectiveCharacterId, { currency_balance: toast.prevBalance })
     } catch (err) {
       console.error(err)
     }
@@ -109,7 +112,7 @@ export function InventoryPanel({
 
   async function handleBalanceSave() {
     const parsed = parseInt(balanceDraft, 10)
-    if (isNaN(parsed) || characterId === null) {
+    if (isNaN(parsed) || effectiveCharacterId === null) {
       setEditingBalance(false)
       return
     }
@@ -117,7 +120,7 @@ export function InventoryPanel({
     setBalance(clamped)
     setEditingBalance(false)
     try {
-      await patchCurrency(characterId, { currency_balance: clamped })
+      await patchCurrency(effectiveCharacterId, { currency_balance: clamped })
     } catch (err) {
       console.error(err)
     }
@@ -125,24 +128,24 @@ export function InventoryPanel({
 
   async function handleLabelSave() {
     const trimmed = labelDraft.trim()
-    if (!trimmed || characterId === null) {
+    if (!trimmed || effectiveCharacterId === null) {
       setEditingLabel(false)
       return
     }
     setLabel(trimmed)
     setEditingLabel(false)
     try {
-      await patchCurrency(characterId, { currency_label: trimmed })
+      await patchCurrency(effectiveCharacterId, { currency_label: trimmed })
     } catch (err) {
       console.error(err)
     }
   }
 
   async function handleAdd() {
-    if (!addName.trim() || characterId === null) return
+    if (!addName.trim() || effectiveCharacterId === null) return
     setSaving(true)
     try {
-      const item = await createItem(characterId, addName.trim(), '', 1)
+      const item = await createItem(effectiveCharacterId, addName.trim(), '', 1)
       setItems((prev) => [...prev, item])
       setAddName('')
     } catch (err) {
@@ -172,7 +175,7 @@ export function InventoryPanel({
     }
   }
 
-  if (characterId === null) return null
+  if (effectiveCharacterId === null) return null
 
   const sorted = [
     ...items.filter((i) => i.equipped),

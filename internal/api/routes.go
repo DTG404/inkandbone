@@ -717,7 +717,26 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 	}
 
 	worldCtx := s.buildWorldContext(r.Context(), id)
-	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + "\n\n[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
+
+	// Determine if multi-character session and get last speaker name
+	var lastSpeakerName string
+	if len(charNameMap) > 1 {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == "user" && !msgs[i].Whisper && msgs[i].CharacterID != nil {
+				if name, ok := charNameMap[*msgs[i].CharacterID]; ok {
+					lastSpeakerName = name
+					break
+				}
+			}
+		}
+	}
+	var reminder string
+	if lastSpeakerName != "" {
+		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", lastSpeakerName)
+	} else {
+		reminder = "[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
+	}
+	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + "\n\n" + reminder
 
 	response, err := gmResponder.Respond(r.Context(), systemPrompt, history, 2048)
 	if err != nil {
@@ -904,7 +923,25 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		worldCtx += "\n" + vtmCommandResult
 	}
 
-	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + "\n\n[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
+	// Determine if multi-character session and get last speaker name
+	var lastSpeakerName string
+	if len(charNameMap) > 1 {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == "user" && !msgs[i].Whisper && msgs[i].CharacterID != nil {
+				if name, ok := charNameMap[*msgs[i].CharacterID]; ok {
+					lastSpeakerName = name
+					break
+				}
+			}
+		}
+	}
+	var reminder string
+	if lastSpeakerName != "" {
+		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", lastSpeakerName)
+	} else {
+		reminder = "[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
+	}
+	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + "\n\n" + reminder
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

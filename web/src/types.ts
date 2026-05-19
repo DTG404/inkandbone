@@ -39,6 +39,7 @@ export interface Message {
   content: string
   created_at: string
   whisper?: boolean
+  character_id?: number | null
 }
 
 export interface SessionNPC {

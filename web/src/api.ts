@@ -167,9 +167,10 @@ export async function uploadPortrait(characterId: number, file: File): Promise<{
   return res.json()
 }
 
-export async function sendMessage(sessionId: number, content: string, whisper?: boolean): Promise<void> {
+export async function sendMessage(sessionId: number, content: string, whisper?: boolean, characterId?: number | null): Promise<void> {
   const body: Record<string, unknown> = { role: 'user', content }
   if (whisper) body['whisper'] = true
+  if (characterId != null) body['character_id'] = characterId
   const res = await fetch(`/api/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

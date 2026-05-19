@@ -682,12 +682,29 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	charNameMap := make(map[int64]string)
+	for _, m := range msgs {
+		if m.CharacterID != nil {
+			if _, ok := charNameMap[*m.CharacterID]; !ok {
+				if char, err := s.db.GetCharacter(*m.CharacterID); err == nil && char != nil {
+					charNameMap[*m.CharacterID] = char.Name
+				}
+			}
+		}
+	}
+
 	var history []ai.ChatMessage
 	for _, m := range msgs {
 		if m.Whisper {
 			continue
 		}
-		history = append(history, ai.ChatMessage{Role: m.Role, Content: m.Content})
+		content := m.Content
+		if m.Role == "user" && m.CharacterID != nil {
+			if name, ok := charNameMap[*m.CharacterID]; ok {
+				content = "[" + name + "] " + content
+			}
+		}
+		history = append(history, ai.ChatMessage{Role: m.Role, Content: content})
 	}
 	// Cap history to the last 30 messages to bound input token cost.
 	// The session summary in buildWorldContext covers long-term memory.
@@ -799,12 +816,29 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	charNameMap := make(map[int64]string)
+	for _, m := range msgs {
+		if m.CharacterID != nil {
+			if _, ok := charNameMap[*m.CharacterID]; !ok {
+				if char, err := s.db.GetCharacter(*m.CharacterID); err == nil && char != nil {
+					charNameMap[*m.CharacterID] = char.Name
+				}
+			}
+		}
+	}
+
 	var history []ai.ChatMessage
 	for _, m := range msgs {
 		if m.Whisper {
 			continue
 		}
-		history = append(history, ai.ChatMessage{Role: m.Role, Content: m.Content})
+		content := m.Content
+		if m.Role == "user" && m.CharacterID != nil {
+			if name, ok := charNameMap[*m.CharacterID]; ok {
+				content = "[" + name + "] " + content
+			}
+		}
+		history = append(history, ai.ChatMessage{Role: m.Role, Content: content})
 	}
 	// Cap history to the last 30 messages to bound input token cost.
 	// The session summary in buildWorldContext covers long-term memory.

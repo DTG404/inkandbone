@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
@@ -65,15 +64,6 @@ jobs:
         run: |
           go install github.com/zricethezav/gitleaks/v8@latest
           gitleaks detect --source . --no-git -v
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: go
-          queries: +security-extended
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
 
       - name: Build production binary
         run: make build

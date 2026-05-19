@@ -930,26 +930,23 @@ body {
   background: var(--gold);
 }
 
-/* Hide default scrollbar up/down buttons — they render as white arrows that clash with the theme */
-.story-scroll::-webkit-scrollbar-button,
-.sidebar-left::-webkit-scrollbar-button,
-.tab-content::-webkit-scrollbar-button,
-.map-scroll::-webkit-scrollbar-button {
-  display: none;
-  width: 0;
-  height: 0;
+/* Hide all scrollbar up/down buttons — browser-default white arrows clash with the dark theme */
+::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
-/* Hide number input spinners — browser-default white up/down arrows clash with the dark theme.
-   All number fields remain directly editable via typing/clicking. */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  appearance: none;
-  margin: 0;
+/* Hide number input spinners — browser-default white up/down arrows clash with the dark theme */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0 !important;
+  display: none !important;
 }
 input[type="number"] {
-  -moz-appearance: textfield;
+  -moz-appearance: textfield !important;
 }
 
 /* ── Shared utilities ───────────────────────────────────── */

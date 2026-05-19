@@ -930,6 +930,16 @@ body {
   background: var(--gold);
 }
 
+/* Hide default scrollbar up/down buttons — they render as white arrows that clash with the theme */
+.story-scroll::-webkit-scrollbar-button,
+.sidebar-left::-webkit-scrollbar-button,
+.tab-content::-webkit-scrollbar-button,
+.map-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* ── Shared utilities ───────────────────────────────────── */
 
 .empty { color: var(--text-dim); font-size: 12px; }

@@ -3207,3 +3207,22 @@ mark {
 .automation-toggle-slider.on::after {
   transform: translateX(16px);
 }
+
+/* ── Character Selector ──────────────────────────────────── */
+
+.character-selector {
+  margin-left: 1rem;
+  font-size: 0.85rem;
+  color: var(--gold, #c9a84c);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.character-selector select {
+  background: var(--bg-dark, #1a1a2e);
+  color: var(--text, #e0dcd0);
+  border: 1px solid var(--gold, #c9a84c);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+}

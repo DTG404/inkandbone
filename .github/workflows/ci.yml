@@ -63,7 +63,7 @@ jobs:
 
       - name: Secrets scan
         run: |
-          go install github.com/gitleaks/gitleaks/v8/cmd/gitleaks@latest
+          go install github.com/gitleaks/gitleaks/v8@latest
           gitleaks detect --source . --no-git -v
 
       - name: Initialize CodeQL

@@ -28,3 +28,4 @@ tmp/
 docs/superpowers/
 graphify-out/
 .playwright-mcp/
+node_modules/

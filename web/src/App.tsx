@@ -251,6 +251,10 @@ export default function App() {
 
   function handleExport() {
     if (!ctx) return
+    const charNameMap: Record<number, string> = {}
+    for (const c of charactersList) {
+      charNameMap[c.id] = c.name
+    }
     const sessionDate = ctx.session?.date
       ? new Date(ctx.session.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
       : ''
@@ -263,7 +267,10 @@ export default function App() {
       if (m.role === 'assistant') {
         lines.push(m.content)
       } else {
-        lines.push(`> **${ctx.character?.name ?? 'Player'}:** ${m.content}`)
+        const name = m.character_id != null && charNameMap[m.character_id]
+          ? charNameMap[m.character_id]
+          : (ctx?.character?.name ?? 'Player')
+        lines.push(`> **${name}:** ${m.content}`)
       }
       lines.push('')
     })

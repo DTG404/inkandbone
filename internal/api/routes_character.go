@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,7 +30,7 @@ func (s *Server) handleGetRuleset(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 	id, ok := parsePathID(r, "id")
 	if !ok {
-		http.Error(w, "invalid character id", http.StatusBadRequest)
+		respondError(w, "invalid character id", http.StatusBadRequest)
 		return
 	}
 	var body struct {
@@ -39,13 +38,13 @@ func (s *Server) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 		CurrencyBalance *int64  `json:"currency_balance"`
 		CurrencyLabel   *string `json:"currency_label"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(r, &body); err != nil {
+		respondError(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 	if body.DataJSON != nil {
 		if err := s.db.UpdateCharacterData(id, *body.DataJSON); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -55,13 +54,13 @@ func (s *Server) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 			balance = 0
 		}
 		if err := s.db.UpdateCharacterCurrencyBalance(id, balance); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 	if body.CurrencyLabel != nil {
 		if err := s.db.UpdateCharacterCurrencyLabel(id, *body.CurrencyLabel); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}

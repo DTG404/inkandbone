@@ -17,8 +17,9 @@ import {
   uploadRulebook,
   fetchCharacterOptions,
 } from './api'
+import { AutomationSettingsPanel } from './AutomationSettingsPanel'
 
-type Tab = 'campaigns' | 'characters' | 'sessions' | 'rulebooks'
+type Tab = 'campaigns' | 'characters' | 'sessions' | 'rulebooks' | 'automation'
 
 interface ManagePanelProps {
   activeCampaignId: number | null
@@ -299,7 +300,7 @@ export function ManagePanel({
         </div>
 
         <div className="manage-tabs">
-          {(['campaigns', 'characters', 'sessions', 'rulebooks'] as Tab[]).map(t => (
+          {(['campaigns', 'characters', 'sessions', 'rulebooks', 'automation'] as Tab[]).map(t => (
             <button
               key={t}
               className={`manage-tab${tab === t ? ' active' : ''}`}
@@ -640,6 +641,11 @@ export function ManagePanel({
                 </>
               )}
             </div>
+          )}
+
+          {/* ─── Automation Tab ─── */}
+          {tab === 'automation' && (
+            <AutomationSettingsPanel />
           )}
 
         </div>

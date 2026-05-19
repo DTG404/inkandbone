@@ -6,14 +6,15 @@ import (
 )
 
 type Session struct {
-	ID         int64  `json:"id"`
-	CampaignID int64  `json:"campaign_id"`
-	Title      string `json:"title"`
-	Date       string `json:"date"`
-	Summary    string `json:"summary"`
-	Notes      string `json:"notes"`
-	SceneTags  string `json:"scene_tags"`
-	CreatedAt  string `json:"created_at"`
+	ID          int64  `json:"id"`
+	CampaignID  int64  `json:"campaign_id"`
+	Title       string `json:"title"`
+	Date        string `json:"date"`
+	Summary     string `json:"summary"`
+	Notes       string `json:"notes"`
+	SceneTags   string `json:"scene_tags"`
+	AdventureID *int64 `json:"adventure_id"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func (d *DB) CreateSession(campaignID int64, title, date string) (int64, error) {
@@ -30,8 +31,8 @@ func (d *DB) CreateSession(campaignID int64, title, date string) (int64, error) 
 func (d *DB) GetSession(id int64) (*Session, error) {
 	s := &Session{}
 	err := d.db.QueryRow(
-		"SELECT id, campaign_id, title, date, summary, notes, scene_tags, created_at FROM sessions WHERE id = ?", id,
-	).Scan(&s.ID, &s.CampaignID, &s.Title, &s.Date, &s.Summary, &s.Notes, &s.SceneTags, &s.CreatedAt)
+		"SELECT id, campaign_id, title, date, summary, notes, scene_tags, adventure_id, created_at FROM sessions WHERE id = ?", id,
+	).Scan(&s.ID, &s.CampaignID, &s.Title, &s.Date, &s.Summary, &s.Notes, &s.SceneTags, &s.AdventureID, &s.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -70,7 +71,7 @@ func (d *DB) UpdateSessionNotes(id int64, notes string) error {
 
 func (d *DB) ListSessions(campaignID int64) ([]Session, error) {
 	rows, err := d.db.Query(
-		"SELECT id, campaign_id, title, date, summary, notes, scene_tags, created_at FROM sessions WHERE campaign_id = ? ORDER BY date DESC",
+		"SELECT id, campaign_id, title, date, summary, notes, scene_tags, adventure_id, created_at FROM sessions WHERE campaign_id = ? ORDER BY date DESC",
 		campaignID,
 	)
 	if err != nil {
@@ -80,7 +81,7 @@ func (d *DB) ListSessions(campaignID int64) ([]Session, error) {
 	var out []Session
 	for rows.Next() {
 		var s Session
-		if err := rows.Scan(&s.ID, &s.CampaignID, &s.Title, &s.Date, &s.Summary, &s.Notes, &s.SceneTags, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.CampaignID, &s.Title, &s.Date, &s.Summary, &s.Notes, &s.SceneTags, &s.AdventureID, &s.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, s)

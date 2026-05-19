@@ -12,6 +12,9 @@ interface SchemaField {
   max?: number
   options?: string[]
   default?: string
+  computed?: string
+  computed_display?: string
+  condition?: { field: string; equals: string }
 }
 
 interface CharacterSheetPanelProps {
@@ -39,6 +42,23 @@ function isCharacterUpdatedEvent(ev: unknown): ev is CharacterUpdatedEvent {
   const p = e['payload']
   if (typeof p !== 'object' || p === null) return false
   return typeof (p as Record<string, unknown>)['id'] === 'number'
+}
+
+function evaluateComputed(formula: string, data: Record<string, string>): number {
+  let expr = formula
+  for (const [key, val] of Object.entries(data)) {
+    const numVal = typeof val === 'number' ? val : parseFloat(String(val))
+    if (!isNaN(numVal)) {
+      expr = expr.replace(new RegExp(`\\b${key}\\b`, 'g'), `(${numVal})`)
+    }
+  }
+  expr = expr.replace(/floor\(/g, 'Math.floor(')
+  try {
+    const result = new Function(`return (${expr})`)()
+    return typeof result === 'number' && !isNaN(result) ? Math.round(result * 100) / 100 : 0
+  } catch {
+    return 0
+  }
 }
 
 
@@ -491,6 +511,7 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
 export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTracks }: CharacterSheetPanelProps) {
   const [ruleset, setRuleset] = useState<Ruleset | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
+  const [computedValues, setComputedValues] = useState<Record<string, number>>({})
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -523,6 +544,28 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     }
   }, [lastEvent, character?.id])
 
+  useEffect(() => {
+    const schema: SchemaField[] = (() => {
+      try {
+        const parsed = JSON.parse(ruleset?.schema_json ?? '[]') as unknown
+        if (!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null) {
+          return []
+        }
+        if (!Array.isArray(parsed)) return []
+        return parsed as SchemaField[]
+      } catch {
+        return []
+      }
+    })()
+    const nextComputed: Record<string, number> = {}
+    for (const f of schema) {
+      if (f.computed) {
+        nextComputed[f.key] = evaluateComputed(f.computed, fields)
+      }
+    }
+    setComputedValues(nextComputed)
+  }, [fields, ruleset?.schema_json])
+
   if (!character) return null
 
   const schema: SchemaField[] = (() => {
@@ -538,6 +581,11 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     }
   })()
 
+  function isFieldVisible(f: SchemaField): boolean {
+    if (!f.condition) return true
+    return fields[f.condition.field] === f.condition.equals
+  }
+
   function handleChange(key: string, value: string) {
     const next = { ...fields, [key]: value }
     setFields(next)
@@ -545,6 +593,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     debounceRef.current = setTimeout(() => {
       const updates: Record<string, unknown> = {}
       schema.forEach((f) => {
+        if (f.computed) return
         const v = next[f.key] ?? f.default ?? ''
         updates[f.key] = f.type === 'number' ? (v === '' ? null : Number(v)) : v
       })
@@ -563,9 +612,13 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     return <VtMCharacterSheet character={character} fields={fields} onChange={handleChange} afterTracks={afterTracks} />
   }
 
-  const attributeFields = schema.filter((f) => f.category === 'attribute')
-  const trackFields     = schema.filter((f) => f.category === 'track')
-  const otherFields     = schema.filter((f) => f.category !== 'attribute' && f.category !== 'track')
+  const attributeFields = schema.filter((f) => f.category === 'attribute' && isFieldVisible(f))
+  const trackFields     = schema.filter((f) => f.category === 'track' && isFieldVisible(f))
+  const otherFields     = schema.filter((f) => f.category !== 'attribute' && f.category !== 'track' && isFieldVisible(f))
+  const computedFields  = otherFields.filter((f) => f.computed)
+  const editableFields  = otherFields.filter((f) => !f.computed)
+  const backstoryField  = editableFields.find((f) => f.key === 'backstory' || f.key === 'biography')
+  const nonBackstoryFields = editableFields.filter((f) => f.key !== 'backstory' && f.key !== 'biography')
 
   return (
     <>
@@ -618,11 +671,23 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         </div>
       )}
 
+      {/* Computed fields */}
+      {computedFields.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.5rem' }}>
+          {computedFields.map((field) => (
+            <div key={field.key} className="computed-field">
+              <span className="computed-field-label">{field.computed_display || field.label}</span>
+              <span className="computed-field-value">{computedValues[field.key] ?? 0}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Other fields — number fields in 2-col grid, text/textarea full width */}
       {(() => {
-        const numFields = otherFields.filter((f) => f.type === 'number' && !f.options)
-        const selectFields = otherFields.filter((f) => f.options && f.options.length > 0)
-        const wideFields = otherFields.filter((f) => f.type !== 'number' && (!f.options || f.options.length === 0))
+        const numFields = nonBackstoryFields.filter((f) => f.type === 'number' && !f.options)
+        const selectFields = nonBackstoryFields.filter((f) => f.options && f.options.length > 0)
+        const wideFields = nonBackstoryFields.filter((f) => f.type !== 'number' && (!f.options || f.options.length === 0))
         const labelStyle: React.CSSProperties = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--gold-dim)', fontFamily: 'var(--serif)', display: 'flex', flexDirection: 'column', gap: '2px' }
         const inputStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '12px', padding: '0.15rem 0.3rem', width: '100%' }
         return (
@@ -681,6 +746,19 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
           </>
         )
       })()}
+
+      {/* Backstory / Biography */}
+      {backstoryField && (
+        <div className="backstory-section">
+          <div className="backstory-header">{backstoryField.label}</div>
+          <textarea
+            aria-label={backstoryField.label}
+            value={fields[backstoryField.key] ?? ''}
+            onChange={(e) => handleChange(backstoryField.key, e.target.value)}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '12px', padding: '0.15rem 0.3rem', width: '100%', fontFamily: 'inherit', resize: 'vertical', minHeight: '6rem' }}
+          />
+        </div>
+      )}
     </>
   )
 }

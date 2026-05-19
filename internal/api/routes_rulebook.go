@@ -49,7 +49,6 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasPrefix(ct, "text/plain"):
 		source = r.URL.Query().Get("source")
-		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)

@@ -6,7 +6,7 @@ import type { GameContext } from './types'
 const mockCtx: GameContext = {
   campaign: { id: 1, ruleset_id: 1, name: 'Greyhawk', description: '', active: true, chronicle_night: 1, chronicle_night_start_dow: -1, created_at: '' },
   character: { id: 1, campaign_id: 1, name: 'Zara', data_json: '{}', portrait_path: '', created_at: '', currency_balance: 0, currency_label: 'Gold' },
-  session: { id: 1, campaign_id: 1, title: 'Session 1', date: '2026-04-03', summary: '', notes: '', scene_tags: '', created_at: '' },
+  session: { id: 1, campaign_id: 1, title: 'Session 1', date: '2026-04-03', summary: '', notes: '', scene_tags: '', adventure_id: null, created_at: '' },
   recent_messages: [
     { id: 1, session_id: 1, role: 'assistant', content: 'You enter the tavern.', created_at: '' },
     { id: 2, session_id: 1, role: 'user', content: 'I look for a table.', created_at: '' },

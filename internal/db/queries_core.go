@@ -83,6 +83,8 @@ type Campaign struct {
 	Active                bool   `json:"active"`
 	ChronicleNight        int    `json:"chronicle_night"`
 	ChronicleNightStartDOW int   `json:"chronicle_night_start_dow"`
+	GmNotes               string `json:"gm_notes"`
+	SystemPromptOverride  string `json:"system_prompt_override"`
 	CreatedAt             string `json:"created_at"`
 }
 
@@ -101,8 +103,8 @@ func (d *DB) GetCampaign(id int64) (*Campaign, error) {
 	c := &Campaign{}
 	var active int
 	err := d.db.QueryRow(
-		"SELECT id, ruleset_id, name, description, active, chronicle_night, chronicle_night_start_dow, created_at FROM campaigns WHERE id = ?", id,
-	).Scan(&c.ID, &c.RulesetID, &c.Name, &c.Description, &active, &c.ChronicleNight, &c.ChronicleNightStartDOW, &c.CreatedAt)
+		"SELECT id, ruleset_id, name, description, active, chronicle_night, chronicle_night_start_dow, gm_notes, system_prompt_override, created_at FROM campaigns WHERE id = ?", id,
+	).Scan(&c.ID, &c.RulesetID, &c.Name, &c.Description, &active, &c.ChronicleNight, &c.ChronicleNightStartDOW, &c.GmNotes, &c.SystemPromptOverride, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -115,17 +117,17 @@ func (d *DB) GetCampaign(id int64) (*Campaign, error) {
 
 func (d *DB) ListCampaigns() ([]Campaign, error) {
 	rows, err := d.db.Query(
-		"SELECT id, ruleset_id, name, description, active, chronicle_night, chronicle_night_start_dow, created_at FROM campaigns ORDER BY created_at DESC",
+		"SELECT id, ruleset_id, name, description, active, chronicle_night, chronicle_night_start_dow, gm_notes, system_prompt_override, created_at FROM campaigns ORDER BY created_at DESC",
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer 	rows.Close()
 	var out []Campaign
 	for rows.Next() {
 		var c Campaign
 		var active int
-		if err := rows.Scan(&c.ID, &c.RulesetID, &c.Name, &c.Description, &active, &c.ChronicleNight, &c.ChronicleNightStartDOW, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.RulesetID, &c.Name, &c.Description, &active, &c.ChronicleNight, &c.ChronicleNightStartDOW, &c.GmNotes, &c.SystemPromptOverride, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		c.Active = active == 1
@@ -147,6 +149,44 @@ func (d *DB) UpdateCampaignChronicleNight(id int64, night int) error {
 		return err
 	}
 	if n == 0 {
+		return fmt.Errorf("campaign %d not found", id)
+	}
+	return nil
+}
+
+// UpdateCampaignConfig updates the configurable text fields of a campaign.
+// Only non-nil values are applied. Returns an error if the campaign does not exist.
+func (d *DB) UpdateCampaignConfig(id int64, description, gmNotes, systemPromptOverride *string) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if description != nil {
+		if _, err := tx.Exec("UPDATE campaigns SET description = ? WHERE id = ?", *description, id); err != nil {
+			return err
+		}
+	}
+	if gmNotes != nil {
+		if _, err := tx.Exec("UPDATE campaigns SET gm_notes = ? WHERE id = ?", *gmNotes, id); err != nil {
+			return err
+		}
+	}
+	if systemPromptOverride != nil {
+		if _, err := tx.Exec("UPDATE campaigns SET system_prompt_override = ? WHERE id = ?", *systemPromptOverride, id); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Verify the campaign exists
+	var count int
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM campaigns WHERE id = ?", id).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
 		return fmt.Errorf("campaign %d not found", id)
 	}
 	return nil

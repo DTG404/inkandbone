@@ -21,6 +21,7 @@ type Server struct {
 	aiClient         ai.Completer // nil when ANTHROPIC_API_KEY is unset
 	xpSuggestCounts  sync.Map     // sessionID int64 → int
 	settingCache     sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
+	autoFailCount    int32        // incremented on automation failure, reset on success; circuit breaker at 3
 }
 
 // NewServer creates the HTTP server. dataDir is the base path for uploaded files
@@ -103,14 +104,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/campaigns/{id}", s.handlePatchCampaign)
 	s.mux.HandleFunc("PATCH /api/sessions/{id}", s.handlePatchSession)
 	s.mux.HandleFunc("POST /api/sessions/{id}/recap", s.handleGenerateRecap)
-	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", s.handleDraftWorldNote)
+	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", withMaxBody(4096, s.handleDraftWorldNote))
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}", s.handlePatchWorldNote)
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}/personality", s.handlePatchWorldNotePersonality)
-	// Plan 9
 	s.mux.HandleFunc("GET /api/rulesets/{id}", s.handleGetRuleset)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/character-options", s.handleGetCharacterOptions)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/rulebook", s.handleListRulebookSources)
-	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", s.handleIngestRulebook)
+	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", withMaxBody(50<<20, s.handleIngestRulebook))
 	s.mux.HandleFunc("PATCH /api/characters/{id}", s.handlePatchCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/portrait", s.handleUploadPortrait)
 	// Feature 1: Streaming GM
@@ -153,6 +153,38 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/campaigns/{id}/relationships", s.handleListRelationships)
 	s.mux.HandleFunc("PATCH /api/relationships/{id}", s.handleUpdateRelationship)
 	s.mux.HandleFunc("DELETE /api/relationships/{id}", s.handleDeleteRelationship)
+	// Factions
+	s.mux.HandleFunc("POST /api/campaigns/{id}/factions", s.handleCreateFaction)
+	s.mux.HandleFunc("GET /api/campaigns/{id}/factions", s.handleListFactions)
+	s.mux.HandleFunc("GET /api/factions/{id}", s.handleGetFaction)
+	s.mux.HandleFunc("PATCH /api/factions/{id}", s.handleUpdateFaction)
+	s.mux.HandleFunc("DELETE /api/factions/{id}", s.handleDeleteFaction)
+	// Adventures
+	s.mux.HandleFunc("POST /api/campaigns/{id}/adventures", s.handleCreateAdventure)
+	s.mux.HandleFunc("GET /api/campaigns/{id}/adventures", s.handleListAdventures)
+	s.mux.HandleFunc("GET /api/adventures/{id}", s.handleGetAdventure)
+	s.mux.HandleFunc("PATCH /api/adventures/{id}", s.handleUpdateAdventure)
+	s.mux.HandleFunc("DELETE /api/adventures/{id}", s.handleDeleteAdventure)
+	s.mux.HandleFunc("PATCH /api/sessions/{id}/adventure", s.handleSetSessionAdventure)
+	// Secrets
+	s.mux.HandleFunc("POST /api/campaigns/{id}/secrets", s.handleCreateSecret)
+	s.mux.HandleFunc("GET /api/campaigns/{id}/secrets", s.handleListSecrets)
+	s.mux.HandleFunc("GET /api/secrets/{id}", s.handleGetSecret)
+	s.mux.HandleFunc("PATCH /api/secrets/{id}/reveal", s.handleRevealSecret)
+	s.mux.HandleFunc("PATCH /api/secrets/{id}", s.handleUpdateSecret)
+	s.mux.HandleFunc("DELETE /api/secrets/{id}", s.handleDeleteSecret)
+	// Calendar
+	s.mux.HandleFunc("GET /api/campaigns/{id}/calendar", s.handleGetCalendar)
+	s.mux.HandleFunc("PATCH /api/campaigns/{id}/calendar", s.handlePatchCalendar)
+	s.mux.HandleFunc("POST /api/campaigns/{id}/calendar-events", s.handleCreateCalendarEvent)
+	s.mux.HandleFunc("GET /api/campaigns/{id}/calendar-events", s.handleListCalendarEvents)
+	s.mux.HandleFunc("DELETE /api/calendar-events/{id}", s.handleDeleteCalendarEvent)
+	// NPC Stat Blocks
+	s.mux.HandleFunc("POST /api/campaigns/{id}/npc-stats", s.handleCreateNpcStat)
+	s.mux.HandleFunc("GET /api/campaigns/{id}/npc-stats", s.handleListNpcStats)
+	s.mux.HandleFunc("GET /api/npc-stats/{id}", s.handleGetNpcStat)
+	s.mux.HandleFunc("PATCH /api/npc-stats/{id}", s.handleUpdateNpcStat)
+	s.mux.HandleFunc("DELETE /api/npc-stats/{id}", s.handleDeleteNpcStat)
 	// Phase C: GM tools
 	s.mux.HandleFunc("POST /api/sessions/{id}/improvise", s.handleImprovise)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/pre-session-brief", s.handlePreSessionBrief)
@@ -168,10 +200,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/campaigns/{id}/sessions", s.handleCreateSession)
 	s.mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
 	s.mux.HandleFunc("PATCH /api/settings", s.handlePatchSettings)
+	// Automation settings
+	s.mux.HandleFunc("GET /api/settings/automations", s.handleListAutomationSettings)
+	s.mux.HandleFunc("PATCH /api/settings/automations", s.handlePatchAutomationSetting)
 	// XP advancement
 	s.mux.HandleFunc("POST /api/characters/{id}/advance", s.handleAdvanceCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/suggest-advances", s.handleSuggestAdvances)
 	s.mux.HandleFunc("GET /api/talent-description", s.handleTalentDescription)
+	// Campaign config (GM Screen)
+	s.mux.HandleFunc("GET /api/campaigns/{id}/config", s.handleGetCampaignConfig)
+	s.mux.HandleFunc("PATCH /api/campaigns/{id}/config", s.handlePatchCampaignConfig)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

@@ -940,13 +940,16 @@ body {
   height: 0;
 }
 
-/* Number input spinners — restyle browser-default white up/down arrows to match the dark theme */
-input[type="number"]::-webkit-inner-spin-button {
-  opacity: 0.6;
-  filter: invert(0.85) sepia(0.3) hue-rotate(350deg) brightness(0.9);
+/* Hide number input spinners — browser-default white up/down arrows clash with the dark theme.
+   All number fields remain directly editable via typing/clicking. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
-input[type="number"]::-webkit-inner-spin-button:hover {
-  opacity: 1;
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 /* ── Shared utilities ───────────────────────────────────── */

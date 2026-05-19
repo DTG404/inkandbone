@@ -1,9 +1,7 @@
 const YT_BASE = 'https://www.youtube.com/embed/?list=search&q=';
 
-let currentIframeId: string | null = null;
 let currentTag: string | null = null;
 let masterVolume = 1.0;
-let muted = false;
 
 export function setAmbientVolume(volume: number): void {
   masterVolume = Math.max(0, Math.min(1, volume));
@@ -19,7 +17,6 @@ export function setAmbientVolume(volume: number): void {
 }
 
 export function setAmbientMuted(isMuted: boolean): void {
-  muted = isMuted;
   const iframe = document.getElementById('yt-ambient') as HTMLIFrameElement | null;
   if (!iframe?.contentWindow) return;
   try {

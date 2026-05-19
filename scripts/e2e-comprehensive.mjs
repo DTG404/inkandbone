@@ -186,7 +186,7 @@ async function main() {
   await assert(await page.getByText('Test Hero').count() > 0, '2.2 Header shows character name');
   await assert(await page.getByText('E2E Test Session').count() > 0, '2.3 Header shows session name');
   await assert(await page.locator('button[title="Your actions"]').isVisible().catch(() => false), '2.4 Actions button');
-  await assert(await page.locator('button[title*="Talents"]').isVisible().catch(() => false), '2.5 Talents button');
+  await assert(await page.locator('button:has-text("Talents")').isVisible().catch(() => false), '2.5 Talents button');
   await assert(await page.locator('.h-export').isVisible().catch(() => false), '2.6 Export button');
   await assert(await page.getByTitle('GM Screen — campaign config, notes, and tools').isVisible().catch(() => false), '2.7 GM Screen button');
   await assert(await page.getByTitle('Manage campaigns, characters, sessions').isVisible().catch(() => false), '2.8 Manage button');

@@ -41,7 +41,7 @@ export function OraclePanel({ sessionId }: OraclePanelProps) {
           <option value="theme">Theme</option>
         </select>
         <input
-          type="number"
+          type="text" inputMode="numeric" pattern="[0-9]*"
           min={1}
           max={50}
           value={roll}

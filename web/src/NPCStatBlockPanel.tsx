@@ -130,7 +130,7 @@ export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
           </div>
           <div className="npc-stats-form-row">
             <label>AC:
-              <input type="number" min={0} max={50} value={armorClass ?? ''} placeholder="—"
+              <input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={50} value={armorClass ?? ''} placeholder="—"
                 onChange={e => setArmorClass(e.target.value ? Number(e.target.value) : null)} />
             </label>
             <label>Init: {initiativeMod}

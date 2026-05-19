@@ -217,7 +217,7 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
           />
           <input
             className="milestone-xp-input"
-            type="number"
+            type="text" inputMode="numeric" pattern="[0-9]*"
             value={milestoneXP}
             onChange={(e) => setMilestoneXP(e.target.value)}
             placeholder="XP"

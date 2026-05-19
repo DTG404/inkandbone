@@ -68,7 +68,7 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
       ))}
       <div className="xp-log-add">
         <input className="xp-log-input" placeholder="Note…" value={note} onChange={e => setNote(e.target.value)} />
-        <input className="xp-log-amount-input" placeholder="XP" type="number" value={amount} onChange={e => setAmount(e.target.value)} />
+        <input className="xp-log-amount-input" placeholder="XP" type="text" inputMode="numeric" pattern="[0-9]*" value={amount} onChange={e => setAmount(e.target.value)} />
         <button className="xp-log-btn" onClick={handleAdd} disabled={adding || !note.trim()}>+</button>
       </div>
     </div>

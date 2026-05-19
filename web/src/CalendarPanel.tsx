@@ -124,15 +124,15 @@ export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPane
         <form className="calendar-event-form" onSubmit={handleCreateEvent}>
           <div className="calendar-form-row">
             <label>Year</label>
-            <input type="number" value={formYear} onChange={e => setFormYear(Number(e.target.value))} min={1} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={formYear} onChange={e => setFormYear(Number(e.target.value))} min={1} />
           </div>
           <div className="calendar-form-row">
             <label>Month</label>
-            <input type="number" value={formMonth} onChange={e => setFormMonth(Number(e.target.value))} min={1} max={12} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={formMonth} onChange={e => setFormMonth(Number(e.target.value))} min={1} max={12} />
           </div>
           <div className="calendar-form-row">
             <label>Day</label>
-            <input type="number" value={formDay} onChange={e => setFormDay(Number(e.target.value))} min={1} max={30} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={formDay} onChange={e => setFormDay(Number(e.target.value))} min={1} max={30} />
           </div>
           <div className="calendar-form-row">
             <label>Type</label>

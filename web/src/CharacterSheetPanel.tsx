@@ -243,23 +243,23 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px', marginBottom: '8px' }}>
         <label style={labelStyle}>
           humanity
-          <input type="number" value={fields['humanity'] ?? ''} onChange={(e) => onChange('humanity', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={fields['humanity'] ?? ''} onChange={(e) => onChange('humanity', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
         </label>
         {isVampire && (
           <label style={labelStyle}>
             blood potency
-            <input type="number" value={fields['blood_potency'] ?? ''} onChange={(e) => onChange('blood_potency', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={fields['blood_potency'] ?? ''} onChange={(e) => onChange('blood_potency', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
           </label>
         )}
         {isVampire && (
           <label style={labelStyle}>
             bane severity
-            <input type="number" value={fields['bane_severity'] ?? ''} onChange={(e) => onChange('bane_severity', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" value={fields['bane_severity'] ?? ''} onChange={(e) => onChange('bane_severity', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
           </label>
         )}
         <label style={labelStyle}>
           stains
-          <input type="number" value={fields['stains'] ?? ''} onChange={(e) => onChange('stains', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
+          <input type="text" inputMode="numeric" pattern="[0-9]*" value={fields['stains'] ?? ''} onChange={(e) => onChange('stains', e.target.value)} style={{ ...inputStyle, marginTop: '2px' }} />
         </label>
       </div>
 
@@ -268,7 +268,7 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
         <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
           XP
           <input
-            type="number"
+            type="text" inputMode="numeric" pattern="[0-9]*"
             min={0}
             value={fields['xp'] ?? '0'}
             onChange={(e) => onChange('xp', e.target.value)}
@@ -698,7 +698,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
                   <label key={field.key} style={labelStyle}>
                     {field.label}
                     <input
-                      type="number"
+                      type="text" inputMode="numeric" pattern="[0-9]*"
                       min={field.min}
                       max={field.max}
                       value={fields[field.key] ?? ''}

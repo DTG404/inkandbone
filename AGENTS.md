@@ -1,6 +1,6 @@
 # ink & bone
 
-A private, local AI Game Master for 13 tabletop RPG systems. Single-binary Go server (HTTP, WebSocket, SQLite) with embedded React/TypeScript frontend. Streams GM responses via SSE. Automation goroutines handle NPC extraction, map generation, stat updates, recap regeneration, objective detection, and item tracking.
+A private, local AI Game Master for 14 tabletop RPG systems. Single-binary Go server (HTTP, WebSocket, SQLite) with embedded React/TypeScript frontend. Streams GM responses via SSE. Automation goroutines handle NPC extraction, map generation, stat updates, recap regeneration, objective detection, and item tracking. Schema-driven character sheets with computed fields and conditional visibility.
 
 ## Tech Stack
 
@@ -27,12 +27,13 @@ A private, local AI Game Master for 13 tabletop RPG systems. Single-binary Go se
 ```
 cmd/ttrpg/            - Binary entrypoint
 internal/
-  api/                - HTTP handlers, WebSocket hub, event bus, automation goroutines
-  db/                 - SQLite layer, migrations
+  api/                - HTTP handlers (decomposed: routes, automations, vtm, factions, etc.), WebSocket hub, event bus, validation middleware
+  db/                 - SQLite layer, 46 migrations
   ai/                 - AI client implementations (DeepSeek, Anthropic Claude, Ollama, Hybrid, Dual), system prompt injection, SSE streaming
   mcp/                - MCP server for AI coding assistant integration (optional)
-  utils/              - Dice roller, validation, rulebook parsing
-web/                  - React frontend (src/components, src/pages, src/hooks)
+  ruleset/            - Ruleset-specific logic (advancement, random stats, character options, VtM, W&G)
+  dice/               - Dice roller, expression parsing
+web/                  - React frontend (SessionView, panels, hooks)
 Makefile              - build, install, dev, test, clean
 ```
 
@@ -55,10 +56,10 @@ Wrapper at `~/bin/ttrpg` pulls `DEEPSEEK_API_KEY` from pass store and launches t
 
 ## Key Database Tables
 
-- `campaigns` (ruleset reference, `chronicle_night` INTEGER DEFAULT 1 for VtM night tracking)
-- `rulesets` (name, schema as JSON, `gm_context` TEXT per-system narrative guidance — 13 rulesets)
+- `campaigns` (ruleset reference, `chronicle_night` INTEGER DEFAULT 1 for VtM night tracking; `gm_notes`, `system_prompt_override` for GM screen; `in_game_*` for calendar)
+- `rulesets` (name, schema as JSON, `gm_context` TEXT per-system narrative guidance — 14 rulesets)
 - `characters` (stats as JSON, portrait path, `currency_balance`, `currency_label`)
-- `sessions` (title, date, summary, `tension_level` 1-10, `masquerade_integrity`)
+- `sessions` (title, date, summary, `tension_level` 1-10, `masquerade_integrity`, `adventure_id`)
 - `messages` (full conversation history)
 - `session_npcs` (named NPCs per session)
 - `world_notes` (tagged lore; `personality_json` for NPC traits)
@@ -71,18 +72,23 @@ Wrapper at `~/bin/ttrpg` pulls `DEEPSEEK_API_KEY` from pass store and launches t
 - `oracle_tables` (action/theme + VtM clan compulsion tables)
 - `relationships` (from/to names, type, description)
 - `scene_tags` (session scene tags: tavern, dungeon, forest, etc.)
+- `factions` (campaign-level factions with influence, type, resources, color)
+- `adventures` (campaign arcs/chapters; sessions linked via `adventure_id`)
+- `npc_stats` (reusable NPC stat blocks: HP, AC, initiative, skills, abilities, loot)
+- `secrets` (GM secrets/handouts with hidden/revealed state, linked to sessions)
+- `calendar_events` (in-game calendar: year/month/day, type, linked to sessions)
 
 ## Routes
 
-**Read:** campaigns, characters, sessions, messages, timeline, world-notes, dice-rolls, maps, map-pins, NPCs, objectives, items, tension, relationships
-**Write:** messages, GM-stream, dice-rolls, world-notes, maps, objectives, items, improvise, pre-session-brief, detect-threads, campaign-ask, oracle-roll, relationships
-**Patches:** campaign, session, character, world-note, objective, item, combatant, tension, relationship, personality, masquerade-integrity
-**Delete:** relationships
+**Read:** campaigns, characters, sessions, messages, timeline, world-notes, dice-rolls, maps, map-pins, NPCs, objectives, items, tension, relationships, factions, adventures, npc-stats, secrets, calendar, calendar-events, settings/automations, campaign-config
+**Write:** messages, GM-stream, dice-rolls, world-notes, maps, objectives, items, improvise, pre-session-brief, detect-threads, campaign-ask, oracle-roll, relationships, factions, adventures, npc-stats, secrets, calendar-events, settings/automations
+**Patches:** campaign, session, character, world-note, objective, item, combatant, tension, relationship, personality, masquerade-integrity, campaign-config, faction, adventure, secret, npc-stat, calendar, session/adventure
+**Delete:** relationships, factions, adventures, npc-stats, secrets, calendar-events
 **WebSocket:** `/ws` — live dashboard updates
 
 ## Automation Goroutines
 
-All fire after every GM response via `handleGMRespondStream`:
+All fire after every GM response via `handleGMRespondStream`. Each can be individually toggled on/off via `PATCH /api/settings/automations` or the Automation tab in the Manage panel. AI-powered automations use retry logic (1 retry with backoff) and a circuit breaker (skips after 3 consecutive failures).
 
 1. **extractNPCs** — AI extracts NPC names, adds/removes from roster
 2. **autoGenerateMap** — Detect new location names, generate SVG
@@ -97,6 +103,21 @@ All fire after every GM response via `handleGMRespondStream`:
 11. **autoUpdateMasquerade** — VtM-only: Masquerade breach scanning
 12. **autoUpdateChronicleNight** — VtM-only: night counter advancement
 13. **autoSuggestXPSpend** — XP advancement suggestions
+
+## E2E Testing
+
+A comprehensive end-to-end test suite lives at `scripts/e2e-comprehensive.mjs`. It tests every feature through both browser (Playwright) and API calls — 187 assertions covering all UI panels, CRUD endpoints, and edge cases.
+
+```bash
+# Start server with a fresh DB
+ttrpg -db /tmp/e2e-test.db
+
+# Run tests (in another terminal)
+node scripts/e2e-comprehensive.mjs
+# Expected: 187 passed, 0 failed
+```
+
+Requires: `npm install playwright` + `npx playwright install chromium`
 
 ## Build & Deploy
 
@@ -147,6 +168,9 @@ Every ruleset has a `schema_json` column that defines its character sheet fields
 | `max` | number (optional) | Maximum value (number fields + track bar segments + attribute pip count) |
 | `options` | string[] (optional) | Renders as `<select>` dropdown instead of text input |
 | `default` | string (optional) | Starting value; used by `RollStatsFromSchema` fallback |
+| `computed` | string (optional) | Formula expression for derived fields (e.g. `floor((level-1)/4)+2`); field becomes read-only |
+| `computed_display` | string (optional) | Display label for a computed field |
+| `condition` | object (optional) | Visibility condition, e.g. `{"field":"character_type","equals":"vampire"}` |
 
 ### Category Rendering
 
@@ -196,7 +220,7 @@ If you need complex stat logic (e.g. D&D's 4d6-drop-lowest, VtM's attribute pool
 - **WebSocket Hub:** Event bus broadcasts state changes in real time
 - **Rulebook Chunks:** PDF/text upload for rules lookup during play. Text uploads via `curl -X POST /api/rulesets/{id}/rulebook?source=Name -H "Content-Type: text/plain" --data-binary @file.txt`. Paragraph-based chunking for VtM and Dune; markdown-heading chunking for all others.
 - **MCP Layer:** Optional MCP stdio server for AI coding assistant integration (tools: get_context, set_active, start/end session, create/list characters, roll dice, combat management, world notes, maps, rulebook search, session recap)
-- **40 database migrations** covering core schema through VtM V5, Dune ruleset, and schema enhancements
+- **46 database migrations** covering core schema through VtM V5, Dune ruleset, and schema enhancements
 
 ## Notes for Contributors
 

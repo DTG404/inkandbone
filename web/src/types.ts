@@ -28,6 +28,7 @@ export interface Session {
   summary: string
   notes: string
   scene_tags: string
+  adventure_id: number | null
   created_at: string
 }
 
@@ -136,6 +137,44 @@ export interface XPEntry {
   created_at: string
 }
 
+export interface Adventure {
+  id: number
+  campaign_id: number
+  title: string
+  description: string
+  status: 'upcoming' | 'active' | 'completed' | 'abandoned'
+  sort_order: number
+  created_at: string
+}
+
+export interface NpcStat {
+  id: number
+  campaign_id: number
+  name: string
+  role: string
+  data_json: string
+  hp_max: number
+  armor_class: number | null
+  initiative_mod: number
+  skills: string
+  abilities: string
+  loot: string
+  notes: string
+  created_at: string
+}
+
+export interface Faction {
+  id: number
+  campaign_id: number
+  name: string
+  description: string
+  faction_type: string
+  influence: number
+  resources_json: string
+  color: string
+  created_at: string
+}
+
 export interface Relationship {
   id: number
   campaign_id: number
@@ -153,6 +192,37 @@ export interface XPSuggestion {
   new_value: number
   xp_cost: number
   reasoning: string
+}
+
+export interface Secret {
+  id: number
+  campaign_id: number
+  title: string
+  content: string
+  category: string
+  revealed: boolean
+  revealed_at_session_id: number | null
+  created_at: string
+}
+
+export interface CalendarEvent {
+  id: number
+  campaign_id: number
+  in_game_year: number
+  in_game_month: number
+  in_game_day: number
+  title: string
+  description: string
+  event_type: string
+  session_id: number | null
+  created_at: string
+}
+
+export interface CampaignCalendarInfo {
+  in_game_year: number
+  in_game_month: number
+  in_game_day: number
+  calendar_config: string
 }
 
 export interface XPSpendSuggestionsEvent {

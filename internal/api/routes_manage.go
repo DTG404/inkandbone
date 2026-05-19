@@ -27,26 +27,26 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		RulesetID   int64  `json:"ruleset_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(r, &body); err != nil {
+		respondError(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
 	if body.Name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+		respondError(w, "name is required", http.StatusBadRequest)
 		return
 	}
 	if body.RulesetID == 0 {
-		http.Error(w, "ruleset_id is required", http.StatusBadRequest)
+		respondError(w, "ruleset_id is required", http.StatusBadRequest)
 		return
 	}
 	id, err := s.db.CreateCampaign(body.RulesetID, body.Name, body.Description)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		respondError(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	s.bus.Publish(Event{Type: EventCampaignCreated, Payload: map[string]any{"campaign_id": id, "name": body.Name}})
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, map[string]any{"id": id})
+	respondJSON(w, map[string]any{"id": id})
 }
 
 // handleDeleteCampaign deletes a campaign and all its data.

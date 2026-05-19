@@ -33,8 +33,14 @@ const (
 	EventOracleRolled       EventType = "oracle_rolled"
 	EventTensionUpdated     EventType = "tension_updated"
 	EventRelationshipUpdated  EventType = "relationship_updated"
+	EventFactionUpdated        EventType = "faction_updated"
 	EventXPSpendSuggestions   EventType = "xp_spend_suggestions"
 	EventSessionDeleted       EventType = "session_deleted"
+	EventAdventureUpdated     EventType = "adventure_updated"
+	EventNpcStatUpdated       EventType = "npc_stat_updated"
+	EventSecretsUpdated       EventType = "secrets_updated"
+	EventCalendarUpdated         EventType = "calendar_updated"
+	EventCampaignConfigUpdated   EventType = "campaign_config_updated"
 )
 
 // Event is published by MCP tool handlers and broadcast to WebSocket clients.

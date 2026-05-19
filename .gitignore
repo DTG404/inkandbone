@@ -27,3 +27,5 @@ tmp/
 # Internal planning docs
 docs/superpowers/
 graphify-out/
+.playwright-mcp/
+node_modules/

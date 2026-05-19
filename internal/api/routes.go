@@ -341,9 +341,10 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-		Whisper bool   `json:"whisper"`
+		Role        string `json:"role"`
+		Content     string `json:"content"`
+		Whisper     bool   `json:"whisper"`
+		CharacterID *int64 `json:"character_id"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		respondError(w, "invalid json", http.StatusBadRequest)
@@ -357,15 +358,28 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		respondError(w, "content is required", http.StatusBadRequest)
 		return
 	}
-	msgID, err := s.db.CreateMessage(id, body.Role, body.Content, body.Whisper, nil)
+	if body.CharacterID != nil {
+		sess, err := s.db.GetSession(id)
+		if err != nil || sess == nil {
+			respondError(w, "session not found", http.StatusNotFound)
+			return
+		}
+		char, err := s.db.GetCharacter(*body.CharacterID)
+		if err != nil || char == nil || char.CampaignID != sess.CampaignID {
+			respondError(w, "character not found or not in this campaign", http.StatusBadRequest)
+			return
+		}
+	}
+	msgID, err := s.db.CreateMessage(id, body.Role, body.Content, body.Whisper, body.CharacterID)
 	if err != nil {
 		respondError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	s.bus.Publish(Event{Type: EventMessageCreated, Payload: map[string]any{
-		"session_id": id,
-		"message_id": msgID,
-		"role":       body.Role,
+		"session_id":   id,
+		"message_id":   msgID,
+		"role":         body.Role,
+		"character_id": body.CharacterID,
 	}})
 	w.WriteHeader(http.StatusCreated)
 }

@@ -35,7 +35,7 @@ jobs:
         run: go mod download
 
       - name: Install web dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
         working-directory: web
 
       - name: Build web (for Go embed)

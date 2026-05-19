@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
+import { waitFor } from '@testing-library/dom'
+import userEvent from '@testing-library/user-event'
 import { AutomationSettingsPanel } from './AutomationSettingsPanel'
 
 const mockSettings = [
@@ -52,48 +54,50 @@ describe('AutomationSettingsPanel', () => {
     render(<AutomationSettingsPanel />)
     await screen.findByText('Extract NPCs')
 
-    const checkboxes = screen.getAllByRole('checkbox')
-    expect(checkboxes[0]).toBeChecked()
+    const toggles = screen.getAllByRole('checkbox')
+    expect(toggles[0]).toBeChecked()
 
-    fireEvent.click(checkboxes[0])
+        // Click the label wrapping the checkbox (checkbox itself is opacity:0 for custom toggle)
+    const label = toggles[0].closest('label') || toggles[0].parentElement
+    await userEvent.click(label!)
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        '/api/settings/automations',
-        expect.objectContaining({
-          method: 'PATCH',
-          body: JSON.stringify({ key: 'extractNPCs', enabled: false }),
-        }),
-      )
+      // First call is GET (initial fetch), second call is PATCH (toggle)
+      expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+      const patchCall = mockFetch.mock.calls[1]
+      expect(patchCall[0]).toBe('/api/settings/automations')
+      expect(patchCall[1]).toMatchObject({
+        method: 'PATCH',
+        body: JSON.stringify({ key: mockSettings[0].key, enabled: false }),
+      })
     })
   })
 
-  it('disables checkbox while toggling', async () => {
-    let resolvePatch: (value: unknown) => void
-    const patchPromise = new Promise(resolve => { resolvePatch = resolve })
-
+  it('disables checkbox during PATCH', async () => {
     const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       if (url === '/api/settings/automations' && (!options || options.method !== 'PATCH')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSettings) })
       }
-      if (options?.method === 'PATCH') {
-        return patchPromise.then(() => ({ ok: true }))
-      }
-      return Promise.resolve({ ok: true })
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
     })
     vi.stubGlobal('fetch', mockFetch)
-
     render(<AutomationSettingsPanel />)
     await screen.findByText('Extract NPCs')
 
-    const checkboxes = screen.getAllByRole('checkbox')
-    fireEvent.click(checkboxes[0])
+    const toggles = screen.getAllByRole('checkbox')
 
-    expect(checkboxes[0]).toBeDisabled()
+    let resolvePatch: (value: unknown) => void
+    mockFetch.mockImplementationOnce(
+      () => new Promise((resolve) => { resolvePatch = resolve }),
+    )
+
+    await userEvent.click(toggles[0])
+
+    expect(toggles[0]).toBeDisabled()
 
     resolvePatch!({ ok: true })
     await waitFor(() => {
-      expect(checkboxes[0]).not.toBeDisabled()
+      expect(toggles[0]).not.toBeDisabled()
     })
   })
 })

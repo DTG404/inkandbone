@@ -1,4 +1,4 @@
-# Vampire: The Masquerade (V20) — First Adventure Walkthrough
+# Vampire: The Masquerade (V5) — First Adventure Walkthrough
 
 ## System Overview
 

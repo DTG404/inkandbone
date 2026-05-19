@@ -312,6 +312,27 @@ func (s *Server) buildWorldContext(ctx context.Context, sessionID int64) string 
 		}
 	}
 
+	// List all characters in the campaign for multi-character awareness
+	if camp, err := s.db.GetCampaign(sess.CampaignID); err == nil && camp != nil {
+		chars, err := s.db.ListCharacters(camp.ID)
+		if err == nil && len(chars) > 0 {
+			sb.WriteString("[CHARACTERS PRESENT]\n")
+			maxChars := 6
+			if len(chars) < maxChars {
+				maxChars = len(chars)
+			}
+			for i := 0; i < maxChars; i++ {
+				c := chars[i]
+				summary := formatCharStatsShort(c.DataJSON)
+				fmt.Fprintf(&sb, "- %s%s\n", c.Name, summary)
+			}
+			if len(chars) > 6 {
+				fmt.Fprintf(&sb, "- ... and %d more\n", len(chars)-6)
+			}
+			sb.WriteString("[/CHARACTERS PRESENT]\n")
+		}
+	}
+
 	notes, err := s.db.ListRecentWorldNotes(sess.CampaignID, 5)
 	if err == nil && len(notes) > 0 {
 		titles := make([]string, len(notes))
@@ -814,4 +835,35 @@ func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, pla
 	}
 	sb.WriteString("[/RULEBOOK REFERENCES]")
 	*worldCtx += sb.String()
+}
+
+func formatCharStatsShort(dataJSON string) string {
+	if dataJSON == "" || dataJSON == "{}" {
+		return ""
+	}
+	var stats map[string]any
+	if err := json.Unmarshal([]byte(dataJSON), &stats); err != nil {
+		return ""
+	}
+	var parts []string
+
+	for _, key := range []string{"archetype", "class", "character_type", "playbook", "race", "species", "metatype"} {
+		if v, ok := stats[key].(string); ok && v != "" {
+			parts = append(parts, v)
+			break
+		}
+	}
+
+	if hp, ok := stats["hp"].(float64); ok && hp > 0 {
+		if hpMax, ok := stats["hp_max"].(float64); ok && hpMax > 0 {
+			parts = append(parts, fmt.Sprintf("HP %.0f/%.0f", hp, hpMax))
+		} else {
+			parts = append(parts, fmt.Sprintf("HP %.0f", hp))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
 }

@@ -299,7 +299,17 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.bus.Publish(Event{Type: EventContextUpdated})
+	ctxPayload := map[string]any{}
+	if body.CampaignID != nil {
+		ctxPayload["campaign_id"] = *body.CampaignID
+	}
+	if body.CharacterID != nil {
+		ctxPayload["character_id"] = *body.CharacterID
+	}
+	if body.SessionID != nil {
+		ctxPayload["session_id"] = *body.SessionID
+	}
+	s.bus.Publish(Event{Type: EventContextUpdated, Payload: ctxPayload})
 	w.WriteHeader(http.StatusNoContent)
 }
 

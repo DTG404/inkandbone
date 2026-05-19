@@ -544,7 +544,7 @@ func (s *Server) handleDraftWorldNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventWorldNoteCreated, Payload: map[string]any{"note_id": noteID, "title": title}})
+	s.bus.Publish(Event{Type: EventWorldNoteCreated, Payload: map[string]any{"campaign_id": id, "note_id": noteID, "title": title}})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(created) //nolint:errcheck
@@ -1416,8 +1416,10 @@ Return ONLY a JSON object with the fields that must change and their new values.
 	}
 	s.recordAutoSuccess()
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":        charID,
-		"data_json": string(updated),
+		"id":           charID,
+		"character_id": charID,
+		"session_id":   sessionID,
+		"data_json":    string(updated),
 	}})
 
 	// If XP increased, suggest advancements asynchronously.
@@ -1677,6 +1679,7 @@ If there are no good suggestions, return an empty JSON array: []
 		"current_xp":     currentXP,
 		"xp_label":       advancement.XPLabel(system),
 		"suggestions":    suggestions,
+		"session_id":     sessionID,
 	}
 	s.bus.Publish(Event{Type: EventXPSpendSuggestions, Payload: payload})
 	s.recordAutoSuccess()
@@ -3037,6 +3040,8 @@ Story passage:
 
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
 		"id":               charID,
+		"character_id":     charID,
+		"session_id":       sessionID,
 		"currency_balance": newBalance,
 		"currency_label":   char.CurrencyLabel,
 		"currency_delta":   result.Delta,

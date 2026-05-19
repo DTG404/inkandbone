@@ -64,7 +64,7 @@ func (s *Server) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{"id": id, "character_id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -116,7 +116,8 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":           id,
+		"id":            id,
+		"character_id":  id,
 		"portrait_path": relativePath,
 	}})
 	writeJSON(w, map[string]string{"portrait_path": relativePath})

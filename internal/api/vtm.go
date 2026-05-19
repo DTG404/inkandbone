@@ -304,7 +304,7 @@ func (s *Server) handleVtMRouseCheck(ctx context.Context, sessionID int64) strin
 	if err := s.db.UpdateCharacterData(charID, string(dataJSON)); err != nil {
 		return fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger should increase to %d but stat update failed.", roll, newHunger)
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{"id": charID}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{"id": charID, "character_id": charID, "session_id": sessionID}})
 
 	msg := fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger increases to %d.", roll, newHunger)
 	if newHunger >= 4 {
@@ -643,6 +643,7 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 		Type: EventCharacterUpdated,
 		Payload: map[string]any{
 			"character_id":  charID,
+			"session_id":    sessionID,
 			"embrace":       true,
 			"clan":          sireClan,
 			"predator_type": predatorType,
@@ -804,7 +805,9 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id": charID,
+		"id":           charID,
+		"character_id": charID,
+		"session_id":   sessionID,
 	}})
 }
 
@@ -912,7 +915,9 @@ func (s *Server) vtmRestoreWillpowerOnWake(sessionID int64) {
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":        charID,
-		"data_json": string(updated),
+		"id":           charID,
+		"character_id": charID,
+		"session_id":   sessionID,
+		"data_json":    string(updated),
 	}})
 }

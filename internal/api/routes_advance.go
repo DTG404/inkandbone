@@ -233,8 +233,9 @@ func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":       charID,
-		"data_json": string(updated),
+		"id":           charID,
+		"character_id": charID,
+		"data_json":    string(updated),
 	}})
 
 	w.Header().Set("Content-Type", "application/json")

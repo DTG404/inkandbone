@@ -744,7 +744,9 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 [MULTI-CHARACTER SESSION]
 Multiple player characters are active in this session. Each player controls their own character independently.
 
-NARRATION RULES:
+This OVERRIDES the "second person ('you')" instruction in the base prompt above. In multi-character sessions:
+- Narrate in THIRD PERSON using each character's name.
+- DO NOT use "you" narration. Instead of "You step into the chamber..." write "Zay steps into the chamber..."
 - Characters present: %s
 - When narrating a specific character's action or perception, use their name: "Nyx studies the envelope..." or "Kael circles around the alley..."
 - When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
@@ -973,7 +975,9 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 [MULTI-CHARACTER SESSION]
 Multiple player characters are active in this session. Each player controls their own character independently.
 
-NARRATION RULES:
+This OVERRIDES the "second person ('you')" instruction in the base prompt above. In multi-character sessions:
+- Narrate in THIRD PERSON using each character's name.
+- DO NOT use "you" narration. Instead of "You step into the chamber..." write "Zay steps into the chamber..."
 - Characters present: %s
 - When narrating a specific character's action or perception, use their name: "Nyx studies the envelope..." or "Kael circles around the alley..."
 - When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'

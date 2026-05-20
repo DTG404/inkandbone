@@ -809,37 +809,6 @@ func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, pla
 	*worldCtx += sb.String()
 }
 
-func formatCharStatsShort(dataJSON string) string {
-	if dataJSON == "" || dataJSON == "{}" {
-		return ""
-	}
-	var stats map[string]any
-	if err := json.Unmarshal([]byte(dataJSON), &stats); err != nil {
-		return ""
-	}
-	var parts []string
-
-	for _, key := range []string{"archetype", "class", "character_type", "playbook", "race", "species", "metatype"} {
-		if v, ok := stats[key].(string); ok && v != "" {
-			parts = append(parts, v)
-			break
-		}
-	}
-
-	if hp, ok := stats["hp"].(float64); ok && hp > 0 {
-		if hpMax, ok := stats["hp_max"].(float64); ok && hpMax > 0 {
-			parts = append(parts, fmt.Sprintf("HP %.0f/%.0f", hp, hpMax))
-		} else {
-			parts = append(parts, fmt.Sprintf("HP %.0f", hp))
-		}
-	}
-
-	if len(parts) == 0 {
-		return ""
-	}
-	return " (" + strings.Join(parts, ", ") + ")"
-}
-
 // formatCharacterIdentity returns a character block with name and all identity fields.
 func formatCharacterIdentity(c *db.Character) string {
 	var sb strings.Builder

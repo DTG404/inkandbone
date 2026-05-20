@@ -1257,11 +1257,6 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 		return
 	}
 
-	// Snapshot original character data BEFORE any AI processing.
-	// This is used by the final identity guard to restore protected fields
-	// that may have been corrupted by concurrent goroutines.
-	origDataJSON := char.DataJSON
-
 	// Determine character type for VtM mortal/ghoul handling.
 	vtmCharType := ""
 	{
@@ -1532,30 +1527,21 @@ Return ONLY a JSON object with the fields that must change and their new values.
 		}
 	}
 
-	// Final identity guard: restore protected fields from ORIGINAL snapshot
-	// taken at function entry (before any AI processing or concurrent writes).
-	// This prevents concurrent goroutines from corrupting each other's identity fields.
-	guardIdentityFields(current, origDataJSON, "vtm", map[string]bool{
-		"clan": true, "sect": true, "predator_type": true, "generation": true,
-		"character_type": true,
-		"ambition": true, "desire": true, "convictions": true, "touchstones": true,
-		"merits_flaws": true,
-	})
-	guardIdentityFields(current, origDataJSON, "vtm", map[string]bool{
-		"animalism": true, "auspex": true, "blood_sorcery": true, "celerity": true,
-		"dominate": true, "fortitude": true, "obfuscate": true, "oblivion": true,
-		"potence": true, "presence": true, "protean": true,
-	})
-
-	if ruleset.Name == "vtm" {
-		if clan, _ := current["clan"].(string); clan != "" && clan != "Brujah" && clan != "Toreador" {
-			var om map[string]any
-			json.Unmarshal([]byte(origDataJSON), &om)
-			origClan, _ := om["clan"].(string)
-			log.Printf("autoUpdateCharacterStats: DEBUG clan=%q origClan=%q char=%d", clan, origClan, charID)
+	// Identity guard: before writing, merge AI-approved changes into the LIVE character data
+	// from the DB. This prevents concurrent goroutines from corrupting identity fields.
+	// Only safe fields (xp, hunger, health, willpower, stains) are written from the AI patch.
+	if freshChar, freshErr := s.db.GetCharacter(charID); freshErr == nil && freshChar != nil && freshChar.DataJSON != "" && freshChar.DataJSON != "{}" {
+		var live map[string]any
+		if json.Unmarshal([]byte(freshChar.DataJSON), &live) == nil {
+			safeFields := map[string]bool{"xp": true, "hunger": true, "health_superficial": true, "health_aggravated": true, "willpower_superficial": true, "willpower_aggravated": true, "stains": true, "humanity": true, "hp": true, "hp_max": true}
+			for k, v := range patch {
+				if safeFields[k] {
+					live[k] = v
+				}
+			}
+			current = live
 		}
 	}
-
 	updated, err := json.Marshal(current)
 	if err != nil {
 		return
@@ -1599,6 +1585,12 @@ func guardIdentityFields(current map[string]any, origDataJSON, rulesetName strin
 		if protected[k] {
 			if origV, exists := origMap[k]; exists {
 				current[k] = origV
+			} else {
+				// Key is protected but missing from origMap — this shouldn't happen
+				// for VtM characters with full data_json. Log if it does.
+				if rulesetName == "vtm" && (k == "clan" || k == "character_type") {
+					// Silently skip — valid during early character setup
+				}
 			}
 		}
 	}

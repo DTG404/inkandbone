@@ -504,6 +504,9 @@ func (s *Server) autoDetectVtMNightDOW(ctx context.Context, sessionID int64, gmT
 // mortal has been Embraced. On confirmation it transforms the character into a
 // full Vampire: clan from sire, random predator type, and reset vampire stats.
 func (s *Server) autoDetectVtMEmbrace(ctx context.Context, sessionID int64, gmText string) {
+	if s.aiClient == nil {
+		return
+	}
 	// Regex pre-filter — skip AI call if no embrace language present.
 	if !vtmEmbraceRE.MatchString(gmText) {
 		return
@@ -607,6 +610,7 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 	predatorType := vtmEmbracePredatorTypes[mathrand.Intn(len(vtmEmbracePredatorTypes))]
 
 	// Apply the Embrace: transform mortal → vampire.
+	log.Printf("autoDetectVtMEmbrace: EMBRACING char=%d old_type=%q new_clan=%q sireClan=%q", charID, charType, sireClan, sireClan)
 	stats["character_type"] = "Vampire"
 	stats["clan"] = sireClan
 	stats["predator_type"] = predatorType
@@ -704,6 +708,9 @@ func (s *Server) autoUpdateMasquerade(ctx context.Context, sessionID int64, gmTe
 // and auto-applies it: roll Humanity dice (d10s, 6+ = success), pass → stains reset,
 // fail → humanity -1 and stains reset.
 func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, text string) {
+	if s.aiClient == nil {
+		return
+	}
 	if !stainTriggerRE.MatchString(strings.ToLower(text)) {
 		return
 	}

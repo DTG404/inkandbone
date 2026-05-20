@@ -331,6 +331,7 @@ export interface SessionViewProps {
   handleSpendXP: (characterId: number, field: string, newValue: number) => Promise<void>
   lastEvent: unknown
   setCtx: React.Dispatch<React.SetStateAction<GameContext | null>>
+  typingNames: string[]
   charactersList: { id: number; name: string }[]
   selectedCharacterId: number | null
   onCharacterSelect: (id: number) => void
@@ -378,6 +379,7 @@ export function SessionView({
   charactersList,
   selectedCharacterId,
   onCharacterSelect,
+  typingNames,
 }: SessionViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
@@ -672,6 +674,10 @@ export function SessionView({
             <p className="gm-thinking">▸ The GM is narrating…</p>
           )}
         </div>
+
+        {typingNames.length > 0 && (
+          <p className="typing-indicator">⏳ {typingNames.join(' & ')} {typingNames.length === 1 ? 'is' : 'are'} thinking…</p>
+        )}
 
         <div className="player-input-bar">
           <button

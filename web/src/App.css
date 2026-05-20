@@ -471,6 +471,17 @@ body {
   margin-bottom: 1rem;
 }
 
+.typing-indicator {
+  color: var(--gold, #c9a84c);
+  font-family: var(--serif);
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+  padding: 0.3rem 1rem;
+  text-align: center;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 0.4; }
   50%       { opacity: 1; }

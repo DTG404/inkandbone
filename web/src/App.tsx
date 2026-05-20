@@ -83,6 +83,8 @@ export default function App() {
   const [showTalentsPanel, setShowTalentsPanel] = useState(false)
   const [aiTalentDescs, setAiTalentDescs] = useState<Record<string, string>>({})
   const [rulesetName, setRulesetName] = useState<string | null>(null)
+  const [typingNames, setTypingNames] = useState<string[]>([])
+  const typingTimeouts = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(() => {
     const stored = localStorage.getItem('active_player_character_id')
     return stored ? Number(stored) : null
@@ -190,6 +192,26 @@ export default function App() {
           ? { ...prev, campaign: { ...prev.campaign, ...p } }
           : prev
         )
+      }
+    }
+    if (event?.type === 'typing') {
+      const p = (data as { payload?: { character_name?: string; status?: string; character_id?: number } }).payload
+      if (!p?.character_name) return
+      const name = p.character_name
+      if (p.status === 'thinking') {
+        setTypingNames(prev => prev.includes(name) ? prev : [...prev, name])
+        // Auto-clear after 30s in case Nyx never sends "done"
+        if (typingTimeouts.current[name]) clearTimeout(typingTimeouts.current[name])
+        typingTimeouts.current[name] = setTimeout(() => {
+          setTypingNames(prev => prev.filter(n => n !== name))
+          delete typingTimeouts.current[name]
+        }, 30000)
+      } else {
+        setTypingNames(prev => prev.filter(n => n !== name))
+        if (typingTimeouts.current[name]) {
+          clearTimeout(typingTimeouts.current[name])
+          delete typingTimeouts.current[name]
+        }
       }
     }
   }, [loadContext])
@@ -435,6 +457,7 @@ export default function App() {
         handleSpendXP={handleSpendXP}
         lastEvent={lastEvent}
         setCtx={setCtx}
+        typingNames={typingNames}
         charactersList={charactersList}
         selectedCharacterId={selectedCharacterId}
         onCharacterSelect={setSelectedCharacterId}

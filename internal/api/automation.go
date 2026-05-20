@@ -285,35 +285,7 @@ func (s *Server) buildWorldContext(ctx context.Context, sessionID int64) string 
 	}
 	fmt.Fprintf(&sb, "Session summary: %s\n", summary)
 
-	if charIDStr, err := s.db.GetSetting("active_character_id"); err == nil && charIDStr != "" {
-		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
-			if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
-				fmt.Fprintf(&sb, "Player character name: %s\n", char.Name)
-				// Inject common identity fields so the GM always knows the character's role.
-				if char.DataJSON != "" {
-					var stats map[string]any
-					if err := json.Unmarshal([]byte(char.DataJSON), &stats); err == nil {
-						charTypeLower := ""
-						if ct, ok := stats["character_type"].(string); ok {
-							charTypeLower = strings.ToLower(ct)
-						}
-						// Vampire-only fields — suppress for mortal characters.
-						vampireOnlyFields := map[string]bool{"clan": true, "predator_type": true, "sect": true}
-						for _, field := range []string{"character_type", "archetype", "class", "race", "faction", "keywords", "species", "metatype", "playbook", "culture", "clan", "predator_type", "sect"} {
-							if charTypeLower == "mortal" && vampireOnlyFields[field] {
-								continue
-							}
-							if v, ok := stats[field].(string); ok && v != "" {
-								fmt.Fprintf(&sb, "Character %s: %s\n", field, v)
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// List all characters in the campaign for multi-character awareness
+	// List all characters with full identity fields for multi-character awareness.
 	if camp, err := s.db.GetCampaign(sess.CampaignID); err == nil && camp != nil {
 		chars, err := s.db.ListCharacters(camp.ID)
 		if err == nil && len(chars) > 0 {
@@ -324,8 +296,7 @@ func (s *Server) buildWorldContext(ctx context.Context, sessionID int64) string 
 			}
 			for i := 0; i < maxChars; i++ {
 				c := chars[i]
-				summary := formatCharStatsShort(c.DataJSON)
-				fmt.Fprintf(&sb, "- %s%s\n", c.Name, summary)
+				sb.WriteString(formatCharacterIdentity(&c))
 			}
 			if len(chars) > 6 {
 				fmt.Fprintf(&sb, "- ... and %d more\n", len(chars)-6)
@@ -867,6 +838,45 @@ func formatCharStatsShort(dataJSON string) string {
 		return ""
 	}
 	return " (" + strings.Join(parts, ", ") + ")"
+}
+
+// formatCharacterIdentity returns a character block with name and all identity fields.
+func formatCharacterIdentity(c *db.Character) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "- %s", c.Name)
+	if c.DataJSON == "" || c.DataJSON == "{}" {
+		sb.WriteString("\n")
+		return sb.String()
+	}
+	var stats map[string]any
+	if err := json.Unmarshal([]byte(c.DataJSON), &stats); err != nil {
+		sb.WriteString("\n")
+		return sb.String()
+	}
+	charTypeLower := ""
+	if ct, ok := stats["character_type"].(string); ok {
+		charTypeLower = strings.ToLower(ct)
+	}
+	// Vampire-only fields — suppress for mortal characters.
+	vampireOnlyFields := map[string]bool{"clan": true, "predator_type": true, "sect": true}
+	for _, field := range []string{"character_type", "archetype", "class", "race", "faction", "keywords", "species", "metatype", "playbook", "culture", "clan", "predator_type", "sect"} {
+		if charTypeLower == "mortal" && vampireOnlyFields[field] {
+			continue
+		}
+		if v, ok := stats[field].(string); ok && v != "" {
+			fmt.Fprintf(&sb, " (%s: %s)", field, v)
+		}
+	}
+	// Append HP if available
+	if hp, ok := stats["hp"].(float64); ok && hp > 0 {
+		if hpMax, ok := stats["hp_max"].(float64); ok && hpMax > 0 {
+			fmt.Fprintf(&sb, " [HP %.0f/%.0f]", hp, hpMax)
+		} else {
+			fmt.Fprintf(&sb, " [HP %.0f]", hp)
+		}
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 // formatCharNames returns a comma-separated list of character names from a charNameMap.

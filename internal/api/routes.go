@@ -752,7 +752,7 @@ This OVERRIDES the "second person ('you')" instruction in the base prompt above.
 - When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
 - Rotate focus between characters naturally. Give each character moments of attention.
 - If a character is NOT present in the current scene, do not narrate their actions. Only narrate characters who are present and active.
-- End the response addressing the character who just acted.
+- CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly — it tells you how to end.
 `, formatCharNames(charNameMap))
 	}
 	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
@@ -983,7 +983,7 @@ This OVERRIDES the "second person ('you')" instruction in the base prompt above.
 - When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
 - Rotate focus between characters naturally. Give each character moments of attention.
 - If a character is NOT present in the current scene, do not narrate their actions. Only narrate characters who are present and active.
-- End the response addressing the character who just acted.
+- CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly — it tells you how to end.
 `, formatCharNames(charNameMap))
 	}
 	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
@@ -1257,6 +1257,11 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 		return
 	}
 
+	// Snapshot original character data BEFORE any AI processing.
+	// This is used by the final identity guard to restore protected fields
+	// that may have been corrupted by concurrent goroutines.
+	origDataJSON := char.DataJSON
+
 	// Determine character type for VtM mortal/ghoul handling.
 	vtmCharType := ""
 	{
@@ -1460,15 +1465,20 @@ Return ONLY a JSON object with the fields that must change and their new values.
 					continue
 				}
 			}
-			// VtM: never let the AI goroutine change discipline dots (increase or decrease).
+			// VtM: never let the AI goroutine change discipline dots or identity fields.
 			// Disciplines only advance via explicit XP spending (/advance command).
+			// Identity fields (clan, sect, generation, etc.) are set at creation and never change.
 			if ruleset.Name == "vtm" {
-				vtmDisciplineFields := map[string]bool{
+				vtmProtectedFields := map[string]bool{
 					"animalism": true, "auspex": true, "blood_sorcery": true, "celerity": true,
 					"dominate": true, "fortitude": true, "obfuscate": true, "oblivion": true,
 					"potence": true, "presence": true, "protean": true,
+					"clan": true, "sect": true, "predator_type": true, "generation": true,
+					"character_type": true,
+					"ambition": true, "desire": true, "convictions": true, "touchstones": true,
+					"merits_flaws": true,
 				}
-				if vtmDisciplineFields[k] {
+				if vtmProtectedFields[k] {
 					continue
 				}
 			}
@@ -1522,6 +1532,30 @@ Return ONLY a JSON object with the fields that must change and their new values.
 		}
 	}
 
+	// Final identity guard: restore protected fields from ORIGINAL snapshot
+	// taken at function entry (before any AI processing or concurrent writes).
+	// This prevents concurrent goroutines from corrupting each other's identity fields.
+	guardIdentityFields(current, origDataJSON, "vtm", map[string]bool{
+		"clan": true, "sect": true, "predator_type": true, "generation": true,
+		"character_type": true,
+		"ambition": true, "desire": true, "convictions": true, "touchstones": true,
+		"merits_flaws": true,
+	})
+	guardIdentityFields(current, origDataJSON, "vtm", map[string]bool{
+		"animalism": true, "auspex": true, "blood_sorcery": true, "celerity": true,
+		"dominate": true, "fortitude": true, "obfuscate": true, "oblivion": true,
+		"potence": true, "presence": true, "protean": true,
+	})
+
+	if ruleset.Name == "vtm" {
+		if clan, _ := current["clan"].(string); clan != "" && clan != "Brujah" && clan != "Toreador" {
+			var om map[string]any
+			json.Unmarshal([]byte(origDataJSON), &om)
+			origClan, _ := om["clan"].(string)
+			log.Printf("autoUpdateCharacterStats: DEBUG clan=%q origClan=%q char=%d", clan, origClan, charID)
+		}
+	}
+
 	updated, err := json.Marshal(current)
 	if err != nil {
 		return
@@ -1550,6 +1584,26 @@ Return ONLY a JSON object with the fields that must change and their new values.
 // It calls the AI to generate 2–3 ranked advancement suggestions and pushes
 // them to the frontend as an xp_spend_suggestions WebSocket event.
 // A per-session cap of 20 suggestions is enforced to avoid spam.
+// guardIdentityFields restores protected fields in the current map from the
+// original data snapshot. This runs immediately before the DB write to prevent
+// concurrent goroutines from corrupting identity fields.
+func guardIdentityFields(current map[string]any, origDataJSON, rulesetName string, protected map[string]bool) {
+	if origDataJSON == "" || origDataJSON == "{}" {
+		return
+	}
+	var origMap map[string]any
+	if err := json.Unmarshal([]byte(origDataJSON), &origMap); err != nil {
+		return
+	}
+	for k := range current {
+		if protected[k] {
+			if origV, exists := origMap[k]; exists {
+				current[k] = origV
+			}
+		}
+	}
+}
+
 func (s *Server) autoSuggestXPSpend(
 	sessionID, charID int64,
 	char *db.Character,

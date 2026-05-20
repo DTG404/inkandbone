@@ -742,17 +742,19 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 	if len(charNameMap) > 1 {
 		multiPrompt = fmt.Sprintf(`
 [MULTI-CHARACTER SESSION]
-Multiple player characters are active in this session. Each player controls their own character independently.
+CRITICAL: This is a MULTI-PLAYER session. Every character listed below is a PLAYER CHARACTER controlled by a real person (or AI agent). They are NOT NPCs.
 
-This OVERRIDES the "second person ('you')" instruction in the base prompt above. In multi-character sessions:
-- Narrate in THIRD PERSON using each character's name.
-- DO NOT use "you" narration. Instead of "You step into the chamber..." write "Zay steps into the chamber..."
+The base prompt above says "the player controls only their character" — that referred to a single-player assumption. OVERRIDE IT. In this session:
+- MULTIPLE player characters are active. Each one is controlled by an independent actor.
 - Characters present: %s
-- When narrating a specific character's action or perception, use their name: "Nyx studies the envelope..." or "Kael circles around the alley..."
-- When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
-- Rotate focus between characters naturally. Give each character moments of attention.
-- If a character is NOT present in the current scene, do not narrate their actions. Only narrate characters who are present and active.
-- CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly — it tells you how to end.
+- NARRATE IN THIRD PERSON using each character's name. DO NOT use "you" narration.
+- When a player character's name appears in the conversation history prefixed with [Name], that character just acted. Respond to their action.
+- DO NOT narrate what a player character does, thinks, or feels unless that player's message describes it.
+- When a player character speaks, the dialogue comes from that player's own message — do not put words in their mouth.
+- When the text says [Nyx] I cast detect magic, that means Nyx THE PLAYER chose to do that — narrate the result, do not have Nyx do something else.
+- ROTATE FOCUS naturally. Give each player character moments of narrative attention.
+- If a character is NOT present in the current scene, do not narrate their actions.
+- CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly.
 `, formatCharNames(charNameMap))
 	}
 	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
@@ -973,17 +975,19 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 	if len(charNameMap) > 1 {
 		multiPrompt = fmt.Sprintf(`
 [MULTI-CHARACTER SESSION]
-Multiple player characters are active in this session. Each player controls their own character independently.
+CRITICAL: This is a MULTI-PLAYER session. Every character listed below is a PLAYER CHARACTER controlled by a real person (or AI agent). They are NOT NPCs.
 
-This OVERRIDES the "second person ('you')" instruction in the base prompt above. In multi-character sessions:
-- Narrate in THIRD PERSON using each character's name.
-- DO NOT use "you" narration. Instead of "You step into the chamber..." write "Zay steps into the chamber..."
+The base prompt above says "the player controls only their character" — that referred to a single-player assumption. OVERRIDE IT. In this session:
+- MULTIPLE player characters are active. Each one is controlled by an independent actor.
 - Characters present: %s
-- When narrating a specific character's action or perception, use their name: "Nyx studies the envelope..." or "Kael circles around the alley..."
-- When a character speaks, prefix their dialogue: '"Interesting," Nyx says, turning the envelope over.'
-- Rotate focus between characters naturally. Give each character moments of attention.
-- If a character is NOT present in the current scene, do not narrate their actions. Only narrate characters who are present and active.
-- CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly — it tells you how to end.
+- NARRATE IN THIRD PERSON using each character's name. DO NOT use "you" narration.
+- When a player character's name appears in the conversation history prefixed with [Name], that character just acted. Respond to their action.
+- DO NOT narrate what a player character does, thinks, or feels unless that player's message describes it.
+- When a player character speaks, the dialogue comes from that player's own message — do not put words in their mouth.
+- When the text says [Nyx] I cast detect magic, that means Nyx THE PLAYER chose to do that — narrate the result, do not have Nyx do something else.
+- ROTATE FOCUS naturally. Give each player character moments of narrative attention.
+- If a character is NOT present in the current scene, do not narrate their actions.
+- CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly.
 `, formatCharNames(charNameMap))
 	}
 	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
@@ -1536,6 +1540,13 @@ Return ONLY a JSON object with the fields that must change and their new values.
 			safeFields := map[string]bool{"xp": true, "hunger": true, "health_superficial": true, "health_aggravated": true, "willpower_superficial": true, "willpower_aggravated": true, "stains": true, "humanity": true, "hp": true, "hp_max": true}
 			for k, v := range patch {
 				if safeFields[k] {
+					// XP guard: never let the AI lower XP — it can only award, not spend.
+					if k == xpFieldKey {
+						newXP, _ := v.(float64)
+						if int(newXP) <= beforeXP {
+							continue
+						}
+					}
 					live[k] = v
 				}
 			}

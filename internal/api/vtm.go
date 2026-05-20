@@ -708,9 +708,6 @@ func (s *Server) autoUpdateMasquerade(ctx context.Context, sessionID int64, gmTe
 // and auto-applies it: roll Humanity dice (d10s, 6+ = success), pass → stains reset,
 // fail → humanity -1 and stains reset.
 func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, text string) {
-	if s.aiClient == nil {
-		return
-	}
 	if !stainTriggerRE.MatchString(strings.ToLower(text)) {
 		return
 	}

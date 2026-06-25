@@ -44,9 +44,9 @@ func TestStartCombat(t *testing.T) {
 	combatants, err := s.db.ListCombatants(enc.ID)
 	require.NoError(t, err)
 	assert.Len(t, combatants, 2)
-	// ListCombatants returns ORDER BY initiative DESC; Hero(18) first
-	assert.Equal(t, "Hero", combatants[0].Name)
-	assert.Equal(t, "Goblin", combatants[1].Name)
+	// ListCombatants returns ORDER BY sort_order ASC; insertion order preserved
+	assert.Equal(t, "Goblin", combatants[0].Name)
+	assert.Equal(t, "Hero", combatants[1].Name)
 }
 
 func TestUpdateCombatant(t *testing.T) {

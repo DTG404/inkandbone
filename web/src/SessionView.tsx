@@ -26,6 +26,7 @@ import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
 import { CharacterSelector } from './CharacterSelector'
 import { setAmbientTrack } from './audio/ambient'
+import { MacroBar } from './MacroBar'
 import { wgTalentDescription } from './wgTalentData'
 import './App.css'
 
@@ -327,6 +328,7 @@ export interface SessionViewProps {
   aiTalentDescs: Record<string, string>
   setAiTalentDescs: React.Dispatch<React.SetStateAction<Record<string, string>>>
   handleSend: () => Promise<void>
+  onSendText: (text: string) => Promise<void>
   handleGenerateMap: () => Promise<void>
   handleSpendXP: (characterId: number, field: string, newValue: number) => Promise<void>
   lastEvent: unknown
@@ -372,6 +374,7 @@ export function SessionView({
   aiTalentDescs,
   setAiTalentDescs,
   handleSend,
+  onSendText,
   handleGenerateMap,
   handleSpendXP,
   lastEvent,
@@ -600,6 +603,11 @@ export function SessionView({
           character={ctx?.character ?? null}
           rulesetId={ctx?.campaign?.ruleset_id ?? null}
           lastEvent={lastEvent}
+          onRollField={ctx.character && ctx.session
+            ? (label) => {
+                void onSendText(`${ctx.character!.name} attempts a ${label} check.`)
+              }
+            : undefined}
           afterTracks={ctx.session ? (
             <>
               <DiceRoller sessionId={ctx.session.id} />
@@ -678,6 +686,12 @@ export function SessionView({
         {typingNames.length > 0 && (
           <p className="typing-indicator">⏳ {typingNames.join(' & ')} {typingNames.length === 1 ? 'is' : 'are'} thinking…</p>
         )}
+
+        <MacroBar
+          characterId={ctx.character?.id ?? null}
+          onFire={(text) => { void onSendText(text) }}
+          disabled={sending || !ctx.session}
+        />
 
         <div className="player-input-bar">
           <button

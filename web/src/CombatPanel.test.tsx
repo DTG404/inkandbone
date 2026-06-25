@@ -9,12 +9,12 @@ const combat: CombatSnapshot = {
     {
       id: 1, encounter_id: 1, character_id: null,
       name: 'Kael', initiative: 18, hp_current: 30, hp_max: 40,
-      conditions_json: '[]', is_player: true,
+      conditions_json: '[]', is_player: true, sort_order: 0,
     },
     {
       id: 2, encounter_id: 1, character_id: null,
       name: 'Bandit', initiative: 12, hp_current: 5, hp_max: 20,
-      conditions_json: '["frightened"]', is_player: false,
+      conditions_json: '["frightened"]', is_player: false, sort_order: 1,
     },
   ],
 }

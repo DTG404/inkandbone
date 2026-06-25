@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io/fs"
 	"log"
 	"net/http"
@@ -20,8 +21,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("home dir: %v", err)
 	}
-	dbPath := filepath.Join(home, ".ttrpg", "ttrpg.db")
-	dataDir := filepath.Join(home, ".ttrpg")
+	defaultDBPath := filepath.Join(home, ".ttrpg", "ttrpg.db")
+	dbFlag := flag.String("db", defaultDBPath, "path to SQLite database file")
+	flag.Parse()
+
+	dbPath := *dbFlag
+	dataDir := filepath.Dir(dbPath)
 
 	database, err := db.Open(dbPath)
 	if err != nil {

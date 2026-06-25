@@ -171,6 +171,16 @@ body {
 .pip.filled  { background: var(--gold); }
 .pip.empty   { background: var(--surface2); border: 1px solid var(--border); }
 
+.roll-hint-icon {
+  opacity: 0;
+  font-size: 9px;
+  transition: opacity 0.15s;
+}
+.attr-row:hover .roll-hint-icon,
+label:hover .roll-hint-icon {
+  opacity: 1;
+}
+
 /* Tracks (segmented bars) */
 
 .track-row {
@@ -1143,6 +1153,23 @@ body {
 }
 
 .condition-dropdown-item:hover {
+  background: var(--surface2);
+  color: var(--gold);
+}
+
+.condition-option {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0.3rem 0.6rem;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.condition-option:hover {
   background: var(--surface2);
   color: var(--gold);
 }
@@ -3236,4 +3263,140 @@ mark {
   border-radius: 4px;
   padding: 0.2rem 0.4rem;
   font-size: 0.85rem;
+}
+
+.macro-bar {
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.macro-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.macro-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.macro-edit-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.macro-edit-controls button {
+  background: none;
+  border: none;
+  color: var(--gold-dim);
+  font-size: 9px;
+  cursor: pointer;
+  padding: 1px 3px;
+}
+
+.macro-delete-btn {
+  color: #c0392b !important;
+}
+
+.macro-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--surface);
+  border: 1px solid;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--serif);
+  white-space: nowrap;
+}
+
+.macro-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.macro-add-btn,
+.macro-gear-btn {
+  font-size: 12px;
+  padding: 3px 7px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--gold-dim);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.macro-gear-btn.active {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.macro-add-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.macro-form {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.macro-form-input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.macro-color-row {
+  display: flex;
+  gap: 6px;
+}
+
+.macro-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.macro-color-swatch.selected {
+  border-color: var(--text);
+}
+
+.macro-form-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.macro-form-save {
+  background: var(--gold);
+  color: #000;
+  border: none;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.macro-form-save:disabled {
+  opacity: 0.4;
+}
+
+.macro-form-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--gold-dim);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
 }

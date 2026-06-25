@@ -119,6 +119,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/sessions/{id}/dice-rolls", s.handleRollDice)
 	// Feature 5: Condition badges
 	s.mux.HandleFunc("PATCH /api/combatants/{id}", s.handlePatchCombatant)
+	// Initiative reorder
+	s.mux.HandleFunc("PATCH /api/encounters/{id}/combatants/reorder", s.handleReorderCombatants)
 	// Feature 8: Map pins
 	s.mux.HandleFunc("POST /api/maps/{id}/pins", s.handleCreateMapPin)
 	// Feature 9: NPC roster
@@ -212,6 +214,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/campaigns/{id}/config", s.handlePatchCampaignConfig)
 	// Multiplayer: typing indicator for player agents
 	s.mux.HandleFunc("POST /api/sessions/{id}/typing", s.handleTyping)
+	// Macro quick-bar
+	s.mux.HandleFunc("GET /api/characters/{id}/macros", s.handleListMacros)
+	s.mux.HandleFunc("POST /api/characters/{id}/macros", s.handleCreateMacro)
+	s.mux.HandleFunc("PATCH /api/macros/{id}", s.handlePatchMacro)
+	s.mux.HandleFunc("DELETE /api/macros/{id}", s.handleDeleteMacro)
+	s.mux.HandleFunc("PATCH /api/characters/{id}/macros/reorder", s.handleReorderMacros)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

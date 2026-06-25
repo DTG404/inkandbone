@@ -69,6 +69,7 @@ export interface Combatant {
   hp_max: number
   conditions_json: string
   is_player: boolean
+  sort_order: number
 }
 
 export interface CombatSnapshot {
@@ -232,4 +233,14 @@ export interface XPSpendSuggestionsEvent {
   current_xp: number
   xp_label: string
   suggestions: XPSuggestion[]
+}
+
+export interface Macro {
+  id: number
+  character_id: number
+  label: string
+  action_text: string
+  color: string
+  sort_order: number
+  created_at: string
 }

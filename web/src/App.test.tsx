@@ -106,7 +106,7 @@ describe('App', () => {
       active_combat: {
         encounter: { id: 1, session_id: 1, name: 'Dragon Fight', active: true, active_turn_index: 0, created_at: '' },
         combatants: [
-          { id: 1, encounter_id: 1, character_id: null, name: 'Zara', initiative: 20, hp_current: 40, hp_max: 40, conditions_json: '[]', is_player: true },
+          { id: 1, encounter_id: 1, character_id: null, name: 'Zara', initiative: 20, hp_current: 40, hp_max: 40, conditions_json: '[]', is_player: true, sort_order: 0 },
         ],
       },
     }

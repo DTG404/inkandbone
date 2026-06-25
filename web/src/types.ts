@@ -69,6 +69,7 @@ export interface Combatant {
   hp_max: number
   conditions_json: string
   is_player: boolean
+  sort_order: number
 }
 
 export interface CombatSnapshot {

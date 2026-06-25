@@ -238,7 +238,7 @@ export async function rollDice(
 
 export async function patchCombatant(
   combatantId: number,
-  updates: { conditions_json?: string; hp_current?: number },
+  updates: { conditions_json?: string; hp_current?: number; initiative?: number },
 ): Promise<void> {
   const res = await fetch(`/api/combatants/${combatantId}`, {
     method: 'PATCH',
@@ -246,6 +246,15 @@ export async function patchCombatant(
     body: JSON.stringify(updates),
   })
   if (!res.ok) throw new Error(`patchCombatant failed: ${res.status}`)
+}
+
+export async function reorderCombatants(encounterId: number, ids: number[]): Promise<void> {
+  const res = await fetch(`/api/encounters/${encounterId}/combatants/reorder`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!res.ok) throw new Error(`reorderCombatants failed: ${res.status}`)
 }
 
 export async function createMapPin(

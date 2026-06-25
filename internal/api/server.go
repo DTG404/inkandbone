@@ -214,6 +214,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/campaigns/{id}/config", s.handlePatchCampaignConfig)
 	// Multiplayer: typing indicator for player agents
 	s.mux.HandleFunc("POST /api/sessions/{id}/typing", s.handleTyping)
+	// Macro quick-bar
+	s.mux.HandleFunc("GET /api/characters/{id}/macros", s.handleListMacros)
+	s.mux.HandleFunc("POST /api/characters/{id}/macros", s.handleCreateMacro)
+	s.mux.HandleFunc("PATCH /api/macros/{id}", s.handlePatchMacro)
+	s.mux.HandleFunc("DELETE /api/macros/{id}", s.handleDeleteMacro)
+	s.mux.HandleFunc("PATCH /api/characters/{id}/macros/reorder", s.handleReorderMacros)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

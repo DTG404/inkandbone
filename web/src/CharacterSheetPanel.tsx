@@ -23,6 +23,7 @@ interface CharacterSheetPanelProps {
   lastEvent: unknown
   afterTracks?: React.ReactNode
   characterOverride?: Character | null
+  onRollField?: (label: string) => void
 }
 
 interface CharacterUpdatedPayload {
@@ -509,13 +510,21 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
   )
 }
 
-export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTracks, characterOverride }: CharacterSheetPanelProps) {
+export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTracks, characterOverride, onRollField }: CharacterSheetPanelProps) {
   const effectiveCharacter = characterOverride ?? character
   const [ruleset, setRuleset] = useState<Ruleset | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
   const [computedValues, setComputedValues] = useState<Record<string, number>>({})
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showRollHint, setShowRollHint] = useState(() =>
+    !localStorage.getItem('inkandbone_roll_hint_shown')
+  )
+
+  function dismissHint() {
+    localStorage.setItem('inkandbone_roll_hint_shown', '1')
+    setShowRollHint(false)
+  }
 
   useEffect(() => {
     if (rulesetId === null) return
@@ -647,13 +656,39 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         </label>
       </div>
 
+      {/* One-time roll hint */}
+      {showRollHint && onRollField && (
+        <div style={{
+          fontSize: '10px', color: 'var(--gold-dim)', textAlign: 'center',
+          padding: '4px 8px', border: '1px dashed var(--border)', borderRadius: '3px',
+          marginBottom: '6px',
+        }}>
+          Click any skill or attribute to roll it.{' '}
+          <button
+            onClick={dismissHint}
+            style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: '10px' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Attributes — pip dots */}
       {attributeFields.length > 0 && (
         <div>
           {attributeFields.map((f) => (
-            <div key={f.key} className="attr-row">
+            <div
+              key={f.key}
+              className="attr-row"
+              onClick={onRollField ? () => { onRollField(f.label || f.key); dismissHint() } : undefined}
+              style={onRollField ? { cursor: 'pointer', position: 'relative' } : undefined}
+              title={onRollField ? `Click to roll ${f.label || f.key}` : undefined}
+            >
               <span className="attr-label">{f.label || f.key}</span>
               <AttributePips value={Number(fields[f.key] ?? 0)} field={f} />
+              {onRollField && (
+                <span className="roll-hint-icon" aria-hidden>🎲</span>
+              )}
             </div>
           ))}
         </div>
@@ -696,19 +731,32 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
           <>
             {numFields.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.5rem' }}>
-                {numFields.map((field) => (
-                  <label key={field.key} style={labelStyle}>
-                    {field.label}
-                    <input
-                      type="text" inputMode="numeric" pattern="[0-9]*"
-                      min={field.min}
-                      max={field.max}
-                      value={fields[field.key] ?? ''}
-                      onChange={(e) => handleChange(field.key, e.target.value)}
-                      style={inputStyle}
-                    />
-                  </label>
-                ))}
+                {numFields.map((field) => {
+                  const isRollable = onRollField && field.category === 'skill'
+                  return (
+                    <label
+                      key={field.key}
+                      style={labelStyle}
+                      onClick={isRollable ? () => { onRollField!(field.label || field.key); dismissHint() } : undefined}
+                      title={isRollable ? `Click to roll ${field.label || field.key}` : undefined}
+                    >
+                      <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        {field.label}
+                        {isRollable && <span className="roll-hint-icon" aria-hidden>🎲</span>}
+                      </span>
+                      <input
+                        type="text" inputMode="numeric" pattern="[0-9]*"
+                        min={field.min}
+                        max={field.max}
+                        value={fields[field.key] ?? ''}
+                        onChange={(e) => handleChange(field.key, e.target.value)}
+                        style={{ ...inputStyle, cursor: isRollable ? 'pointer' : undefined }}
+                        readOnly={!!isRollable}
+                        onClick={isRollable ? (e) => { e.preventDefault(); onRollField!(field.label || field.key); dismissHint() } : undefined}
+                      />
+                    </label>
+                  )
+                })}
               </div>
             )}
             {selectFields.map((field) => (

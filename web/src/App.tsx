@@ -217,32 +217,47 @@ export default function App() {
   }, [loadContext])
   const { lastEvent } = useWebSocket(WS_URL, handleEvent)
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim()
+  const handleSendText = useCallback(async (text: string) => {
     if (!text || !ctx?.session || sending) return
-    const isWhisper = whisperMode
     setSending(true)
-    setInput('')
-    setWhisperMode(false)
     try {
-      await sendMessage(ctx.session.id, text, isWhisper, selectedCharacterId)
+      await sendMessage(ctx.session.id, text, false, selectedCharacterId)
       loadContext()
-      if (!isWhisper) {
-        setGmResponding(true)
-        setStreamingText('')
-        await gmRespondStream(ctx.session.id, (chunk) => {
-          setStreamingText((prev) => prev + chunk)
-        })
-        setStreamingText('')
-        loadContext()
-      }
-    } catch {
-      setInput(text)
+      setGmResponding(true)
+      setStreamingText('')
+      await gmRespondStream(ctx.session.id, (chunk) => {
+        setStreamingText((prev) => prev + chunk)
+      })
+      setStreamingText('')
+      loadContext()
+    } catch (err) {
+      console.error(err)
     } finally {
       setSending(false)
       setGmResponding(false)
     }
-  }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId])
+  }, [ctx, sending, loadContext, selectedCharacterId])
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim()
+    if (!text || !ctx?.session || sending) return
+    setInput('')
+    const isWhisper = whisperMode
+    setWhisperMode(false)
+    if (isWhisper) {
+      setSending(true)
+      try {
+        await sendMessage(ctx.session.id, text, true, selectedCharacterId)
+        loadContext()
+      } catch {
+        setInput(text)
+      } finally {
+        setSending(false)
+      }
+      return
+    }
+    await handleSendText(text).catch(() => setInput(text))
+  }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId, handleSendText])
 
   const handleGenerateMap = useCallback(async () => {
     if (!ctx?.campaign || !aiEnabled || generatingMap) return
@@ -453,6 +468,7 @@ export default function App() {
         aiTalentDescs={aiTalentDescs}
         setAiTalentDescs={setAiTalentDescs}
         handleSend={handleSend}
+        onSendText={handleSendText}
         handleGenerateMap={handleGenerateMap}
         handleSpendXP={handleSpendXP}
         lastEvent={lastEvent}

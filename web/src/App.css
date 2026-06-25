@@ -171,6 +171,16 @@ body {
 .pip.filled  { background: var(--gold); }
 .pip.empty   { background: var(--surface2); border: 1px solid var(--border); }
 
+.roll-hint-icon {
+  opacity: 0;
+  font-size: 9px;
+  transition: opacity 0.15s;
+}
+.attr-row:hover .roll-hint-icon,
+label:hover .roll-hint-icon {
+  opacity: 1;
+}
+
 /* Tracks (segmented bars) */
 
 .track-row {

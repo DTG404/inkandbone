@@ -234,3 +234,13 @@ export interface XPSpendSuggestionsEvent {
   xp_label: string
   suggestions: XPSuggestion[]
 }
+
+export interface Macro {
+  id: number
+  character_id: number
+  label: string
+  action_text: string
+  color: string
+  sort_order: number
+  created_at: string
+}

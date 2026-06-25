@@ -26,6 +26,7 @@ import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
 import { CharacterSelector } from './CharacterSelector'
 import { setAmbientTrack } from './audio/ambient'
+import { MacroBar } from './MacroBar'
 import { wgTalentDescription } from './wgTalentData'
 import './App.css'
 
@@ -685,6 +686,12 @@ export function SessionView({
         {typingNames.length > 0 && (
           <p className="typing-indicator">⏳ {typingNames.join(' & ')} {typingNames.length === 1 ? 'is' : 'are'} thinking…</p>
         )}
+
+        <MacroBar
+          characterId={ctx.character?.id ?? null}
+          onFire={(text) => { void onSendText(text) }}
+          disabled={sending || !ctx.session}
+        />
 
         <div className="player-input-bar">
           <button

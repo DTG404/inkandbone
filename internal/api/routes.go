@@ -1581,31 +1581,6 @@ Return ONLY a JSON object with the fields that must change and their new values.
 // It calls the AI to generate 2–3 ranked advancement suggestions and pushes
 // them to the frontend as an xp_spend_suggestions WebSocket event.
 // A per-session cap of 20 suggestions is enforced to avoid spam.
-// guardIdentityFields restores protected fields in the current map from the
-// original data snapshot. This runs immediately before the DB write to prevent
-// concurrent goroutines from corrupting identity fields.
-func guardIdentityFields(current map[string]any, origDataJSON, rulesetName string, protected map[string]bool) {
-	if origDataJSON == "" || origDataJSON == "{}" {
-		return
-	}
-	var origMap map[string]any
-	if err := json.Unmarshal([]byte(origDataJSON), &origMap); err != nil {
-		return
-	}
-	for k := range current {
-		if protected[k] {
-			if origV, exists := origMap[k]; exists {
-				current[k] = origV
-			} else {
-				// Key is protected but missing from origMap — this shouldn't happen
-				// for VtM characters with full data_json. Log if it does.
-				if rulesetName == "vtm" && (k == "clan" || k == "character_type") {
-					// Silently skip — valid during early character setup
-				}
-			}
-		}
-	}
-}
 
 func (s *Server) autoSuggestXPSpend(
 	sessionID, charID int64,

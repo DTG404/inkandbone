@@ -119,6 +119,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/sessions/{id}/dice-rolls", s.handleRollDice)
 	// Feature 5: Condition badges
 	s.mux.HandleFunc("PATCH /api/combatants/{id}", s.handlePatchCombatant)
+	// Initiative reorder
+	s.mux.HandleFunc("PATCH /api/encounters/{id}/combatants/reorder", s.handleReorderCombatants)
 	// Feature 8: Map pins
 	s.mux.HandleFunc("POST /api/maps/{id}/pins", s.handleCreateMapPin)
 	// Feature 9: NPC roster

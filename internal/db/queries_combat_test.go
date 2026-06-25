@@ -139,3 +139,70 @@ func TestUpdateCombatantVtMDamage_AggravatedDirect(t *testing.T) {
 		t.Errorf("expected 2 aggravated, got %d", c.DamageAggravated)
 	}
 }
+
+func TestReorderCombatants(t *testing.T) {
+	d := newTestDB(t)
+	campID, _ := d.CreateCampaign(1, "camp", "")
+	sessID, _ := d.CreateSession(campID, "sess", "")
+	encID, _ := d.CreateEncounter(sessID, "enc")
+
+	a, _ := d.AddCombatant(encID, "Alpha", 20, 10, true, nil)
+	b, _ := d.AddCombatant(encID, "Beta", 15, 10, false, nil)
+	c, _ := d.AddCombatant(encID, "Gamma", 10, 10, false, nil)
+
+	// Default order: Alpha(0), Beta(1), Gamma(2)
+	cs, _ := d.ListCombatants(encID)
+	if cs[0].Name != "Alpha" {
+		t.Fatalf("want Alpha first, got %s", cs[0].Name)
+	}
+
+	// Reorder: Gamma, Alpha, Beta
+	if err := d.ReorderCombatants(encID, []int64{c, a, b}); err != nil {
+		t.Fatal(err)
+	}
+	cs, _ = d.ListCombatants(encID)
+	if cs[0].Name != "Gamma" {
+		t.Fatalf("want Gamma first after reorder, got %s", cs[0].Name)
+	}
+	if cs[1].Name != "Alpha" {
+		t.Fatalf("want Alpha second after reorder, got %s", cs[1].Name)
+	}
+}
+
+func TestAddCombatantSortOrder(t *testing.T) {
+	d := newTestDB(t)
+	campID, _ := d.CreateCampaign(1, "camp", "")
+	sessID, _ := d.CreateSession(campID, "sess", "")
+	encID, _ := d.CreateEncounter(sessID, "enc")
+
+	d.AddCombatant(encID, "First", 20, 10, true, nil)
+	d.AddCombatant(encID, "Second", 5, 10, false, nil) // lower initiative → appends
+	cs, _ := d.ListCombatants(encID)
+
+	if cs[0].Name != "First" || cs[0].SortOrder != 0 {
+		t.Fatalf("First should have sort_order 0, got %d", cs[0].SortOrder)
+	}
+	if cs[1].Name != "Second" || cs[1].SortOrder != 1 {
+		t.Fatalf("Second should have sort_order 1, got %d", cs[1].SortOrder)
+	}
+}
+
+func TestPatchCombatantInitiative(t *testing.T) {
+	d := newTestDB(t)
+	campID, _ := d.CreateCampaign(1, "camp", "")
+	sessID, _ := d.CreateSession(campID, "sess", "")
+	encID, _ := d.CreateEncounter(sessID, "enc")
+	id, _ := d.AddCombatant(encID, "Hero", 10, 10, true, nil)
+
+	if err := d.PatchCombatantInitiative(id, 18); err != nil {
+		t.Fatal(err)
+	}
+	cs, _ := d.ListCombatants(encID)
+	if cs[0].Initiative != 18 {
+		t.Fatalf("want initiative 18, got %d", cs[0].Initiative)
+	}
+	// sort_order must not change
+	if cs[0].SortOrder != 0 {
+		t.Fatalf("sort_order must remain 0 after initiative patch, got %d", cs[0].SortOrder)
+	}
+}

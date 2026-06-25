@@ -88,27 +88,34 @@ func (d *DB) AdvanceTurn(encounterID int64) (int, error) {
 // --- Combatants ---
 
 type Combatant struct {
-	ID                  int64  `json:"id"`
-	EncounterID         int64  `json:"encounter_id"`
-	CharacterID         *int64 `json:"character_id"`
-	Name                string `json:"name"`
-	Initiative          int    `json:"initiative"`
-	HPCurrent           int    `json:"hp_current"`
-	HPMax               int    `json:"hp_max"`
-	ConditionsJSON      string `json:"conditions_json"`
-	IsPlayer            bool   `json:"is_player"`
-	DamageSuperficial   int    `json:"damage_superficial"`
-	DamageAggravated    int    `json:"damage_aggravated"`
-	WillpowerSuperficial int   `json:"willpower_superficial"`
-	WillpowerAggravated int    `json:"willpower_aggravated"`
-	Hunger              int    `json:"hunger"`
+	ID                   int64  `json:"id"`
+	EncounterID          int64  `json:"encounter_id"`
+	CharacterID          *int64 `json:"character_id"`
+	Name                 string `json:"name"`
+	Initiative           int    `json:"initiative"`
+	HPCurrent            int    `json:"hp_current"`
+	HPMax                int    `json:"hp_max"`
+	ConditionsJSON       string `json:"conditions_json"`
+	IsPlayer             bool   `json:"is_player"`
+	DamageSuperficial    int    `json:"damage_superficial"`
+	DamageAggravated     int    `json:"damage_aggravated"`
+	WillpowerSuperficial int    `json:"willpower_superficial"`
+	WillpowerAggravated  int    `json:"willpower_aggravated"`
+	Hunger               int    `json:"hunger"`
+	SortOrder            int    `json:"sort_order"`
 }
 
 func (d *DB) AddCombatant(encounterID int64, name string, initiative, hpMax int, isPlayer bool, characterID *int64) (int64, error) {
+	var maxSort int
+	_ = d.db.QueryRow(
+		"SELECT COALESCE(MAX(sort_order), -1) FROM combatants WHERE encounter_id = ?",
+		encounterID,
+	).Scan(&maxSort)
 	res, err := d.db.Exec(
-		`INSERT INTO combatants (encounter_id, character_id, name, initiative, hp_current, hp_max, is_player)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		encounterID, characterID, name, initiative, hpMax, hpMax, boolToInt(isPlayer),
+		`INSERT INTO combatants
+		 (encounter_id, character_id, name, initiative, hp_current, hp_max, is_player, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		encounterID, characterID, name, initiative, hpMax, hpMax, boolToInt(isPlayer), maxSort+1,
 	)
 	if err != nil {
 		return 0, err
@@ -124,12 +131,35 @@ func (d *DB) UpdateCombatant(id int64, hpCurrent int, conditionsJSON string) err
 	return err
 }
 
+func (d *DB) PatchCombatantInitiative(id int64, initiative int) error {
+	_, err := d.db.Exec("UPDATE combatants SET initiative = ? WHERE id = ?", initiative, id)
+	return err
+}
+
+func (d *DB) ReorderCombatants(encounterID int64, ids []int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for i, id := range ids {
+		if _, err := tx.Exec(
+			"UPDATE combatants SET sort_order = ? WHERE id = ? AND encounter_id = ?",
+			i, id, encounterID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (d *DB) ListCombatants(encounterID int64) ([]Combatant, error) {
 	rows, err := d.db.Query(
 		`SELECT id, encounter_id, character_id, name, initiative, hp_current, hp_max,
 		        conditions_json, is_player,
-		        damage_superficial, damage_aggravated, willpower_superficial, willpower_aggravated, hunger
-		 FROM combatants WHERE encounter_id = ? ORDER BY initiative DESC`,
+		        damage_superficial, damage_aggravated, willpower_superficial, willpower_aggravated,
+		        hunger, sort_order
+		 FROM combatants WHERE encounter_id = ? ORDER BY sort_order ASC`,
 		encounterID,
 	)
 	if err != nil {
@@ -140,9 +170,13 @@ func (d *DB) ListCombatants(encounterID int64) ([]Combatant, error) {
 	for rows.Next() {
 		var c Combatant
 		var isPlayer int
-		if err := rows.Scan(&c.ID, &c.EncounterID, &c.CharacterID, &c.Name,
+		if err := rows.Scan(
+			&c.ID, &c.EncounterID, &c.CharacterID, &c.Name,
 			&c.Initiative, &c.HPCurrent, &c.HPMax, &c.ConditionsJSON, &isPlayer,
-			&c.DamageSuperficial, &c.DamageAggravated, &c.WillpowerSuperficial, &c.WillpowerAggravated, &c.Hunger); err != nil {
+			&c.DamageSuperficial, &c.DamageAggravated,
+			&c.WillpowerSuperficial, &c.WillpowerAggravated,
+			&c.Hunger, &c.SortOrder,
+		); err != nil {
 			return nil, err
 		}
 		c.IsPlayer = isPlayer == 1

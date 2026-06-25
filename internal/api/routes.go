@@ -2244,26 +2244,16 @@ func (s *Server) handlePatchCombatant(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		HPCurrent      *int   `json:"hp_current"`
 		ConditionsJSON string `json:"conditions_json"`
+		Initiative     *int   `json:"initiative"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 
-	// Read current values to fill in any unset fields
-	combatants, err := s.db.ListCombatants(0)
-	_ = combatants
-	_ = err
-	// We need to fetch by id — use a simple approach: update with provided values,
-	// defaulting hp_current to -1 sentinel to detect missing. Instead, require
-	// that callers always pass hp_current or we keep existing. Since UpdateCombatant
-	// always takes both args, we need the current row.
-	// Fetch current via a workaround: scan all combatants isn't efficient.
-	// The simplest approach: if hp_current not provided, we still need a value.
-	// We'll query directly.
 	var currentHP int
 	var currentConditions string
-	err = s.db.SQL().QueryRowContext(r.Context(),
+	err := s.db.SQL().QueryRowContext(r.Context(),
 		"SELECT hp_current, conditions_json FROM combatants WHERE id = ?", id,
 	).Scan(&currentHP, &currentConditions)
 	if err != nil {
@@ -2283,6 +2273,12 @@ func (s *Server) handlePatchCombatant(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.UpdateCombatant(id, hp, conditions); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if body.Initiative != nil {
+		if err := s.db.PatchCombatantInitiative(id, *body.Initiative); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	s.bus.Publish(Event{Type: EventCombatantUpdated, Payload: map[string]any{"combatant_id": id}})
 	w.WriteHeader(http.StatusNoContent)
@@ -3219,4 +3215,25 @@ Story passage:
 		"currency_label":   char.CurrencyLabel,
 		"currency_delta":   result.Delta,
 	}})
+}
+
+func (s *Server) handleReorderCombatants(w http.ResponseWriter, r *http.Request) {
+	id, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid encounter id", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) == 0 {
+		http.Error(w, "ids required", http.StatusBadRequest)
+		return
+	}
+	if err := s.db.ReorderCombatants(id, body.IDs); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.bus.Publish(Event{Type: EventCombatantUpdated, Payload: map[string]any{"encounter_id": id}})
+	w.WriteHeader(http.StatusNoContent)
 }

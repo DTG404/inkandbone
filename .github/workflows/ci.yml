@@ -41,7 +41,7 @@ jobs:
         run: mkdir -p web/dist && cd web && npm run build
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.11
           skip-cache: true

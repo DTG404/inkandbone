@@ -140,7 +140,7 @@ function CombatantRow({
               className="condition-add-btn"
               onClick={() => setShowDropdown((v) => !v)}
             >+ Condition</button>
-            {showDropdown && (
+            {showDropdown && available.length > 0 && (
               <div className="condition-dropdown">
                 {available.map((s) => (
                   <button key={s} className="condition-option" onClick={() => addCondition(s)}>

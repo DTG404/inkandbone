@@ -103,12 +103,17 @@ func TopK(chunks []db.RulebookChunk, queryEmb []float32, k int) []db.RulebookChu
 **Embedding at ingest (`internal/api/routes_rulebook.go`):**
 - After `CreateRulebookChunks`, iterate chunks and call `EmbedText` for each, storing via `UpsertChunkEmbedding`. Ingest continues even if Ollama fails (chunks stored without embedding).
 
+**Embedding cache (`internal/api/server.go`):**
+- Add `embCache sync.Map` to `Server` struct — keyed by `rulesetID int64`, value `[]db.RulebookChunk` (chunks with embeddings loaded).
+- Cache is populated lazily on first search for a given ruleset, then reused. Invalidated (key deleted) whenever new chunks are ingested for that ruleset.
+- This avoids reloading megabytes of embedding BLOBs from SQLite on every search.
+
 **Startup goroutine (`internal/api/server.go`):**
-- On `NewServer`, launch a goroutine that calls `ListChunksForEmbedding` for all rulesets and embeds any missing embeddings. Runs once on startup; errors are logged but do not crash the server.
+- On `NewServer`, launch a goroutine that calls `ListChunksForEmbedding` for all rulesets and embeds any missing embeddings. Runs once on startup; errors are logged but do not crash the server. Does not pre-populate `embCache` — cache fills on first search.
 
 **Search endpoint:**
 - `POST /api/rulesets/{id}/rulebook/search` — body `{"query": string}`
-- Tries semantic: embed query via Ollama, load all chunks for ruleset, run `TopK(chunks, queryEmb, 8)`
+- Tries semantic: embed query via Ollama; load chunks from `embCache` (populate from DB if missing); run `TopK(chunks, queryEmb, 8)`
 - Falls back to keyword on Ollama error: `SELECT * FROM rulebook_chunks WHERE ruleset_id = ? AND (heading LIKE ? OR content LIKE ?) LIMIT 8`
 - Response: `{"results": [{heading, content, source}], "mode": "semantic"|"keyword"}`
 
@@ -317,15 +322,17 @@ CREATE TABLE map_zones (
 **WebSocket event:** `zone_revealed` → `{map_id, zone_id, zone_name, is_revealed}`
 
 **AI map generation (`internal/api/routes.go`, `handleGenerateMap`):**
-- Updated system prompt instructs the AI to append a `[ZONES]...[/ZONES]` block after the SVG containing a JSON array: `[{"name":"throne room","x":0.1,"y":0.2,"width":0.3,"height":0.25}]`
-- Server strips and parses this block, calls `CreateMapZone` for each entry before returning the map response
-- If the block is absent or malformed, map creation succeeds without zones (not an error)
+- Updated system prompt instructs the AI: *"After the closing `</svg>` tag, output a `[ZONES]` block containing a JSON array of named regions, then `[/ZONES]`. Example: `[ZONES][{"name":"throne room","x":0.1,"y":0.2,"width":0.3,"height":0.25}][/ZONES]`. Output nothing after `[/ZONES]`."*
+- Server parses the AI response by splitting on `</svg>`: everything up to and including `</svg>` is the SVG file content (saved to disk); everything after is scanned for the `[ZONES]...[/ZONES]` block.
+- Extracted zone JSON is parsed and each entry passed to `CreateMapZone`. If the block is absent, malformed, or contains invalid coords (outside 0–1), map creation succeeds without zones — not an error.
+- The SVG file must be saved from the pre-split content only, never including the zones block.
 
 **Fog reveal in automation goroutine (`internal/api/automation.go`):**
 - After each GM response completes (streaming finished), if the session has an active map:
   1. Fetch all unrevealed zones for that map
-  2. For each zone, do a case-insensitive `strings.Contains(narrativeText, zone.Name)` check
+  2. For each zone, compile a case-insensitive word-boundary regex: `(?i)\bzone_name\b` (where `zone_name` is `regexp.QuoteMeta(zone.Name)`). Match against the full narrative text.
   3. On match: call `RevealZone`, broadcast `zone_revealed` WS event
+- Word-boundary matching prevents short zone names (e.g. "hall", "room") from triggering on every message. `"throne room"` still matches "entered the throne room"; `"room"` does not match "ballroom".
 - This runs synchronously after streaming completes — no separate goroutine needed
 
 **Manual reveal:** Handled by `PATCH /api/map-zones/{id}` with `{is_revealed: true|false}`.

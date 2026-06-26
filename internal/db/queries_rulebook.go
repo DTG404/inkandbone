@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"math"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type RulebookChunk struct {
 	Source    string    `json:"source"`
 	Heading   string    `json:"heading"`
 	Content   string    `json:"content"`
+	Embedding []byte    `json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -114,4 +116,68 @@ func (d *DB) SearchRulebookChunks(rulesetID int64, query string) ([]RulebookChun
 		chunks = append(chunks, c)
 	}
 	return chunks, rows.Err()
+}
+
+// encodeFloat32Slice encodes a float32 slice as little-endian bytes.
+func encodeFloat32Slice(emb []float32) []byte {
+	b := make([]byte, len(emb)*4)
+	for i, f := range emb {
+		bits := math.Float32bits(f)
+		b[i*4] = byte(bits)
+		b[i*4+1] = byte(bits >> 8)
+		b[i*4+2] = byte(bits >> 16)
+		b[i*4+3] = byte(bits >> 24)
+	}
+	return b
+}
+
+// UpsertChunkEmbedding stores the embedding for a chunk by ID.
+func (d *DB) UpsertChunkEmbedding(id int64, emb []float32) error {
+	_, err := d.db.Exec(
+		"UPDATE rulebook_chunks SET embedding = ? WHERE id = ?",
+		encodeFloat32Slice(emb), id,
+	)
+	return err
+}
+
+// ListChunksForEmbedding returns chunks that have no embedding yet for a given ruleset.
+func (d *DB) ListChunksForEmbedding(rulesetID int64) ([]RulebookChunk, error) {
+	rows, err := d.db.Query(
+		"SELECT id, ruleset_id, source, heading, content, created_at FROM rulebook_chunks WHERE ruleset_id = ? AND embedding IS NULL",
+		rulesetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RulebookChunk
+	for rows.Next() {
+		var c RulebookChunk
+		if err := rows.Scan(&c.ID, &c.RulesetID, &c.Source, &c.Heading, &c.Content, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ListAllChunks returns all chunks for a ruleset, including those with embeddings.
+func (d *DB) ListAllChunks(rulesetID int64) ([]RulebookChunk, error) {
+	rows, err := d.db.Query(
+		"SELECT id, ruleset_id, source, heading, content, embedding, created_at FROM rulebook_chunks WHERE ruleset_id = ?",
+		rulesetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RulebookChunk
+	for rows.Next() {
+		var c RulebookChunk
+		if err := rows.Scan(&c.ID, &c.RulesetID, &c.Source, &c.Heading, &c.Content, &c.Embedding, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }

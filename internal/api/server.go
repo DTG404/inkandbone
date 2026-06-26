@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type Server struct {
 	aiClient         ai.Completer // nil when ANTHROPIC_API_KEY is unset
 	xpSuggestCounts  sync.Map     // sessionID int64 → int
 	settingCache     sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
+	embCache         sync.Map     // rulesetID int64 → []db.RulebookChunk
 	autoFailCount    int32        // incremented on automation failure, reset on success; circuit breaker at 3
 }
 
@@ -39,6 +41,7 @@ func NewServer(database *db.DB, dataDir string, aiClient ai.Completer) *Server {
 	}
 	s.registerRoutes()
 	go hub.Run()
+	go s.backfillEmbeddings()
 	return s
 }
 
@@ -112,6 +115,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/rulesets/{id}/character-options", s.handleGetCharacterOptions)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/rulebook", s.handleListRulebookSources)
 	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", withMaxBody(50<<20, s.handleIngestRulebook))
+	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook/search", s.handleSearchRulebook)
 	s.mux.HandleFunc("PATCH /api/characters/{id}", s.handlePatchCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/portrait", s.handleUploadPortrait)
 	// Feature 1: Streaming GM
@@ -229,4 +233,29 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status":     "ok",
 		"ai_enabled": s.aiClient != nil,
 	})
+}
+
+// backfillEmbeddings runs at startup to embed any chunks that have no embedding yet.
+func (s *Server) backfillEmbeddings() {
+	ctx := context.Background()
+	rulesets, err := s.db.ListRulesets()
+	if err != nil {
+		return
+	}
+	for _, rs := range rulesets {
+		chunks, err := s.db.ListChunksForEmbedding(rs.ID)
+		if err != nil {
+			continue
+		}
+		for _, c := range chunks {
+			emb, err := ai.EmbedText(ctx, c.Content)
+			if err != nil {
+				log.Printf("backfillEmbeddings: embed chunk %d: %v", c.ID, err)
+				continue
+			}
+			if err := s.db.UpsertChunkEmbedding(c.ID, emb); err != nil {
+				log.Printf("backfillEmbeddings: store chunk %d: %v", c.ID, err)
+			}
+		}
+	}
 }

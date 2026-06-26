@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 	pdfapi "github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 
+	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
 )
 
@@ -109,6 +112,26 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Embed new chunks asynchronously; invalidate cache for this ruleset.
+	s.embCache.Delete(rulesetID)
+	go func() {
+		ctx := context.Background()
+		pending, err := s.db.ListChunksForEmbedding(rulesetID)
+		if err != nil {
+			return
+		}
+		for _, c := range pending {
+			emb, err := ai.EmbedText(ctx, c.Content)
+			if err != nil {
+				log.Printf("ingest embed chunk %d: %v", c.ID, err)
+				continue
+			}
+			if err := s.db.UpsertChunkEmbedding(c.ID, emb); err != nil {
+				log.Printf("ingest store embedding %d: %v", c.ID, err)
+			}
+		}
+	}()
 
 	writeJSON(w, map[string]interface{}{"chunks_created": len(chunks), "source": source})
 }
@@ -218,6 +241,79 @@ func chunkByParagraphs(text, source string) []db.RulebookChunk {
 	flushChunk()
 
 	return chunks
+}
+
+func (s *Server) handleSearchRulebook(w http.ResponseWriter, r *http.Request) {
+	rulesetID, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid ruleset id", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Query string `json:"query"`
+	}
+	if err := decodeJSON(r, &body); err != nil || body.Query == "" {
+		http.Error(w, "query required", http.StatusBadRequest)
+		return
+	}
+
+	type result struct {
+		Heading string `json:"heading"`
+		Content string `json:"content"`
+		Source  string `json:"source"`
+	}
+	type response struct {
+		Results []result `json:"results"`
+		Mode    string   `json:"mode"`
+	}
+
+	// Try semantic search via Ollama.
+	queryEmb, embedErr := ai.EmbedText(r.Context(), body.Query)
+	if embedErr == nil {
+		// Load chunks from cache; populate if missing.
+		raw, ok := s.embCache.Load(rulesetID)
+		if !ok {
+			chunks, err := s.db.ListAllChunks(rulesetID)
+			if err != nil {
+				http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			s.embCache.Store(rulesetID, chunks)
+			raw = chunks
+		}
+		chunks := raw.([]db.RulebookChunk)
+		top := ai.TopK(chunks, queryEmb, 8)
+		// Only return semantic results when there are embedded chunks to rank.
+		// If no chunks have been embedded yet, fall through to keyword search.
+		if len(top) > 0 {
+			out := make([]result, len(top))
+			for i, c := range top {
+				excerpt := c.Content
+				if len([]rune(excerpt)) > 200 {
+					excerpt = string([]rune(excerpt)[:200])
+				}
+				out[i] = result{Heading: c.Heading, Content: excerpt, Source: c.Source}
+			}
+			writeJSON(w, response{Results: out, Mode: "semantic"})
+			return
+		}
+	}
+
+	// Keyword fallback (also used when no embeddings are stored yet).
+	chunks, err := s.db.SearchRulebookChunks(rulesetID, body.Query)
+	if err != nil {
+		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := make([]result, len(chunks))
+	for i, c := range chunks {
+		excerpt := c.Content
+		if len([]rune(excerpt)) > 200 {
+			excerpt = string([]rune(excerpt)[:200])
+		}
+		out[i] = result{Heading: c.Heading, Content: excerpt, Source: c.Source}
+	}
+	writeJSON(w, response{Results: out, Mode: "keyword"})
 }
 
 // extractPDFText validates the PDF then extracts text using pdftotext (poppler),

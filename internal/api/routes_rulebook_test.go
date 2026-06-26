@@ -2,12 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/digitalghost404/inkandbone/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,4 +97,33 @@ func TestIngestRulebook_replacesExisting(t *testing.T) {
 func TestIngestRulebook_pdf(t *testing.T) {
 	// TODO: PDF integration test requires fixture file
 	t.Skip("PDF integration test requires a valid PDF fixture file")
+}
+
+func TestSearchRulebook_keywordFallback(t *testing.T) {
+	s := newTestServer(t)
+	rsID, err := s.db.CreateRuleset("test", "{}", "test")
+	require.NoError(t, err)
+
+	chunks := []db.RulebookChunk{{Source: "Core", Heading: "Combat", Content: "Roll dice to attack."}}
+	require.NoError(t, s.db.CreateRulebookChunks(rsID, chunks))
+
+	body := `{"query":"dice"}`
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/rulesets/%d/rulebook/search", rsID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Results []struct {
+			Heading string `json:"heading"`
+			Content string `json:"content"`
+			Source  string `json:"source"`
+		} `json:"results"`
+		Mode string `json:"mode"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "keyword", resp.Mode)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "Combat", resp.Results[0].Heading)
 }

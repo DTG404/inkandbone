@@ -90,7 +90,7 @@ var vtmEmbraceValidClans = map[string]bool{
 //   - Bestial Failure = 0 successes AND at least one Hunger die shows a 1.
 //
 // On a Messy Critical the clan Compulsion oracle is rolled and injected into the GM context.
-func (s *Server) vtmHungerDiceRoll(ctx context.Context, sessionID int64, pool int, attribute string, dc int, reason, origExpr, charStatsJSON string) *rollCheckResult {
+func (s *Server) vtmHungerDiceRoll(ctx context.Context, sessionID int64, pool int, attribute string, dc int, reason, origExpr, charStatsJSON string, characterName string) *rollCheckResult {
 	// Parse current Hunger from character stats.
 	hunger := 0
 	if charStatsJSON != "" && charStatsJSON != "none" {
@@ -181,6 +181,8 @@ func (s *Server) vtmHungerDiceRoll(ctx context.Context, sessionID int64, pool in
 		"successes":      successes,
 		"messy_critical": messyCritical,
 		"bestial_fail":   bestialFail,
+		"character_name": characterName,
+		"hidden":         false,
 	}})
 
 	// Messy Critical → roll clan Compulsion.

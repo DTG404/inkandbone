@@ -967,10 +967,26 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Determine if multi-character session and get last speaker name and ID.
+	// Must be resolved before checkAndExecuteRoll so characterName can be passed.
+	var lastSpeakerName string
+	var lastSpeakerID int64
+	if len(charNameMap) > 1 {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == "user" && !msgs[i].Whisper && msgs[i].CharacterID != nil {
+				if name, ok := charNameMap[*msgs[i].CharacterID]; ok {
+					lastSpeakerName = name
+					lastSpeakerID = *msgs[i].CharacterID
+					break
+				}
+			}
+		}
+	}
+
 	// Check if the player's action requires a dice roll under the active ruleset.
 	// Do this before building the system prompt so the result can be injected.
 	lastPlayerMsg := msgs[len(msgs)-1].Content
-	roll := s.checkAndExecuteRoll(r.Context(), id, lastPlayerMsg)
+	roll := s.checkAndExecuteRoll(r.Context(), id, lastPlayerMsg, lastSpeakerName)
 
 	worldCtx := s.buildWorldContext(r.Context(), id)
 	s.appendRulebookContext(r.Context(), id, lastPlayerMsg, &worldCtx)
@@ -1021,20 +1037,6 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		worldCtx += "\n" + vtmCommandResult
 	}
 
-	// Determine if multi-character session and get last speaker name and ID
-	var lastSpeakerName string
-	var lastSpeakerID int64
-	if len(charNameMap) > 1 {
-		for i := len(msgs) - 1; i >= 0; i-- {
-			if msgs[i].Role == "user" && !msgs[i].Whisper && msgs[i].CharacterID != nil {
-				if name, ok := charNameMap[*msgs[i].CharacterID]; ok {
-					lastSpeakerName = name
-					lastSpeakerID = *msgs[i].CharacterID
-					break
-				}
-			}
-		}
-	}
 	var reminder string
 	if lastSpeakerName != "" {
 		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", lastSpeakerName)
@@ -1919,7 +1921,7 @@ type rollCheckResult struct {
 // checkAndExecuteRoll asks haiku whether the player's action requires a dice
 // roll under the active ruleset. If it does, the roll is executed, saved to
 // the DB, and the result is returned so the GM prompt can incorporate it.
-func (s *Server) checkAndExecuteRoll(ctx context.Context, sessionID int64, playerAction string) *rollCheckResult {
+func (s *Server) checkAndExecuteRoll(ctx context.Context, sessionID int64, playerAction string, characterName string) *rollCheckResult {
 	if !s.isAutomationEnabled(settingAutoCheckRoll) {
 		return nil
 	}
@@ -2010,7 +2012,7 @@ If NO dice roll is required, respond with ONLY:
 
 	// VtM: use Hunger dice mechanic (pool of d10s, Hunger dice replace some).
 	if ruleset.Name == "vtm" && sides == 10 {
-		return s.vtmHungerDiceRoll(ctx, sessionID, count, check.Attribute, check.DC, check.Reason, check.Expression, charStats)
+		return s.vtmHungerDiceRoll(ctx, sessionID, count, check.Attribute, check.DC, check.Reason, check.Expression, charStats, characterName)
 	}
 
 	rolls := make([]int, count)
@@ -2024,9 +2026,11 @@ If NO dice roll is required, respond with ONLY:
 	breakdownBytes, _ := json.Marshal(rolls)
 	_, _ = s.db.LogDiceRoll(sessionID, check.Expression, total, string(breakdownBytes))
 	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{
-		"session_id": sessionID,
-		"expression": check.Expression,
-		"result":     total,
+		"session_id":     sessionID,
+		"expression":     check.Expression,
+		"result":         total,
+		"character_name": characterName,
+		"hidden":         false,
 	}})
 
 	return &rollCheckResult{
@@ -2204,7 +2208,8 @@ func (s *Server) handleRollDice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Expression string `json:"expression"`
+		Expression    string `json:"expression"`
+		CharacterName string `json:"character_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -2267,9 +2272,11 @@ func (s *Server) handleRollDice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{
-		"session_id": id,
-		"expression": body.Expression,
-		"result":     total,
+		"session_id":     id,
+		"expression":     body.Expression,
+		"result":         total,
+		"character_name": body.CharacterName,
+		"hidden":         false,
 	}})
 
 	writeJSON(w, map[string]any{

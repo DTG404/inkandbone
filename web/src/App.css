@@ -3469,3 +3469,12 @@ mark {
   color: var(--gold);
   border-color: var(--gold-dim);
 }
+
+/* Dice live feed animation */
+@keyframes diceSlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.dice-entry-new {
+  animation: diceSlideIn 0.35s ease-out forwards;
+}

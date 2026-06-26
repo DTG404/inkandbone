@@ -4,7 +4,7 @@ import { CombatPanel } from './CombatPanel'
 import type { CombatSnapshot } from './types'
 
 const combat: CombatSnapshot = {
-  encounter: { id: 1, session_id: 1, name: 'Bandit Ambush', active: true, active_turn_index: 0, created_at: '' },
+  encounter: { id: 1, session_id: 1, name: 'Bandit Ambush', active: true, active_turn_index: 0, round_number: 1, created_at: '' },
   combatants: [
     {
       id: 1, encounter_id: 1, character_id: null,

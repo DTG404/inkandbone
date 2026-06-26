@@ -3549,3 +3549,21 @@ mark {
   pointer-events: none;
   z-index: 20;
 }
+
+/* Combat round counter and expiring conditions */
+.combat-round-badge {
+  font-size: 0.65rem;
+  font-weight: normal;
+  opacity: 0.7;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.condition-badge-expiring {
+  border-color: #cc2200 !important;
+  color: #ff4422 !important;
+  animation: conditionFlash 0.6s ease-in-out infinite alternate;
+}
+@keyframes conditionFlash {
+  from { opacity: 1; }
+  to   { opacity: 0.5; }
+}

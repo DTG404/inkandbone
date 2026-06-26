@@ -104,7 +104,9 @@
       "Bash(bash /home/dtg404/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/review-package ea300bd bdb29da)",
       "Bash(bash /home/dtg404/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/task-brief docs/superpowers/plans/2026-06-25-group-b-interactivity.md 10)",
       "Bash(bash /home/dtg404/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/review-package bdb29da a918296)",
-      "Bash(bash /home/dtg404/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/review-package cc9e239 a918296)"
+      "Bash(bash /home/dtg404/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/review-package cc9e239 a918296)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

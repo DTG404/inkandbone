@@ -40,6 +40,10 @@ func (s *Server) handleCreateZone(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
+	if body.X < 0 || body.X > 1 || body.Y < 0 || body.Y > 1 || body.Width <= 0 || body.Height <= 0 {
+		http.Error(w, "x/y must be 0–1, width/height must be positive", http.StatusBadRequest)
+		return
+	}
 	id, err := s.db.CreateMapZone(mapID, body.Name, body.X, body.Y, body.Width, body.Height)
 	if err != nil {
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
@@ -69,7 +73,11 @@ func (s *Server) handlePatchZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	existing, err := s.db.GetMapZone(id)
-	if err != nil || existing == nil {
+	if err != nil {
+		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if existing == nil {
 		http.Error(w, "zone not found", http.StatusNotFound)
 		return
 	}
@@ -89,6 +97,10 @@ func (s *Server) handlePatchZone(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Height != nil {
 		h = *body.Height
+	}
+	if x < 0 || x > 1 || y < 0 || y > 1 || w2 <= 0 || h <= 0 {
+		http.Error(w, "x/y must be 0–1, width/height must be positive", http.StatusBadRequest)
+		return
 	}
 	if err := s.db.UpdateMapZone(id, name, x, y, w2, h); err != nil {
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)

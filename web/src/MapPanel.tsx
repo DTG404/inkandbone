@@ -31,7 +31,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const [pins, setPins] = useState<MapPin[]>([])
   const [selectedPin, setSelectedPin] = useState<MapPin | null>(null)
   const [tokens, setTokens] = useState<MapToken[]>([])
-  const [dragging, setDragging] = useState<{ tokenId: number; offsetX: number; offsetY: number } | null>(null)
+  const [dragging, setDragging] = useState<{ tokenId: number } | null>(null)
   const [hoveredToken, setHoveredToken] = useState<number | null>(null)
   const [showPalette, setShowPalette] = useState(false)
   const [zones, setZones] = useState<MapZone[]>([])
@@ -69,6 +69,9 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const activeMap = maps[activeMapIdx] ?? null
 
   useEffect(() => {
+    setZoneEditMode(false)
+    setZoneDrawing(null)
+    setPendingZoneName(null)
     if (!activeMap) {
       setPins([])
       setTokens([])
@@ -220,6 +223,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
             style={{ position: 'relative', flex: 1, userSelect: dragging ? 'none' : 'auto' }}
             onMouseMove={(e) => { handleMapMouseMove(e); handleZoneMouseMove(e) }}
             onMouseUp={(e) => { handleMapMouseUp(e); handleZoneMouseUp() }}
+            onMouseLeave={() => { setDragging(null); setZoneDrawing(null) }}
           >
             <img
               ref={mapImgRef}
@@ -283,7 +287,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                 title={token.name}
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  setDragging({ tokenId: token.id, offsetX: 0, offsetY: 0 })
+                  setDragging({ tokenId: token.id })
                 }}
                 onMouseEnter={() => setHoveredToken(token.id)}
                 onMouseLeave={() => setHoveredToken(null)}

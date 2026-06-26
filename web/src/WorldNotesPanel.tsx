@@ -70,7 +70,7 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
     if (ev?.type === 'world_note_revealed' || ev?.type === 'world_note_created' || ev?.type === 'world_note_updated') {
       loadNotes()
     }
-  }, [lastEvent]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastEvent, loadNotes])
 
   async function handleDraftWithAI() {
     const hint = window.prompt('Describe the note:')

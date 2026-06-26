@@ -3400,3 +3400,72 @@ mark {
   cursor: pointer;
   font-size: 12px;
 }
+
+/* Zone editor */
+.zone-mode-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.zone-mode-btn:hover {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+}
+
+.zone-mode-btn.active {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(201,168,76,0.08);
+}
+
+.zone-name-prompt {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--gold);
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  z-index: 30;
+}
+
+.zone-name-prompt input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 0.2rem 0.5rem;
+}
+
+.zone-list-panel {
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  font-size: 12px;
+}
+
+.zone-list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  color: var(--text-dim);
+}
+
+.zone-list-row button {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.zone-list-row button:hover {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+}

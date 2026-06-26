@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/digitalghost404/inkandbone/internal/db"
 )
@@ -43,9 +44,17 @@ func (s *Server) handlePlaceToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "entity_type must be character or npc", http.StatusBadRequest)
 		return
 	}
+	if body.X < 0 || body.X > 1 || body.Y < 0 || body.Y > 1 {
+		http.Error(w, "x/y must be 0–1", http.StatusBadRequest)
+		return
+	}
 	tokenID, err := s.db.PlaceToken(mapID, body.EntityType, body.EntityID, body.X, body.Y)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusConflict)
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			http.Error(w, "token already placed", http.StatusConflict)
+			return
+		}
+		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	token, err := s.db.GetToken(tokenID)
@@ -74,6 +83,10 @@ func (s *Server) handleMoveToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if body.X < 0 || body.X > 1 || body.Y < 0 || body.Y > 1 {
+		http.Error(w, "x/y must be 0–1", http.StatusBadRequest)
 		return
 	}
 	token, err := s.db.GetToken(id)

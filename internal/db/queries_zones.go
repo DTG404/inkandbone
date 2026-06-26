@@ -1,5 +1,7 @@
 package db
 
+import "database/sql"
+
 type MapZone struct {
 	ID         int64   `json:"id"`
 	MapID      int64   `json:"map_id"`
@@ -89,6 +91,9 @@ func (d *DB) GetMapZone(id int64) (*MapZone, error) {
 	err := d.db.QueryRow(
 		"SELECT id, map_id, name, x, y, width, height, is_revealed FROM map_zones WHERE id = ?", id,
 	).Scan(&z.ID, &z.MapID, &z.Name, &z.X, &z.Y, &z.Width, &z.Height, &z.IsRevealed)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

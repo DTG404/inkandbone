@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import type { CampaignMap, MapPin, MapToken } from './api'
-import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken } from './api'
+import type { CampaignMap, MapPin, MapToken, MapZone } from './api'
+import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone } from './api'
 import type { SessionNPC, Character } from './types'
 
 function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id: number } } {
@@ -34,6 +34,11 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const [dragging, setDragging] = useState<{ tokenId: number; offsetX: number; offsetY: number } | null>(null)
   const [hoveredToken, setHoveredToken] = useState<number | null>(null)
   const [showPalette, setShowPalette] = useState(false)
+  const [zones, setZones] = useState<MapZone[]>([])
+  const [zoneEditMode, setZoneEditMode] = useState(false)
+  const [zoneDrawing, setZoneDrawing] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null)
+  const [pendingZoneName, setPendingZoneName] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [newZoneName, setNewZoneName] = useState('')
   const mapImgRef = useRef<HTMLImageElement>(null)
 
   function loadMaps(goToLast = false) {
@@ -67,11 +72,13 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
     if (!activeMap) {
       setPins([])
       setTokens([])
+      setZones([])
       onActiveMapChange?.(null, null)
       return
     }
     fetchMapPins(activeMap.id).then(setPins).catch(console.error)
     loadTokens(activeMap.id)
+    fetchMapZones(activeMap.id).then(setZones).catch(console.error)
     onActiveMapChange?.(activeMap.id, activeMap.image_path)
   }, [activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -91,7 +98,50 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
         loadTokens(activeMap.id)
       }
     }
+    if (e.type === 'zone_revealed') {
+      const p = e.payload as { map_id: number }
+      if (p && p.map_id === activeMap.id) {
+        fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+      }
+    }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleZoneMouseDown(e: React.MouseEvent<HTMLImageElement>) {
+    if (!zoneEditMode || !mapImgRef.current) return
+    const rect = mapImgRef.current.getBoundingClientRect()
+    const sx = (e.clientX - rect.left) / rect.width
+    const sy = (e.clientY - rect.top) / rect.height
+    setZoneDrawing({ startX: sx, startY: sy, endX: sx, endY: sy })
+  }
+
+  function handleZoneMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!zoneEditMode || !zoneDrawing || !mapImgRef.current) return
+    const rect = mapImgRef.current.getBoundingClientRect()
+    const ex = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+    const ey = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
+    setZoneDrawing(prev => prev ? { ...prev, endX: ex, endY: ey } : null)
+  }
+
+  function handleZoneMouseUp() {
+    if (!zoneEditMode || !zoneDrawing) return
+    const x = Math.min(zoneDrawing.startX, zoneDrawing.endX)
+    const y = Math.min(zoneDrawing.startY, zoneDrawing.endY)
+    const w = Math.abs(zoneDrawing.endX - zoneDrawing.startX)
+    const h = Math.abs(zoneDrawing.endY - zoneDrawing.startY)
+    if (w < 0.02 || h < 0.02) { setZoneDrawing(null); return }
+    setZoneDrawing(null)
+    setPendingZoneName({ x, y, w, h })
+    setNewZoneName('')
+  }
+
+  async function handleCreateZone() {
+    if (!pendingZoneName || !newZoneName.trim() || !activeMap) return
+    const { x, y, w, h } = pendingZoneName
+    await createMapZone(activeMap.id, newZoneName.trim(), x, y, w, h)
+    setPendingZoneName(null)
+    setNewZoneName('')
+    fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+  }
 
   function handleMapMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     if (!dragging || !mapImgRef.current) return
@@ -155,12 +205,21 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
         </div>
       )}
       {activeMap && (
+        <button
+          className={`zone-mode-btn${zoneEditMode ? ' active' : ''}`}
+          onClick={() => setZoneEditMode(!zoneEditMode)}
+          title="Toggle zone editor"
+        >
+          ⬜ Zones
+        </button>
+      )}
+      {activeMap && (
         <>
           <div
             className="map-scroll"
             style={{ position: 'relative', flex: 1, userSelect: dragging ? 'none' : 'auto' }}
-            onMouseMove={handleMapMouseMove}
-            onMouseUp={handleMapMouseUp}
+            onMouseMove={(e) => { handleMapMouseMove(e); handleZoneMouseMove(e) }}
+            onMouseUp={(e) => { handleMapMouseUp(e); handleZoneMouseUp() }}
           >
             <img
               ref={mapImgRef}
@@ -169,6 +228,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
               style={{ width: '100%', display: 'block', minWidth: '400px' }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleMapDrop}
+              onMouseDown={(e) => { if (zoneEditMode) handleZoneMouseDown(e) }}
             />
             {pins.map((pin) => (
               <button
@@ -258,6 +318,58 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                 )}
               </div>
             ))}
+            {/* Fog layer — unrevealed zones */}
+            {zones.map((zone) => (
+              <div
+                key={zone.id}
+                style={{
+                  position: 'absolute',
+                  left: `${zone.x * 100}%`,
+                  top: `${zone.y * 100}%`,
+                  width: `${zone.width * 100}%`,
+                  height: `${zone.height * 100}%`,
+                  background: zoneEditMode
+                    ? 'rgba(201,168,76,0.2)'
+                    : zone.is_revealed ? 'transparent' : 'rgba(0,0,0,0.75)',
+                  border: zoneEditMode ? '2px dashed #c9a84c' : 'none',
+                  transition: 'background 0.6s ease-out',
+                  pointerEvents: zoneEditMode ? 'auto' : 'none',
+                  zIndex: zone.is_revealed ? 0 : 5,
+                  boxSizing: 'border-box',
+                }}
+                title={zoneEditMode ? zone.name : undefined}
+              />
+            ))}
+            {/* Zone draw preview */}
+            {zoneEditMode && zoneDrawing && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min(zoneDrawing.startX, zoneDrawing.endX) * 100}%`,
+                  top: `${Math.min(zoneDrawing.startY, zoneDrawing.endY) * 100}%`,
+                  width: `${Math.abs(zoneDrawing.endX - zoneDrawing.startX) * 100}%`,
+                  height: `${Math.abs(zoneDrawing.endY - zoneDrawing.startY) * 100}%`,
+                  border: '2px dashed #fff',
+                  background: 'rgba(255,255,255,0.1)',
+                  pointerEvents: 'none',
+                  zIndex: 20,
+                }}
+              />
+            )}
+            {/* Pending zone name prompt */}
+            {pendingZoneName && (
+              <div className="zone-name-prompt">
+                <input
+                  autoFocus
+                  placeholder="Zone name"
+                  value={newZoneName}
+                  onChange={e => setNewZoneName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateZone() }}
+                />
+                <button onClick={handleCreateZone}>Add</button>
+                <button onClick={() => setPendingZoneName(null)}>Cancel</button>
+              </div>
+            )}
             {selectedPin && (
               <div className="map-pin-tooltip">
                 <strong>{selectedPin.label}</strong>
@@ -305,6 +417,30 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
               </div>
             )}
           </div>
+          {zoneEditMode && zones.length > 0 && (
+            <div className="zone-list-panel">
+              <strong>Zones</strong>
+              {zones.map((zone) => (
+                <div key={zone.id} className="zone-list-row">
+                  <span>{zone.name}</span>
+                  <button
+                    onClick={async () => {
+                      await patchMapZone(zone.id, { is_revealed: !zone.is_revealed })
+                      if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+                    }}
+                  >
+                    {zone.is_revealed ? 'Hide' : 'Reveal'}
+                  </button>
+                  <button onClick={async () => {
+                    await deleteMapZone(zone.id)
+                    if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+                  }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

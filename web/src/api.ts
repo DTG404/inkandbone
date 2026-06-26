@@ -1136,3 +1136,44 @@ export async function removeToken(tokenId: number): Promise<void> {
   const res = await fetch(`/api/map-tokens/${tokenId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`removeToken failed: ${res.status}`)
 }
+
+export interface MapZone {
+  id: number
+  map_id: number
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  is_revealed: boolean
+}
+
+export async function fetchMapZones(mapId: number): Promise<MapZone[]> {
+  const res = await fetch(`/api/maps/${mapId}/zones`)
+  if (!res.ok) throw new Error(`fetchMapZones failed: ${res.status}`)
+  return res.json()
+}
+
+export async function createMapZone(mapId: number, name: string, x: number, y: number, width: number, height: number): Promise<{ id: number }> {
+  const res = await fetch(`/api/maps/${mapId}/zones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, x, y, width, height }),
+  })
+  if (!res.ok) throw new Error(`createMapZone failed: ${res.status}`)
+  return res.json()
+}
+
+export async function patchMapZone(zoneId: number, updates: Partial<Pick<MapZone, 'name' | 'x' | 'y' | 'width' | 'height' | 'is_revealed'>>): Promise<void> {
+  const res = await fetch(`/api/map-zones/${zoneId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(`patchMapZone failed: ${res.status}`)
+}
+
+export async function deleteMapZone(zoneId: number): Promise<void> {
+  const res = await fetch(`/api/map-zones/${zoneId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`deleteMapZone failed: ${res.status}`)
+}

@@ -1,4 +1,4 @@
-import type { GameContext, WorldNote, DiceRoll, TimelineEntry, SessionNPC, Objective, Item, XPEntry, Adventure, Faction, Relationship, NpcStat, Secret, Macro } from './types'
+import type { GameContext, WorldNote, DiceRoll, TimelineEntry, SessionNPC, Objective, Item, XPEntry, Adventure, Faction, Relationship, NpcStat, Secret, Macro, Deck, DeckCard, DeckDraw } from './types'
 
 export interface CampaignMap {
   id: number;
@@ -1053,4 +1053,46 @@ export async function reorderMacros(characterId: number, ids: number[]): Promise
     body: JSON.stringify({ ids }),
   })
   if (!res.ok) throw new Error(`reorderMacros failed: ${res.status}`)
+}
+
+export async function listDecks(campaignId: number): Promise<Deck[]> {
+  const res = await fetch(`/api/campaigns/${campaignId}/decks`)
+  if (!res.ok) throw new Error(`listDecks failed: ${res.status}`)
+  return res.json()
+}
+
+export async function createDeck(campaignId: number, name: string, cards: DeckCard[]): Promise<{ id: number }> {
+  const res = await fetch(`/api/campaigns/${campaignId}/decks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, cards }),
+  })
+  if (!res.ok) throw new Error(`createDeck failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteDeck(deckId: number): Promise<void> {
+  const res = await fetch(`/api/decks/${deckId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`deleteDeck failed: ${res.status}`)
+}
+
+export async function shuffleDeck(deckId: number): Promise<void> {
+  const res = await fetch(`/api/decks/${deckId}/shuffle`, { method: 'POST' })
+  if (!res.ok) throw new Error(`shuffleDeck failed: ${res.status}`)
+}
+
+export async function drawCard(deckId: number, sessionId: number): Promise<{ card?: DeckCard; draw_index?: number; total?: number; exhausted?: boolean }> {
+  const res = await fetch(`/api/decks/${deckId}/draw`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  })
+  if (!res.ok) throw new Error(`drawCard failed: ${res.status}`)
+  return res.json()
+}
+
+export async function listDeckDraws(sessionId: number): Promise<DeckDraw[]> {
+  const res = await fetch(`/api/sessions/${sessionId}/deck-draws`)
+  if (!res.ok) throw new Error(`listDeckDraws failed: ${res.status}`)
+  return res.json()
 }

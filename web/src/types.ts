@@ -245,3 +245,21 @@ export interface Macro {
   sort_order: number
   created_at: string
 }
+
+export interface DeckCard { front: string; back?: string }
+export interface Deck {
+  id: number
+  campaign_id: number
+  name: string
+  cards_json: string
+  shuffled_order_json: string
+  draw_index: number
+  created_at: string
+}
+export interface DeckDraw {
+  id: number
+  session_id: number
+  deck_id: number
+  card_json: string
+  drawn_at: string
+}

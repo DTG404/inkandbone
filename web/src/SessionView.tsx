@@ -23,6 +23,7 @@ import { CalendarPanel } from './CalendarPanel'
 import { GMToolsPanel } from './GMToolsPanel'
 import { HandoutsPanel } from './HandoutsPanel'
 import { CompendiumPanel } from './CompendiumPanel'
+import { DecksPanel } from './DecksPanel'
 import { XPSuggestionsPanel } from './XPSuggestionsPanel'
 import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
@@ -789,6 +790,12 @@ export function SessionView({
             Compendium
           </button>
           <button
+            className={`tab-btn${rightTab === 'decks' ? ' active' : ''}`}
+            onClick={() => setRightTab('decks')}
+          >
+            Decks
+          </button>
+          <button
             className={`tab-btn${rightTab === 'notes' ? ' active' : ''}`}
             onClick={() => setRightTab('notes')}
           >
@@ -867,6 +874,9 @@ export function SessionView({
           )}
           {rightTab === 'compendium' && ctx.campaign && (
             <CompendiumPanel rulesetId={ctx.campaign.ruleset_id} />
+          )}
+          {rightTab === 'decks' && ctx.campaign && ctx.session && (
+            <DecksPanel campaignId={ctx.campaign.id} sessionId={ctx.session.id} lastEvent={lastEvent} />
           )}
           {rightTab === 'notes' && ctx.campaign && (
             <WorldNotesPanel

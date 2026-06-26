@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"errors"
+)
 
 type Deck struct {
 	ID                int64  `json:"id"`
@@ -79,14 +82,20 @@ func (d *DB) ShuffleDeck(id int64, shuffledOrderJSON string) error {
 	return err
 }
 
-func (d *DB) DrawCard(deckID int64, newDrawIndex int, sessionID int64, cardJSON string) error {
+var ErrDrawConflict = errors.New("draw conflict: another draw completed first")
+
+func (d *DB) DrawCard(deckID int64, expectedDrawIndex, newDrawIndex int, sessionID int64, cardJSON string) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec("UPDATE decks SET draw_index = ? WHERE id = ?", newDrawIndex, deckID); err != nil {
+	res, err := tx.Exec("UPDATE decks SET draw_index = ? WHERE id = ? AND draw_index = ?", newDrawIndex, deckID, expectedDrawIndex)
+	if err != nil {
 		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrDrawConflict
 	}
 	if _, err := tx.Exec("INSERT INTO deck_draws (session_id, deck_id, card_json) VALUES (?, ?, ?)", sessionID, deckID, cardJSON); err != nil {
 		return err

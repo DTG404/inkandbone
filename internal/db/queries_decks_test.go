@@ -31,7 +31,7 @@ func TestDeckCRUD(t *testing.T) {
 	assert.Equal(t, "[1,0]", deck.ShuffledOrderJSON)
 	assert.Equal(t, 0, deck.DrawIndex)
 
-	require.NoError(t, d.DrawCard(id, 1, sessID, `{"front":"Moon","back":"Change"}`))
+	require.NoError(t, d.DrawCard(id, 0, 1, sessID, `{"front":"Moon","back":"Change"}`))
 	deck, _ = d.GetDeck(id)
 	assert.Equal(t, 1, deck.DrawIndex)
 

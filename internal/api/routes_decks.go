@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -139,7 +140,11 @@ func (s *Server) handleDrawCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cardJSON := string(cards[cardIdx])
-	if err := s.db.DrawCard(id, deck.DrawIndex+1, body.SessionID, cardJSON); err != nil {
+	if err := s.db.DrawCard(id, deck.DrawIndex, deck.DrawIndex+1, body.SessionID, cardJSON); err != nil {
+		if errors.Is(err, db.ErrDrawConflict) {
+			http.Error(w, "draw conflict: try again", http.StatusConflict)
+			return
+		}
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

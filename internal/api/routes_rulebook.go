@@ -131,6 +131,7 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 				log.Printf("ingest store embedding %d: %v", c.ID, err)
 			}
 		}
+		s.embCache.Delete(rulesetID)
 	}()
 
 	writeJSON(w, map[string]interface{}{"chunks_created": len(chunks), "source": source})

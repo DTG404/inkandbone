@@ -36,6 +36,17 @@ export function HandoutsPanel({ campaignId, lastEvent }: Props) {
             <strong>{n.title}</strong>
             {n.category && <span className="category-badge">{n.category}</span>}
           </div>
+          {(() => {
+            try { return JSON.parse(n.tags_json) as string[] } catch { return [] }
+          })().length > 0 && (
+            <div className="handout-tags">
+              {(() => {
+                try { return JSON.parse(n.tags_json) as string[] } catch { return [] }
+              })().map(tag => (
+                <span key={tag} className="handout-tag">{tag}</span>
+              ))}
+            </div>
+          )}
           <div className="handout-content">
             <ReactMarkdown>{n.content}</ReactMarkdown>
           </div>

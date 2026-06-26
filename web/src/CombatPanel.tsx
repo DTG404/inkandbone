@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { CombatSnapshot, Combatant } from './types'
 import { patchCombatant, advanceTurn, reorderCombatants } from './api'
 
@@ -50,6 +50,9 @@ function CombatantRow({
   isLast: boolean
 }) {
   const [conditions, setConditions] = useState<Condition[]>(() => parseConditions(c.conditions_json))
+  useEffect(() => {
+    setConditions(parseConditions(c.conditions_json))
+  }, [c.conditions_json])
   const [showDropdown, setShowDropdown] = useState(false)
   const [editingInit, setEditingInit] = useState(false)
   const [initInput, setInitInput] = useState(String(c.initiative))

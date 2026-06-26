@@ -121,7 +121,7 @@ func (d *DB) AdvanceTurn(encounterID int64) (nextIdx int, roundNumber int, err e
 	}
 
 	next := (current + 1) % count
-	wraps := next == 0 && count > 1
+	wraps := next == 0
 
 	tx, err := d.db.Begin()
 	if err != nil {

@@ -2210,6 +2210,7 @@ func (s *Server) handleRollDice(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Expression    string `json:"expression"`
 		CharacterName string `json:"character_name"`
+		Hidden        bool   `json:"hidden"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -2276,7 +2277,7 @@ func (s *Server) handleRollDice(w http.ResponseWriter, r *http.Request) {
 		"expression":     body.Expression,
 		"result":         total,
 		"character_name": body.CharacterName,
-		"hidden":         false,
+		"hidden":         body.Hidden,
 	}})
 
 	writeJSON(w, map[string]any{

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -96,7 +97,9 @@ func (s *Server) handleRevealSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret, err := s.db.GetSecret(id)
-	if err == nil && secret != nil {
+	if err != nil {
+		log.Printf("handleRevealSecret: fetch after reveal failed: %v", err)
+	} else if secret != nil {
 		s.bus.Publish(Event{Type: EventSecretRevealed, Payload: map[string]any{
 			"id":       secret.ID,
 			"title":    secret.Title,

@@ -71,17 +71,17 @@ func TestAdvanceTurn(t *testing.T) {
 	assert.Equal(t, 0, enc.ActiveTurnIndex)
 
 	// Advance: 0 → 1
-	next, err := d.AdvanceTurn(encID)
+	next, _, err := d.AdvanceTurn(encID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, next)
 
 	// Advance: 1 → 2
-	next, err = d.AdvanceTurn(encID)
+	next, _, err = d.AdvanceTurn(encID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, next)
 
 	// Advance: 2 → 0 (wraps)
-	next, err = d.AdvanceTurn(encID)
+	next, _, err = d.AdvanceTurn(encID)
 	require.NoError(t, err)
 	assert.Equal(t, 0, next)
 
@@ -93,7 +93,7 @@ func TestAdvanceTurn(t *testing.T) {
 
 func TestAdvanceTurnNotFound(t *testing.T) {
 	d := newTestDB(t)
-	_, err := d.AdvanceTurn(99999)
+	_, _, err := d.AdvanceTurn(99999)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -205,4 +205,59 @@ func TestPatchCombatantInitiative(t *testing.T) {
 	if cs[0].SortOrder != 0 {
 		t.Fatalf("sort_order must remain 0 after initiative patch, got %d", cs[0].SortOrder)
 	}
+}
+
+func TestAdvanceTurnIncrementsRoundOnWrap(t *testing.T) {
+	d := newTestDB(t)
+	sessID := setupSession(t, d)
+	encID, err := d.CreateEncounter(sessID, "Round Test")
+	require.NoError(t, err)
+	d.AddCombatant(encID, "A", 10, 10, true, nil)
+	d.AddCombatant(encID, "B", 5, 10, false, nil)
+
+	// round 1: advance A→B
+	_, round, err := d.AdvanceTurn(encID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, round) // still round 1
+
+	// advance B→A (wrap): round increments to 2
+	_, round, err = d.AdvanceTurn(encID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, round)
+
+	enc, err := d.GetActiveEncounter(sessID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, enc.RoundNumber)
+}
+
+func TestDecayConditionsOnTurnStart(t *testing.T) {
+	d := newTestDB(t)
+	sessID := setupSession(t, d)
+	encID, err := d.CreateEncounter(sessID, "Decay Test")
+	require.NoError(t, err)
+
+	// A has a timed condition (rounds:1) — should expire
+	// B has a timed condition (rounds:3) — should decrement to 2
+	aID, _ := d.AddCombatant(encID, "A", 20, 10, true, nil)
+	bID, _ := d.AddCombatant(encID, "B", 10, 10, false, nil)
+	require.NoError(t, d.UpdateCombatant(aID, 10, `[{"name":"Stunned","rounds":1}]`))
+	require.NoError(t, d.UpdateCombatant(bID, 10, `["Poisoned",{"name":"Burning","rounds":3}]`))
+
+	// Advance to B (index 1): B's conditions decay
+	_, _, err = d.AdvanceTurn(encID)
+	require.NoError(t, err)
+	combatants, err := d.ListCombatants(encID)
+	require.NoError(t, err)
+	// A (index 0) unchanged
+	assert.Equal(t, `[{"name":"Stunned","rounds":1}]`, combatants[0].ConditionsJSON)
+	// B (index 1): Poisoned stays, Burning decrements to 2
+	assert.Contains(t, combatants[1].ConditionsJSON, `"Burning"`)
+	assert.Contains(t, combatants[1].ConditionsJSON, `"rounds":2`)
+
+	// Advance back to A (index 0, wrap): A's Stunned(1) expires
+	_, _, err = d.AdvanceTurn(encID)
+	require.NoError(t, err)
+	combatants, err = d.ListCombatants(encID)
+	require.NoError(t, err)
+	assert.Equal(t, `[]`, combatants[0].ConditionsJSON)
 }

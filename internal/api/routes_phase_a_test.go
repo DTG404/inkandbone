@@ -40,6 +40,7 @@ func TestNextTurn(t *testing.T) {
 	payload := got.Payload.(map[string]any)
 	assert.Equal(t, encID, payload["encounter_id"])
 	assert.EqualValues(t, 1, payload["active_turn_index"])
+	assert.EqualValues(t, 1, payload["round_number"]) // first advance, no wrap — still round 1
 }
 
 func TestNextTurnNotFound(t *testing.T) {

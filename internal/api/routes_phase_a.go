@@ -14,7 +14,7 @@ func (s *Server) handleNextTurn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid encounter id", http.StatusBadRequest)
 		return
 	}
-	nextIdx, err := s.db.AdvanceTurn(id)
+	nextIdx, roundNumber, err := s.db.AdvanceTurn(id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -26,6 +26,7 @@ func (s *Server) handleNextTurn(w http.ResponseWriter, r *http.Request) {
 	s.bus.Publish(Event{Type: EventTurnAdvanced, Payload: map[string]any{
 		"encounter_id":      id,
 		"active_turn_index": nextIdx,
+		"round_number":      roundNumber,
 	}})
 	w.WriteHeader(http.StatusNoContent)
 }

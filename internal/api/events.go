@@ -48,6 +48,7 @@ const (
 	EventTokenPlaced            EventType = "token_placed"
 	EventTokenMoved             EventType = "token_moved"
 	EventTokenRemoved           EventType = "token_removed"
+	EventZoneRevealed           EventType = "zone_revealed"
 )
 
 // Event is published by MCP tool handlers and broadcast to WebSocket clients.

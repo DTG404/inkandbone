@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,7 +61,8 @@ Rules:
 - Include 5-10 named locations relevant to the story
 - Connect areas with corridors or paths
 - Add simple decorative shapes: pillars (circles), doors (rectangles), etc.
-- Keep it readable and atmospheric`
+- Keep it readable and atmospheric
+- After the closing </svg> tag, output a [ZONES] block: [ZONES][{"name":"zone name","x":0.1,"y":0.2,"width":0.3,"height":0.25},...][/ZONES]. Use normalized 0.0-1.0 coords matching the viewBox. Include 3-8 named zones for significant areas. Output nothing after [/ZONES].`
 
 func extractSVG(s string) string {
 	// Strip markdown code fences that some models wrap around SVG output.
@@ -858,4 +860,42 @@ func formatCharNames(nameMap map[int64]string) string {
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")
+}
+
+// autoRevealZones checks the latest map's unrevealed zones against the GM narrative text.
+// Any zone whose name appears as a whole word is revealed and broadcast via WS.
+// Runs synchronously after streaming — no goroutine needed.
+func (s *Server) autoRevealZones(ctx context.Context, sessionID int64, gmText string) {
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+	latestMap, err := s.db.GetLatestMap(sess.CampaignID)
+	if err != nil || latestMap == nil {
+		return
+	}
+	zones, err := s.db.ListUnrevealedZones(latestMap.ID)
+	if err != nil || len(zones) == 0 {
+		return
+	}
+	for _, z := range zones {
+		pattern := `(?i)\b` + regexp.QuoteMeta(z.Name) + `\b`
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+		if !re.MatchString(gmText) {
+			continue
+		}
+		if err := s.db.RevealZone(z.ID, true); err != nil {
+			log.Printf("autoRevealZones: reveal zone %d: %v", z.ID, err)
+			continue
+		}
+		s.bus.Publish(Event{Type: EventZoneRevealed, Payload: map[string]any{
+			"map_id":      latestMap.ID,
+			"zone_id":     z.ID,
+			"zone_name":   z.Name,
+			"is_revealed": true,
+		}})
+	}
 }

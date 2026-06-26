@@ -620,7 +620,16 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	svgContent := extractSVG(svgRaw)
+	// Split at </svg> boundary: SVG content before, zones block after.
+	svgEnd := strings.LastIndex(svgRaw, "</svg>")
+	var svgPart, zonesPart string
+	if svgEnd >= 0 {
+		svgPart = svgRaw[:svgEnd+6]
+		zonesPart = svgRaw[svgEnd+6:]
+	} else {
+		svgPart = svgRaw
+	}
+	svgContent := extractSVG(svgPart)
 	if svgContent == "" {
 		http.Error(w, "AI did not return valid SVG", http.StatusInternalServerError)
 		return
@@ -642,6 +651,35 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Parse optional [ZONES] block and create zones.
+	if zonesPart != "" {
+		if start := strings.Index(zonesPart, "[ZONES]"); start != -1 {
+			inner := zonesPart[start+7:]
+			if end := strings.Index(inner, "[/ZONES]"); end != -1 {
+				inner = strings.TrimSpace(inner[:end])
+				var zoneDefs []struct {
+					Name   string  `json:"name"`
+					X      float64 `json:"x"`
+					Y      float64 `json:"y"`
+					Width  float64 `json:"width"`
+					Height float64 `json:"height"`
+				}
+				if jsonErr := json.Unmarshal([]byte(inner), &zoneDefs); jsonErr == nil {
+					for _, z := range zoneDefs {
+						if z.Name == "" || z.X < 0 || z.X > 1 || z.Y < 0 || z.Y > 1 ||
+							z.Width <= 0 || z.Width > 1 || z.Height <= 0 || z.Height > 1 {
+							continue
+						}
+						if _, err := s.db.CreateMapZone(mapID, z.Name, z.X, z.Y, z.Width, z.Height); err != nil {
+							log.Printf("handleGenerateMap: create zone %q: %v", z.Name, err)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	m, err := s.db.GetMap(mapID)
 	if err != nil || m == nil {
 		http.Error(w, "fetch created map", http.StatusInternalServerError)
@@ -1066,6 +1104,7 @@ The base prompt above says "the player controls only their character" — that r
 		}})
 	}
 
+	s.autoRevealZones(r.Context(), id, fullText)
 	go s.extractNPCs(context.Background(), id, fullText)
 	go s.autoGenerateMap(context.Background(), id, fullText)
 	go s.autoUpdateCharacterStats(context.Background(), id, lastPlayerMsg, fullText)

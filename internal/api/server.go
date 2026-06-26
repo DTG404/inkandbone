@@ -240,6 +240,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/maps/{id}/tokens", s.handlePlaceToken)
 	s.mux.HandleFunc("PATCH /api/map-tokens/{id}", s.handleMoveToken)
 	s.mux.HandleFunc("DELETE /api/map-tokens/{id}", s.handleRemoveToken)
+	// Zones
+	s.mux.HandleFunc("GET /api/maps/{id}/zones", s.handleListZones)
+	s.mux.HandleFunc("POST /api/maps/{id}/zones", s.handleCreateZone)
+	s.mux.HandleFunc("PATCH /api/map-zones/{id}", s.handlePatchZone)
+	s.mux.HandleFunc("DELETE /api/map-zones/{id}", s.handleDeleteZone)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

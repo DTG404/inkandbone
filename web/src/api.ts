@@ -607,11 +607,12 @@ export interface RulebookResult {
   source: string
 }
 
-export async function searchRulebook(rulesetId: number, query: string): Promise<{ results: RulebookResult[]; mode: string }> {
+export async function searchRulebook(rulesetId: number, query: string, signal?: AbortSignal): Promise<{ results: RulebookResult[]; mode: string }> {
   const res = await fetch(`/api/rulesets/${rulesetId}/rulebook/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
+    signal,
   })
   if (!res.ok) throw new Error(`searchRulebook failed: ${res.status}`)
   return res.json()

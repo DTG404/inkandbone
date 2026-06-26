@@ -13,6 +13,7 @@ export function CompendiumPanel({ rulesetId }: Props) {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -21,13 +22,17 @@ export function CompendiumPanel({ rulesetId }: Props) {
       setSearched(false)
       return
     }
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     setLoading(true)
     try {
-      const data = await searchRulebook(rulesetId, q)
+      const data = await searchRulebook(rulesetId, q, controller.signal)
       setResults(data.results)
       setMode(data.mode)
       setSearched(true)
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       console.error(err)
     } finally {
       setLoading(false)
@@ -63,6 +68,9 @@ export function CompendiumPanel({ rulesetId }: Props) {
       {loading && <p className="panel-loading">Searching…</p>}
       {!loading && searched && results.length === 0 && (
         <p className="panel-empty">No results found.</p>
+      )}
+      {!loading && searched && results.length > 0 && mode && (
+        <p className="compendium-result-count">{results.length} results ({mode})</p>
       )}
       {!loading && results.map((r, i) => (
         <div key={i} className="compendium-result">

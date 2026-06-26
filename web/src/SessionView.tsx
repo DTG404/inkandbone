@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings } from './api'
-import type { GameContext, Message, Session, XPSpendSuggestionsEvent } from './types'
+import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings, fetchNPCs } from './api'
+import type { GameContext, Message, Session, XPSpendSuggestionsEvent, SessionNPC } from './types'
 import { CombatPanel } from './CombatPanel'
 import { WorldNotesPanel } from './WorldNotesPanel'
 import { DiceHistoryPanel } from './DiceHistoryPanel'
@@ -389,6 +389,12 @@ export function SessionView({
 }: SessionViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
+  const [sessionNpcs, setSessionNpcs] = useState<SessionNPC[]>([])
+
+  useEffect(() => {
+    if (!ctx.session) return
+    fetchNPCs(ctx.session.id).then(setSessionNpcs).catch(console.error)
+  }, [ctx.session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -761,6 +767,8 @@ export function SessionView({
                   setActiveMapId(mapId)
                   setActiveMapImagePath(imagePath)
                 }}
+                characters={ctx.character ? [ctx.character] : []}
+                sessionNpcs={sessionNpcs}
               />
             </div>
           </div>

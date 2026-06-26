@@ -1096,3 +1096,43 @@ export async function listDeckDraws(sessionId: number): Promise<DeckDraw[]> {
   if (!res.ok) throw new Error(`listDeckDraws failed: ${res.status}`)
   return res.json()
 }
+
+export interface MapToken {
+  id: number
+  map_id: number
+  entity_type: 'character' | 'npc'
+  entity_id: number
+  name: string
+  x: number
+  y: number
+}
+
+export async function fetchMapTokens(mapId: number): Promise<MapToken[]> {
+  const res = await fetch(`/api/maps/${mapId}/tokens`)
+  if (!res.ok) throw new Error(`fetchMapTokens failed: ${res.status}`)
+  return res.json()
+}
+
+export async function placeToken(mapId: number, entityType: string, entityId: number, x: number, y: number): Promise<MapToken> {
+  const res = await fetch(`/api/maps/${mapId}/tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity_type: entityType, entity_id: entityId, x, y }),
+  })
+  if (!res.ok) throw new Error(`placeToken failed: ${res.status}`)
+  return res.json()
+}
+
+export async function moveToken(tokenId: number, x: number, y: number): Promise<void> {
+  const res = await fetch(`/api/map-tokens/${tokenId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ x, y }),
+  })
+  if (!res.ok) throw new Error(`moveToken failed: ${res.status}`)
+}
+
+export async function removeToken(tokenId: number): Promise<void> {
+  const res = await fetch(`/api/map-tokens/${tokenId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`removeToken failed: ${res.status}`)
+}

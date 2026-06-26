@@ -41,7 +41,10 @@ func NewServer(database *db.DB, dataDir string, aiClient ai.Completer) *Server {
 	}
 	s.registerRoutes()
 	go hub.Run()
-	go s.backfillEmbeddings()
+	// Capture the ruleset list before launching the goroutine so that rulesets
+	// created after NewServer returns are not included in the startup backfill.
+	existingRulesets, _ := database.ListRulesets()
+	go s.backfillEmbeddings(existingRulesets)
 	return s
 }
 
@@ -236,12 +239,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // backfillEmbeddings runs at startup to embed any chunks that have no embedding yet.
-func (s *Server) backfillEmbeddings() {
+func (s *Server) backfillEmbeddings(rulesets []db.Ruleset) {
 	ctx := context.Background()
-	rulesets, err := s.db.ListRulesets()
-	if err != nil {
-		return
-	}
 	for _, rs := range rulesets {
 		chunks, err := s.db.ListChunksForEmbedding(rs.ID)
 		if err != nil {
@@ -257,5 +256,6 @@ func (s *Server) backfillEmbeddings() {
 				log.Printf("backfillEmbeddings: store chunk %d: %v", c.ID, err)
 			}
 		}
+		s.embCache.Delete(rs.ID)
 	}
 }

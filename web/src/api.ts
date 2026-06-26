@@ -601,6 +601,22 @@ export async function uploadRulebook(
   return res.json()
 }
 
+export interface RulebookResult {
+  heading: string
+  content: string
+  source: string
+}
+
+export async function searchRulebook(rulesetId: number, query: string): Promise<{ results: RulebookResult[]; mode: string }> {
+  const res = await fetch(`/api/rulesets/${rulesetId}/rulebook/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  })
+  if (!res.ok) throw new Error(`searchRulebook failed: ${res.status}`)
+  return res.json()
+}
+
 // Oracle
 export async function postOracleRoll(table: string, roll: number, rulesetId?: number): Promise<{ result: string; table: string; roll: number }> {
   const res = await fetch('/api/oracle/roll', {

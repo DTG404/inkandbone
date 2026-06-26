@@ -1,4 +1,4 @@
-.PHONY: dev build install test clean lint audit secrets-scan check
+.PHONY: dev build install test e2e clean lint audit secrets-scan check
 
 # Run Go server (air hot reload) + Vite dev server concurrently
 dev:
@@ -24,6 +24,10 @@ install: build
 test:
 	go test ./... -v
 	cd web && npm test -- --run
+
+# Run Playwright E2E smoke tests (requires ttrpg-e2e binary — run `make build` first and rename)
+e2e:
+	cd e2e && npm test
 
 # Lint Go with golangci-lint and web with ESLint
 lint: web/node_modules

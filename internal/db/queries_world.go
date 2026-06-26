@@ -15,6 +15,7 @@ type WorldNote struct {
 	Category        string `json:"category"`
 	TagsJSON        string `json:"tags_json"`
 	PersonalityJSON string `json:"personality_json"`
+	IsRevealed      bool   `json:"is_revealed"`
 	CreatedAt       string `json:"created_at"`
 }
 
@@ -59,17 +60,17 @@ func (d *DB) UpdateWorldNote(id int64, title, content, tagsJSON string) error {
 func (d *DB) GetWorldNote(id int64) (*WorldNote, error) {
 	var n WorldNote
 	err := d.db.QueryRow(
-		"SELECT id, campaign_id, title, content, category, tags_json, personality_json, created_at FROM world_notes WHERE id = ?",
+		"SELECT id, campaign_id, title, content, category, tags_json, personality_json, is_revealed, created_at FROM world_notes WHERE id = ?",
 		id,
-	).Scan(&n.ID, &n.CampaignID, &n.Title, &n.Content, &n.Category, &n.TagsJSON, &n.PersonalityJSON, &n.CreatedAt)
+	).Scan(&n.ID, &n.CampaignID, &n.Title, &n.Content, &n.Category, &n.TagsJSON, &n.PersonalityJSON, &n.IsRevealed, &n.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &n, nil
 }
 
-func (d *DB) SearchWorldNotes(campaignID int64, query, category, tag string) ([]WorldNote, error) {
-	q := "SELECT id, campaign_id, title, content, category, tags_json, personality_json, created_at FROM world_notes WHERE campaign_id = ?"
+func (d *DB) SearchWorldNotes(campaignID int64, query, category, tag string, revealed *bool) ([]WorldNote, error) {
+	q := "SELECT id, campaign_id, title, content, category, tags_json, personality_json, is_revealed, created_at FROM world_notes WHERE campaign_id = ?"
 	args := []any{campaignID}
 	if query != "" {
 		q += " AND (title LIKE ? OR content LIKE ?)"
@@ -84,6 +85,13 @@ func (d *DB) SearchWorldNotes(campaignID int64, query, category, tag string) ([]
 		q += " AND tags_json LIKE ?"
 		args = append(args, `%"`+tag+`"%`)
 	}
+	if revealed != nil {
+		if *revealed {
+			q += " AND is_revealed = 1"
+		} else {
+			q += " AND is_revealed = 0"
+		}
+	}
 	q += " ORDER BY title"
 	rows, err := d.db.Query(q, args...)
 	if err != nil {
@@ -93,7 +101,7 @@ func (d *DB) SearchWorldNotes(campaignID int64, query, category, tag string) ([]
 	var out []WorldNote
 	for rows.Next() {
 		var n WorldNote
-		if err := rows.Scan(&n.ID, &n.CampaignID, &n.Title, &n.Content, &n.Category, &n.TagsJSON, &n.PersonalityJSON, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.CampaignID, &n.Title, &n.Content, &n.Category, &n.TagsJSON, &n.PersonalityJSON, &n.IsRevealed, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -104,7 +112,7 @@ func (d *DB) SearchWorldNotes(campaignID int64, query, category, tag string) ([]
 // ListRecentWorldNotes returns the most recent n world notes for a campaign, ordered by created_at DESC.
 func (d *DB) ListRecentWorldNotes(campaignID int64, limit int) ([]WorldNote, error) {
 	rows, err := d.db.Query(
-		`SELECT id, campaign_id, title, content, category, tags_json, personality_json, created_at
+		`SELECT id, campaign_id, title, content, category, tags_json, personality_json, is_revealed, created_at
 		 FROM world_notes WHERE campaign_id = ? ORDER BY created_at DESC LIMIT ?`,
 		campaignID, limit,
 	)
@@ -115,7 +123,7 @@ func (d *DB) ListRecentWorldNotes(campaignID int64, limit int) ([]WorldNote, err
 	var out []WorldNote
 	for rows.Next() {
 		var n WorldNote
-		if err := rows.Scan(&n.ID, &n.CampaignID, &n.Title, &n.Content, &n.Category, &n.TagsJSON, &n.PersonalityJSON, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.CampaignID, &n.Title, &n.Content, &n.Category, &n.TagsJSON, &n.PersonalityJSON, &n.IsRevealed, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -125,12 +133,12 @@ func (d *DB) ListRecentWorldNotes(campaignID int64, limit int) ([]WorldNote, err
 
 func (d *DB) FindWorldNoteByTitle(campaignID int64, title string) (*WorldNote, error) {
 	row := d.db.QueryRow(
-		`SELECT id, campaign_id, title, content, category, tags_json, personality_json, created_at
+		`SELECT id, campaign_id, title, content, category, tags_json, personality_json, is_revealed, created_at
 		 FROM world_notes WHERE campaign_id = ? AND LOWER(title) = LOWER(?) LIMIT 1`,
 		campaignID, title,
 	)
 	var wn WorldNote
-	err := row.Scan(&wn.ID, &wn.CampaignID, &wn.Title, &wn.Content, &wn.Category, &wn.TagsJSON, &wn.PersonalityJSON, &wn.CreatedAt)
+	err := row.Scan(&wn.ID, &wn.CampaignID, &wn.Title, &wn.Content, &wn.Category, &wn.TagsJSON, &wn.PersonalityJSON, &wn.IsRevealed, &wn.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -145,6 +153,15 @@ func (d *DB) UpdateWorldNotePersonality(noteID int64, personalityJSON string) er
 		`UPDATE world_notes SET personality_json = ? WHERE id = ?`,
 		personalityJSON, noteID,
 	)
+	return err
+}
+
+func (d *DB) PatchWorldNoteRevealed(id int64, revealed bool) error {
+	val := 0
+	if revealed {
+		val = 1
+	}
+	_, err := d.db.Exec("UPDATE world_notes SET is_revealed = ? WHERE id = ?", val, id)
 	return err
 }
 
@@ -198,6 +215,18 @@ func (d *DB) ListMaps(campaignID int64) ([]Map, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) GetLatestMap(campaignID int64) (*Map, error) {
+	m := &Map{}
+	err := d.db.QueryRow(
+		"SELECT id, campaign_id, name, image_path, created_at FROM maps WHERE campaign_id = ? ORDER BY id DESC LIMIT 1",
+		campaignID,
+	).Scan(&m.ID, &m.CampaignID, &m.Name, &m.ImagePath, &m.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return m, err
 }
 
 // --- Map Pins ---

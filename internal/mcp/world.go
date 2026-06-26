@@ -90,7 +90,7 @@ func (s *Server) handleSearchWorldNotes(_ context.Context, req mcplib.CallToolRe
 	query := optStr(req, "query")
 	category := optStr(req, "category")
 
-	notes, err := s.db.SearchWorldNotes(campID, query, category, "")
+	notes, err := s.db.SearchWorldNotes(campID, query, category, "", nil)
 	if err != nil {
 		return mcplib.NewToolResultError("search error: " + err.Error()), nil
 	}

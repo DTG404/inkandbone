@@ -371,7 +371,7 @@ func (s *Server) buildWorldContext(ctx context.Context, sessionID int64) string 
 
 	// NPC personality cards — only inject NPCs mentioned in session summary to bound token cost.
 	// If summary is empty, fall back to the 3 most recent NPC notes.
-	npcNotes, err := s.db.SearchWorldNotes(sess.CampaignID, "", "npc", "")
+	npcNotes, err := s.db.SearchWorldNotes(sess.CampaignID, "", "npc", "", nil)
 	if err == nil {
 		summaryLower := strings.ToLower(sess.Summary)
 		var filteredNPCs []db.WorldNote

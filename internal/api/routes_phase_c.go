@@ -65,7 +65,7 @@ func (s *Server) handlePreSessionBrief(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notes, _ := s.db.SearchWorldNotes(campaignID, "", "", "")
+	notes, _ := s.db.SearchWorldNotes(campaignID, "", "", "", nil)
 	objectives, _ := s.db.ListObjectives(campaignID)
 
 	var sb strings.Builder
@@ -151,7 +151,7 @@ func (s *Server) handleCampaignAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notes, _ := s.db.SearchWorldNotes(campaignID, "", "", "")
+	notes, _ := s.db.SearchWorldNotes(campaignID, "", "", "", nil)
 
 	var sb strings.Builder
 	sb.WriteString("You are a knowledgeable tabletop RPG Game Master. Answer the following question about the campaign based on the world notes:\n\n")

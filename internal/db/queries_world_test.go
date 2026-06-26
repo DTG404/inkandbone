@@ -15,20 +15,20 @@ func TestWorldNotes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Positive(t, id)
 
-	results, err := d.SearchWorldNotes(campID, "Gareth", "", "")
+	results, err := d.SearchWorldNotes(campID, "Gareth", "", "", nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 
-	results, err = d.SearchWorldNotes(campID, "", "npc", "")
+	results, err = d.SearchWorldNotes(campID, "", "npc", "", nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 
-	results, err = d.SearchWorldNotes(campID, "", "location", "")
+	results, err = d.SearchWorldNotes(campID, "", "location", "", nil)
 	require.NoError(t, err)
 	assert.Empty(t, results)
 
 	require.NoError(t, d.UpdateWorldNote(id, "Gareth the Guard", "A surly but kind dwarf", ""))
-	results, err = d.SearchWorldNotes(campID, "kind", "", "")
+	results, err = d.SearchWorldNotes(campID, "kind", "", "", nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
@@ -45,21 +45,21 @@ func TestSearchWorldNotes_tagFilter(t *testing.T) {
 	require.NoError(t, d.UpdateWorldNote(id1, "Goblin Den", "Dark cave", `["dungeon","encounter"]`))
 	require.NoError(t, d.UpdateWorldNote(id2, "Orc Warlord", "Fierce enemy", `["encounter","boss"]`))
 
-	results, err := d.SearchWorldNotes(campID, "", "", "dungeon")
+	results, err := d.SearchWorldNotes(campID, "", "", "dungeon", nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, id1, results[0].ID)
 
-	results, err = d.SearchWorldNotes(campID, "", "", "encounter")
+	results, err = d.SearchWorldNotes(campID, "", "", "encounter", nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 
-	results, err = d.SearchWorldNotes(campID, "", "", "boss")
+	results, err = d.SearchWorldNotes(campID, "", "", "boss", nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, id2, results[0].ID)
 
-	results, err = d.SearchWorldNotes(campID, "", "", "")
+	results, err = d.SearchWorldNotes(campID, "", "", "", nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 }
@@ -72,7 +72,7 @@ func TestUpdateWorldNote_setsTagsJSON(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, d.UpdateWorldNote(id, "Mira", "A merchant.", `["npc","ally"]`))
-	results, err := d.SearchWorldNotes(campID, "", "", "ally")
+	results, err := d.SearchWorldNotes(campID, "", "", "ally", nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Contains(t, results[0].TagsJSON, "ally")

@@ -269,7 +269,7 @@ func TestPatchWorldNote_updatesNote(t *testing.T) {
 	s.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
-	notes, err := s.db.SearchWorldNotes(campID, "New Title", "", "")
+	notes, err := s.db.SearchWorldNotes(campID, "New Title", "", "", nil)
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
 	assert.Equal(t, "New content", notes[0].Content)

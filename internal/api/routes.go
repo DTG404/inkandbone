@@ -138,7 +138,15 @@ func (s *Server) handleListWorldNotes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	category := r.URL.Query().Get("category")
 	tag := r.URL.Query().Get("tag")
-	notes, err := s.db.SearchWorldNotes(id, q, category, tag)
+	var revealed *bool
+	if rv := r.URL.Query().Get("revealed"); rv == "true" {
+		t := true
+		revealed = &t
+	} else if rv == "false" {
+		f := false
+		revealed = &f
+	}
+	notes, err := s.db.SearchWorldNotes(id, q, category, tag, revealed)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -209,6 +217,30 @@ func (s *Server) handlePatchWorldNotePersonality(w http.ResponseWriter, r *http.
 	}
 	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"note_id": id}})
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handlePatchWorldNoteRevealed(w http.ResponseWriter, r *http.Request) {
+	id, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid world note id", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		IsRevealed bool `json:"is_revealed"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if err := s.db.PatchWorldNoteRevealed(id, body.IsRevealed); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.bus.Publish(Event{Type: EventWorldNoteRevealed, Payload: map[string]any{
+		"id":          id,
+		"is_revealed": body.IsRevealed,
+	}})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleServeFile(w http.ResponseWriter, r *http.Request) {

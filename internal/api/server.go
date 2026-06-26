@@ -107,6 +107,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", withMaxBody(4096, s.handleDraftWorldNote))
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}", s.handlePatchWorldNote)
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}/personality", s.handlePatchWorldNotePersonality)
+	s.mux.HandleFunc("PATCH /api/world-notes/{id}/reveal", s.handlePatchWorldNoteRevealed)
 	s.mux.HandleFunc("GET /api/rulesets/{id}", s.handleGetRuleset)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/character-options", s.handleGetCharacterOptions)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/rulebook", s.handleListRulebookSources)

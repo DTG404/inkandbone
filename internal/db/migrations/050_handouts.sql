@@ -1,0 +1,1 @@
+ALTER TABLE world_notes ADD COLUMN is_revealed INTEGER NOT NULL DEFAULT 0;

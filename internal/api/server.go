@@ -235,6 +235,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/decks/{id}/shuffle", s.handleShuffleDeck)
 	s.mux.HandleFunc("POST /api/decks/{id}/draw", s.handleDrawCard)
 	s.mux.HandleFunc("GET /api/sessions/{id}/deck-draws", s.handleListDeckDraws)
+	// Map tokens
+	s.mux.HandleFunc("GET /api/maps/{id}/tokens", s.handleListTokens)
+	s.mux.HandleFunc("POST /api/maps/{id}/tokens", s.handlePlaceToken)
+	s.mux.HandleFunc("PATCH /api/map-tokens/{id}", s.handleMoveToken)
+	s.mux.HandleFunc("DELETE /api/map-tokens/{id}", s.handleRemoveToken)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

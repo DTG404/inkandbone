@@ -182,6 +182,11 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
                   <div className="secret-body">
                     <p className="secret-content">{s.content}</p>
                     <div className="secret-actions">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleReveal(s.id) }}
+                        disabled={sessionId === null}
+                        title="Push to all players again"
+                      >Push</button>
                       <button onClick={(e) => { e.stopPropagation(); startEdit(s) }}>Edit</button>
                       <button onClick={(e) => { e.stopPropagation(); handleDelete(s.id) }}>Delete</button>
                     </div>

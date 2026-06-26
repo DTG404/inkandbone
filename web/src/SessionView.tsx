@@ -390,6 +390,11 @@ export function SessionView({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
   const [sessionNpcs, setSessionNpcs] = useState<SessionNPC[]>([])
+  const [pendingHandout, setPendingHandout] = useState<{
+    title: string
+    content: string
+    category: string
+  } | null>(null)
 
   useEffect(() => {
     if (!ctx.session) return
@@ -401,6 +406,13 @@ export function SessionView({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages, streamingText])
+
+  useEffect(() => {
+    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
+    if (ev?.type !== 'secret_revealed' || !ev.payload) return
+    const { title, content, category } = ev.payload as { title: string; content: string; category: string }
+    setPendingHandout({ title, content, category })
+  }, [lastEvent])
 
   // When the talents panel opens, fetch AI descriptions for any talent/power
   // that has no static description.
@@ -430,6 +442,21 @@ export function SessionView({
     : ''
 
   return (
+    <>
+    {pendingHandout && (
+      <div className="handout-modal-backdrop" onClick={() => setPendingHandout(null)}>
+        <div className="handout-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="handout-modal-header">
+            <span className="handout-modal-category">{pendingHandout.category}</span>
+            <h2 className="handout-modal-title">{pendingHandout.title}</h2>
+            <button className="handout-modal-close" onClick={() => setPendingHandout(null)}>×</button>
+          </div>
+          <div className="handout-modal-body">
+            <p className="handout-modal-content">{pendingHandout.content}</p>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="grimoire-body">
 
       {/* Player History Overlay */}
@@ -980,5 +1007,6 @@ export function SessionView({
       </aside>
 
     </div>
+    </>
   )
 }

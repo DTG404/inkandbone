@@ -95,6 +95,15 @@ func (s *Server) handleRevealSecret(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	secret, err := s.db.GetSecret(id)
+	if err == nil && secret != nil {
+		s.bus.Publish(Event{Type: EventSecretRevealed, Payload: map[string]any{
+			"id":       secret.ID,
+			"title":    secret.Title,
+			"content":  secret.Content,
+			"category": secret.Category,
+		}})
+	}
 	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"id": id}})
 	w.WriteHeader(http.StatusOK)
 }

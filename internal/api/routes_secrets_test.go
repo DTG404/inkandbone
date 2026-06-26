@@ -149,3 +149,36 @@ func TestCreateSecret_defaultsCategory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "secret", secret.Category)
 }
+
+func TestRevealSecretPublishesHandoutEvent(t *testing.T) {
+	s := newTestServer(t)
+	campID, sessID := seedCampaign(t, s.db)
+
+	// Create a secret
+	secretID, err := s.db.CreateSecret(campID, "Lost Map", "A map to the dungeon", "handout")
+	require.NoError(t, err)
+
+	ch := s.bus.Subscribe()
+
+	body := fmt.Sprintf(`{"session_id":%d}`, sessID)
+	req := httptest.NewRequest(http.MethodPatch,
+		fmt.Sprintf("/api/secrets/%d/reveal", secretID),
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Drain channel looking for secret_revealed event
+	var foundReveal bool
+	for len(ch) > 0 {
+		ev := <-ch
+		if ev.Type == EventSecretRevealed {
+			foundReveal = true
+			payload := ev.Payload.(map[string]any)
+			assert.Equal(t, "Lost Map", payload["title"])
+			assert.Equal(t, "A map to the dungeon", payload["content"])
+		}
+	}
+	assert.True(t, foundReveal, "expected secret_revealed event")
+}

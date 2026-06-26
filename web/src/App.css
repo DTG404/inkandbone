@@ -3478,3 +3478,65 @@ mark {
 .dice-entry-new {
   animation: diceSlideIn 0.35s ease-out forwards;
 }
+
+/* Handout push modal */
+.handout-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+}
+.handout-modal {
+  background: var(--surface, #1a1a1a);
+  border: 1px solid var(--gold, #c9a84c);
+  border-radius: 6px;
+  max-width: 540px;
+  width: 90vw;
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+}
+.handout-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #333);
+}
+.handout-modal-category {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.handout-modal-title {
+  flex: 1;
+  font-size: 1rem;
+  margin: 0;
+  color: var(--gold, #c9a84c);
+}
+.handout-modal-close {
+  background: none;
+  border: none;
+  color: var(--text, #ddd);
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.handout-modal-close:hover { opacity: 1; }
+.handout-modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+.handout-modal-content {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: 0.92rem;
+}

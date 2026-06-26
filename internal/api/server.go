@@ -245,6 +245,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/maps/{id}/zones", s.handleCreateZone)
 	s.mux.HandleFunc("PATCH /api/map-zones/{id}", s.handlePatchZone)
 	s.mux.HandleFunc("DELETE /api/map-zones/{id}", s.handleDeleteZone)
+	// Map particle FX
+	s.mux.HandleFunc("POST /api/maps/{id}/fx", s.handleTriggerMapFX)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

@@ -50,6 +50,7 @@ const (
 	EventTokenRemoved           EventType = "token_removed"
 	EventZoneRevealed           EventType = "zone_revealed"
 	EventSecretRevealed         EventType = "secret_revealed"
+	EventMapFX                  EventType = "map_fx"
 )
 
 // Event is published by MCP tool handlers and broadcast to WebSocket clients.

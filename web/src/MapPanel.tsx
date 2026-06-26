@@ -40,6 +40,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const [pendingZoneName, setPendingZoneName] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [newZoneName, setNewZoneName] = useState('')
   const mapImgRef = useRef<HTMLImageElement>(null)
+  const fxCanvasRef = useRef<HTMLCanvasElement>(null)
 
   function loadMaps(goToLast = false) {
     if (campaignId === null) return
@@ -108,6 +109,99 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       }
     }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const canvas = fxCanvasRef.current
+    const img = mapImgRef.current
+    if (!canvas || !img) return
+
+    const ro = new ResizeObserver(() => {
+      canvas.width = img.offsetWidth
+      canvas.height = img.offsetHeight
+    })
+    ro.observe(img)
+    canvas.width = img.offsetWidth
+    canvas.height = img.offsetHeight
+    return () => ro.disconnect()
+  }, [maps[activeMapIdx]?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
+    if (ev?.type !== 'map_fx' || !ev.payload) return
+    const { map_id, effect, x, y, duration_ms } = ev.payload as {
+      map_id: number; effect: string; x: number; y: number; duration_ms: number
+    }
+    const activeMap2 = maps[activeMapIdx] ?? null
+    if (!activeMap2 || activeMap2.id !== map_id) return
+
+    const canvas = fxCanvasRef.current
+    if (!canvas) return
+    const ctx2d: CanvasRenderingContext2D = canvas.getContext('2d')!
+    if (!ctx2d) return
+
+    type Particle = {
+      x: number; y: number; vx: number; vy: number
+      size: number; color: string; born: number; lifespan: number
+    }
+
+    const presets: Record<string, { colors: string[]; count: number; vxRange: [number,number]; vyRange: [number,number]; sizeRange: [number,number]; lifespan: number }> = {
+      fire:      { colors: ['#e75f00','#ff8800','#ffdd00'], count: 40, vxRange: [-0.3,0.3], vyRange: [-0.8,0],   sizeRange: [4,8],  lifespan: 700  },
+      frost:     { colors: ['#80c8ff','#c8e8ff','#ffffff'], count: 30, vxRange: [-0.4,0.4], vyRange: [-0.6,0.1], sizeRange: [3,6],  lifespan: 900  },
+      lightning: { colors: ['#d0e8ff'],                     count: 20, vxRange: [-1.0,1.0], vyRange: [-1.2,1.2], sizeRange: [2,4],  lifespan: 300  },
+      smoke:     { colors: ['#555555','#777777','#888888'], count: 25, vxRange: [-0.2,0.2], vyRange: [-0.3,0],   sizeRange: [6,12], lifespan: 1200 },
+      blood:     { colors: ['#8b0000','#aa0000','#cc0000'], count: 35, vxRange: [-0.5,0.5], vyRange: [0,0.8],    sizeRange: [3,7],  lifespan: 800  },
+      magic:     { colors: ['#8000ff','#cc00aa','#ff00cc'], count: 45, vxRange: [-0.5,0.5], vyRange: [-0.7,0.3], sizeRange: [3,7],  lifespan: 1000 },
+    }
+
+    const preset = presets[effect] ?? presets['magic']
+    const originX = x * canvas.width
+    const originY = y * canvas.height
+    const rng = (lo: number, hi: number) => lo + Math.random() * (hi - lo)
+
+    const particles: Particle[] = Array.from({ length: preset.count }, () => ({
+      x: originX,
+      y: originY,
+      vx: rng(...preset.vxRange) * canvas.width * 0.004,
+      vy: rng(...preset.vyRange) * canvas.height * 0.004,
+      size: rng(...preset.sizeRange),
+      color: preset.colors[Math.floor(Math.random() * preset.colors.length)],
+      born: performance.now(),
+      lifespan: preset.lifespan * rng(0.7, 1.3),
+    }))
+
+    let rafId: number
+    function draw() {
+      ctx2d.clearRect(0, 0, canvas!.width, canvas!.height)
+      const now = performance.now()
+      let alive = false
+      for (const p of particles) {
+        const age = now - p.born
+        if (age >= p.lifespan) continue
+        alive = true
+        const alpha = 1 - age / p.lifespan
+        p.x += p.vx
+        p.y += p.vy
+        ctx2d.globalAlpha = alpha
+        ctx2d.fillStyle = p.color
+        ctx2d.beginPath()
+        ctx2d.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2)
+        ctx2d.fill()
+      }
+      ctx2d.globalAlpha = 1
+      if (alive) rafId = requestAnimationFrame(draw)
+    }
+    rafId = requestAnimationFrame(draw)
+
+    const clearId = setTimeout(() => {
+      cancelAnimationFrame(rafId)
+      ctx2d.clearRect(0, 0, canvas.width, canvas.height)
+    }, duration_ms + 200)
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      clearTimeout(clearId)
+    }
+  }, [lastEvent, maps, activeMapIdx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleZoneMouseDown(e: React.MouseEvent<HTMLImageElement>) {
     if (!zoneEditMode || !mapImgRef.current) return
@@ -381,6 +475,11 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                 <button className="map-pin-tooltip-close" onClick={() => setSelectedPin(null)}>×</button>
               </div>
             )}
+            <canvas
+              ref={fxCanvasRef}
+              className="map-fx-canvas"
+              style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 20 }}
+            />
           </div>
           <div className="token-palette-section">
             <button className="token-palette-toggle" onClick={() => setShowPalette(!showPalette)}>

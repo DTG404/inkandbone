@@ -3540,3 +3540,12 @@ mark {
   line-height: 1.6;
   font-size: 0.92rem;
 }
+
+/* FX particle canvas */
+.map-fx-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 20;
+}

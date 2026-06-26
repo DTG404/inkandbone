@@ -44,6 +44,7 @@ const (
 	EventExpectedAction         EventType = "expected_action"
 	EventTyping                 EventType = "typing"
 	EventWorldNoteRevealed      EventType = "world_note_revealed"
+	EventCardDrawn              EventType = "card_drawn"
 )
 
 // Event is published by MCP tool handlers and broadcast to WebSocket clients.

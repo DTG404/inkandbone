@@ -228,6 +228,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/macros/{id}", s.handlePatchMacro)
 	s.mux.HandleFunc("DELETE /api/macros/{id}", s.handleDeleteMacro)
 	s.mux.HandleFunc("PATCH /api/characters/{id}/macros/reorder", s.handleReorderMacros)
+	// Decks
+	s.mux.HandleFunc("GET /api/campaigns/{id}/decks", s.handleListDecks)
+	s.mux.HandleFunc("POST /api/campaigns/{id}/decks", s.handleCreateDeck)
+	s.mux.HandleFunc("DELETE /api/decks/{id}", s.handleDeleteDeck)
+	s.mux.HandleFunc("POST /api/decks/{id}/shuffle", s.handleShuffleDeck)
+	s.mux.HandleFunc("POST /api/decks/{id}/draw", s.handleDrawCard)
+	s.mux.HandleFunc("GET /api/sessions/{id}/deck-draws", s.handleListDeckDraws)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

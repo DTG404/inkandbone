@@ -93,6 +93,7 @@ export interface WorldNote {
   category: string
   tags_json: string
   personality_json: string
+  is_revealed: boolean
   created_at: string
 }
 

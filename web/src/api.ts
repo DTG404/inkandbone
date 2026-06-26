@@ -25,10 +25,11 @@ export async function fetchContext(): Promise<GameContext> {
   return res.json()
 }
 
-export async function fetchWorldNotes(campaignId: number, q?: string, tag?: string): Promise<WorldNote[]> {
+export async function fetchWorldNotes(campaignId: number, q?: string, tag?: string, revealed?: boolean): Promise<WorldNote[]> {
   const params = new URLSearchParams()
   if (q) params.set('q', q)
   if (tag) params.set('tag', tag)
+  if (revealed !== undefined) params.set('revealed', String(revealed))
   const qs = params.toString()
   const url = qs
     ? `/api/campaigns/${campaignId}/world-notes?${qs}`
@@ -36,6 +37,15 @@ export async function fetchWorldNotes(campaignId: number, q?: string, tag?: stri
   const res = await fetch(url)
   if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`)
   return res.json()
+}
+
+export async function patchWorldNoteRevealed(noteId: number, isRevealed: boolean): Promise<void> {
+  const res = await fetch(`/api/world-notes/${noteId}/reveal`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_revealed: isRevealed }),
+  })
+  if (!res.ok) throw new Error(`patchWorldNoteRevealed failed: ${res.status}`)
 }
 
 export async function fetchDiceRolls(sessionId: number): Promise<DiceRoll[]> {

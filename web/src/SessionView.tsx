@@ -21,6 +21,7 @@ import { NPCStatBlockPanel } from './NPCStatBlockPanel'
 import { AdventuresPanel } from './AdventuresPanel'
 import { CalendarPanel } from './CalendarPanel'
 import { GMToolsPanel } from './GMToolsPanel'
+import { HandoutsPanel } from './HandoutsPanel'
 import { XPSuggestionsPanel } from './XPSuggestionsPanel'
 import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
@@ -775,6 +776,12 @@ export function SessionView({
       <aside className="sidebar-right">
         <div className="tab-bar">
           <button
+            className={`tab-btn${rightTab === 'handouts' ? ' active' : ''}`}
+            onClick={() => setRightTab('handouts')}
+          >
+            Handouts
+          </button>
+          <button
             className={`tab-btn${rightTab === 'notes' ? ' active' : ''}`}
             onClick={() => setRightTab('notes')}
           >
@@ -848,6 +855,9 @@ export function SessionView({
           </button>
         </div>
         <div className="tab-content">
+          {rightTab === 'handouts' && ctx.campaign && (
+            <HandoutsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
+          )}
           {rightTab === 'notes' && ctx.campaign && (
             <WorldNotesPanel
               campaignId={ctx.campaign.id}

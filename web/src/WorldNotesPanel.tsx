@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchWorldNotes, draftWorldNote, patchWorldNotePersonality } from './api'
+import { fetchWorldNotes, draftWorldNote, patchWorldNotePersonality, patchWorldNoteRevealed } from './api'
 import type { WorldNote } from './types'
 
 interface Props {
@@ -67,10 +67,10 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
 
   useEffect(() => {
     const ev = lastEvent as { type?: string } | null
-    if (ev?.type === 'world_note_updated' || ev?.type === 'world_note_created') {
+    if (ev?.type === 'world_note_revealed' || ev?.type === 'world_note_created' || ev?.type === 'world_note_updated') {
       loadNotes()
     }
-  }, [lastEvent, loadNotes])
+  }, [lastEvent]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDraftWithAI() {
     const hint = window.prompt('Describe the note:')
@@ -101,7 +101,20 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
           const tags = parseTags(n.tags_json)
           return (
             <div key={n.id} className="note-card">
-              <div className="note-title">{n.title}</div>
+              <div className="note-title">
+                {n.title}
+                <button
+                  className="reveal-toggle-btn"
+                  title={n.is_revealed ? 'Hide from players' : 'Reveal to players'}
+                  onClick={async () => {
+                    await patchWorldNoteRevealed(n.id, !n.is_revealed)
+                    loadNotes()
+                  }}
+                >
+                  {n.is_revealed ? '✅' : '📤'}
+                </button>
+                {n.is_revealed && <span className="revealed-badge">Revealed</span>}
+              </div>
               {tags.length > 0 && (
                 <div className="note-tags">
                   {tags.map((tag) => (

@@ -4,8 +4,8 @@ import { WorldNotesPanel } from './WorldNotesPanel'
 import type { WorldNote } from './types'
 
 const notes: WorldNote[] = [
-  { id: 1, campaign_id: 1, title: 'Tavern', content: 'A seedy place.', category: 'location', tags_json: '["inn"]', personality_json: '', created_at: '' },
-  { id: 2, campaign_id: 1, title: 'Dragon', content: 'Ancient red dragon.', category: 'npc', tags_json: '[]', personality_json: '', created_at: '' },
+  { id: 1, campaign_id: 1, title: 'Tavern', content: 'A seedy place.', category: 'location', tags_json: '["inn"]', personality_json: '', is_revealed: false, created_at: '' },
+  { id: 2, campaign_id: 1, title: 'Dragon', content: 'Ancient red dragon.', category: 'npc', tags_json: '[]', personality_json: '', is_revealed: false, created_at: '' },
 ]
 
 afterEach(() => {

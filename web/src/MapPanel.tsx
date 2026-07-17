@@ -201,7 +201,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       cancelAnimationFrame(rafId)
       clearTimeout(clearId)
     }
-  }, [lastEvent, maps, activeMapIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastEvent, maps, activeMapIdx])
 
   function handleZoneMouseDown(e: React.MouseEvent<HTMLImageElement>) {
     if (!zoneEditMode || !mapImgRef.current) return

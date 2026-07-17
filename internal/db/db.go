@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -72,11 +73,15 @@ func (d *DB) Close() error { return d.db.Close() }
 func (d *DB) SQL() *sql.DB { return d.db }
 
 func sqliteDSN(path string) string {
+	return sqliteDSNForGOOS(path, runtime.GOOS)
+}
+
+func sqliteDSNForGOOS(path, goos string) string {
 	var dsn string
 	if path == ":memory:" {
 		dsn = "file::memory:"
 	} else {
-		dsn = sqliteFileURI(path)
+		dsn = sqliteFileURIForGOOS(path, goos)
 	}
 	query := url.Values{}
 	query.Add("_pragma", "foreign_keys(1)")
@@ -84,26 +89,24 @@ func sqliteDSN(path string) string {
 	return dsn + "?" + query.Encode()
 }
 
-func sqliteFileURI(path string) string {
-	windowsDrive := isWindowsDrivePath(path)
-	unc := isUNCPath(path)
-	if !windowsDrive && !unc && !filepath.IsAbs(path) {
+func sqliteFileURIForGOOS(path, goos string) string {
+	windows := goos == "windows"
+	windowsDrive := windows && isWindowsDrivePath(path)
+	windowsUNC := windows && isWindowsUNCPath(path)
+	absolute := filepath.IsAbs(path)
+	if windows {
+		absolute = windowsDrive || windowsUNC || strings.HasPrefix(path, "//")
+	}
+	if !absolute && goos == runtime.GOOS {
 		if absolutePath, err := filepath.Abs(path); err == nil {
 			path = absolutePath
 		}
-		windowsDrive = isWindowsDrivePath(path)
-		unc = isUNCPath(path)
+		windowsDrive = windows && isWindowsDrivePath(path)
+		windowsUNC = windows && isWindowsUNCPath(path)
 	}
 	normalized := filepath.ToSlash(path)
-	if windowsDrive || unc {
+	if windowsDrive || windowsUNC {
 		normalized = strings.ReplaceAll(path, `\`, "/")
-	}
-	if unc {
-		withoutPrefix := strings.TrimLeft(normalized, "/")
-		host, sharePath, found := strings.Cut(withoutPrefix, "/")
-		if found {
-			return (&url.URL{Scheme: "file", Host: host, Path: "/" + sharePath}).String()
-		}
 	}
 	if windowsDrive {
 		normalized = "/" + normalized
@@ -115,8 +118,8 @@ func isWindowsDrivePath(path string) bool {
 	return len(path) >= 3 && ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')) && path[1] == ':' && (path[2] == '/' || path[2] == '\\')
 }
 
-func isUNCPath(path string) bool {
-	return strings.HasPrefix(path, `\\`) || strings.HasPrefix(path, "//")
+func isWindowsUNCPath(path string) bool {
+	return strings.HasPrefix(path, `\\`)
 }
 
 type migrationRunOptions struct {

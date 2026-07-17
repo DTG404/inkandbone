@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,19 +48,56 @@ func TestOpen_IdempotentMigrations(t *testing.T) {
 func TestSQLiteFileURIPathShapes(t *testing.T) {
 	tests := []struct {
 		name string
+		goos string
 		path string
 		want string
 	}{
-		{name: "POSIX special characters", path: "/tmp/Table Top/game?#.db", want: "file:///tmp/Table%20Top/game%3F%23.db"},
-		{name: "POSIX backslash is data", path: `/tmp/Table\Top/game.db`, want: "file:///tmp/Table%5CTop/game.db"},
-		{name: "Windows drive", path: `C:\Users\Table Top\game.db`, want: "file:///C:/Users/Table%20Top/game.db"},
-		{name: "Windows UNC", path: `\\server\share\Table Top\game.db`, want: "file://server/share/Table%20Top/game.db"},
+		{name: "POSIX special characters", goos: "linux", path: "/tmp/Table Top/game?#.db", want: "file:///tmp/Table%20Top/game%3F%23.db"},
+		{name: "POSIX backslash is data", goos: "linux", path: `/tmp/Table\Top/game.db`, want: "file:///tmp/Table%5CTop/game.db"},
+		{name: "POSIX double slash stays POSIX", goos: "linux", path: "//tmp/database.db", want: "file:////tmp/database.db"},
+		{name: "Windows drive", goos: "windows", path: `C:\Users\Table Top\game.db`, want: "file:///C:/Users/Table%20Top/game.db"},
+		{name: "Windows UNC has empty authority", goos: "windows", path: `\\server\share\Table Top\game.db`, want: "file:////server/share/Table%20Top/game.db"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, sqliteFileURI(tt.path))
+			assert.Equal(t, tt.want, sqliteFileURIForGOOS(tt.path, tt.goos))
 		})
 	}
+}
+
+func TestSQLiteDSNOpensPOSIXDoubleSlashPath(t *testing.T) {
+	realPath := filepath.Join(t.TempDir(), "double-slash.db")
+	doubleSlashPath := "/" + realPath
+	db, err := sql.Open("sqlite", sqliteDSN(doubleSlashPath))
+	require.NoError(t, err)
+	defer db.Close()
+
+	_, err = db.Exec("CREATE TABLE proof (value TEXT NOT NULL); INSERT INTO proof VALUES ('posix double slash');")
+	require.NoError(t, err)
+	var value string
+	require.NoError(t, db.QueryRow("SELECT value FROM proof").Scan(&value))
+	assert.Equal(t, "posix double slash", value)
+	assert.FileExists(t, realPath)
+}
+
+func TestSQLiteDSNOpensSimulatedWindowsUNCWithEmptyAuthority(t *testing.T) {
+	realPath := filepath.Join(t.TempDir(), "unc.db")
+	windowsUNCPath := `\\` + strings.ReplaceAll(strings.TrimPrefix(filepath.ToSlash(realPath), "/"), "/", `\`)
+	dsn := sqliteDSNForGOOS(windowsUNCPath, "windows")
+	parsed, err := url.Parse(dsn)
+	require.NoError(t, err)
+	assert.Empty(t, parsed.Host)
+	assert.True(t, strings.HasPrefix(dsn, "file:////"), dsn)
+
+	db, err := sql.Open("sqlite", dsn)
+	require.NoError(t, err)
+	defer db.Close()
+	_, err = db.Exec("CREATE TABLE proof (value TEXT NOT NULL); INSERT INTO proof VALUES ('windows unc');")
+	require.NoError(t, err)
+	var value string
+	require.NoError(t, db.QueryRow("SELECT value FROM proof").Scan(&value))
+	assert.Equal(t, "windows unc", value)
+	assert.FileExists(t, realPath)
 }
 
 func TestMigrationRunnerExecutesWholeTransactionalScript(t *testing.T) {

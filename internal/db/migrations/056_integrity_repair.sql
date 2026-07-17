@@ -439,31 +439,40 @@ message_characters(message_id, campaign_id, content, position, character) AS (
 raw_legacy_tokens AS (
     SELECT start.message_id, start.campaign_id, start.content,
            start.position AS start_position,
-           COALESCE(
-               (
-                   SELECT min(boundary.position)
-                   FROM message_characters boundary
-                   WHERE boundary.message_id = start.message_id
-                     AND boundary.position >= start.position + length('/api/files/')
-                     AND instr(
-                         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/\._-%?#&=+:~@!$*(),;''[]',
-                         boundary.character
-                     ) = 0
+           min(
+               COALESCE(
+                   (
+                       SELECT min(boundary.position)
+                       FROM message_characters boundary
+                       WHERE boundary.message_id = start.message_id
+                         AND boundary.position >= start.position + length('/api/files/')
+                         AND instr(
+                             'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/\._-%?#&=+:~@!$*;',
+                             boundary.character
+                         ) = 0
+                   ),
+                   length(start.content) + 1
                ),
-               length(start.content) + 1
+               COALESCE(
+                   (
+                       SELECT min(next_start.position)
+                       FROM message_characters next_start
+                       WHERE next_start.message_id = start.message_id
+                         AND next_start.position > start.position
+                         AND substr(
+                             next_start.content,
+                             next_start.position,
+                             length('/api/files/')
+                         ) = '/api/files/'
+                   ),
+                   length(start.content) + 1
+               )
            ) AS end_position
     FROM message_characters start
     WHERE substr(start.content, start.position, length('/api/files/')) = '/api/files/'
 ),
 legacy_tokens AS (
-    SELECT token.*
-    FROM raw_legacy_tokens token
-    WHERE NOT EXISTS (
-        SELECT 1 FROM raw_legacy_tokens earlier
-        WHERE earlier.message_id = token.message_id
-          AND earlier.start_position < token.start_position
-          AND earlier.end_position > token.start_position
-    )
+    SELECT * FROM raw_legacy_tokens
 ),
 token_variants(
     message_id, campaign_id, content, start_position, end_position, candidate_end_position

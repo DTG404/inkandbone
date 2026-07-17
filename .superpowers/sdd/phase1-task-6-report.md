@@ -155,3 +155,26 @@ GREEN:
 - Focused race for URL migration and orphan repair — PASS, 0 failures, 4.340s.
 - `git diff --check` — PASS.
 - API/frontend suites were not rerun because this review fix changes only embedded migration SQL and its DB regression fixture; the prior Task 6 verification remains applicable.
+
+## Combined-link re-review fix
+
+The next re-review found that compact adjacent legacy links could be consumed as one raw token. Parentheses, brackets, comma, and apostrophe were classified as URL continuation characters, so the first token in compact Markdown or a comma-separated pair extended across the second `/api/files/` start. The nested-start filter then discarded that second start, leaving both links unchanged.
+
+RED:
+
+- `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` failed for both new fixtures. Expected `[A](/api/assets/maps/2),[B](/api/assets/maps/3)` and `/api/assets/maps/2,/api/assets/maps/3`; both actual strings retained both `/api/files/` URLs.
+
+Fix:
+
+- Markdown parentheses/brackets, comma, and quote delimiters are hard token boundaries rather than URL continuations. Dot, alphanumerics, slash, and other path/extension characters remain continuations, preserving the unknown-longer-token protection.
+- Every raw token is additionally bounded by the next legacy URL start. This prevents one edit from ever spanning another candidate, even when another retained URL character separates them.
+- Nested-start suppression was removed. Every legacy start is resolved independently, and ordered reconstruction applies the resulting non-overlapping edits while preserving all intervening punctuation and text.
+
+GREEN:
+
+- Focused combined-link URL test — PASS, 0 failures, 0.071s.
+- Repeated focused URL test (`-count=10`) — PASS, 10/10, 0.669s.
+- Full DB suite — PASS, 0 failures, 5.384s.
+- Focused race for URL migration and orphan repair — PASS, 0 failures, 4.504s.
+- `git diff --check` — PASS.
+- API/frontend suites were not rerun because this review fix changes only embedded migration SQL and its DB regression fixture; the prior Task 6 verification remains applicable.

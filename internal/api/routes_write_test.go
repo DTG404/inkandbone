@@ -530,9 +530,7 @@ func TestCreateCharacter_invalidCampaignID(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	// The handler creates the character first, then fails to roll stats.
-	// Character is created but without stats — that's the current behavior.
-	assert.True(t, w.Code < 500, "unexpected server error: %d", w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestDeleteCampaign_invalidID(t *testing.T) {

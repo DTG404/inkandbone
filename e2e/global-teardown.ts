@@ -1,8 +1,10 @@
-import fs from 'fs'
-import { DB_PATH } from './global-setup'
+import type { FullConfig } from '@playwright/test'
+import { removeE2ERunDirectory } from './environment'
 
-export default function globalTeardown() {
-  if (fs.existsSync(DB_PATH)) {
-    fs.unlinkSync(DB_PATH)
+export default function globalTeardown(config: FullConfig) {
+  const runDirectory = config.metadata.e2eRunDirectory
+  if (typeof runDirectory !== 'string') {
+    throw new Error('Playwright E2E run directory metadata is missing')
   }
+  removeE2ERunDirectory(runDirectory)
 }

@@ -7,20 +7,18 @@ import https from 'https'
 import net from 'net'
 import os from 'os'
 import path from 'path'
+import {
+  createE2ERunDirectory,
+  E2E_RUN_DIRECTORY_ENV,
+  getOrCreateE2ERunDirectory,
+  removeE2ERunDirectory,
+  sanitizedE2EEnvironment,
+  TTRPG_SERVER_ENVIRONMENT_KEYS,
+} from '../environment'
 
 test.describe.configure({ mode: 'serial' })
 
 const BINARY = path.resolve(__dirname, '..', '..', 'ttrpg')
-const AUTH_SECRET = 'phase-one-e2e-secret-is-at-least-thirty-two-bytes'
-const AI_ENVIRONMENT_KEYS = [
-  'ANTHROPIC_API_KEY',
-  'DEEPSEEK_API_KEY',
-  'DEEPSEEK_AUTO_MODEL',
-  'OLLAMA_AI_MODEL',
-  'OLLAMA_GM_MODEL',
-  'OLLAMA_MODEL',
-  'OPENROUTER_API_KEY',
-]
 
 interface RunningServer {
   child: ChildProcessWithoutNullStreams
@@ -30,6 +28,7 @@ interface RunningServer {
 }
 
 interface TestState {
+  authSecret: string
   certPath: string
   keyPath: string
   loopback: RunningServer
@@ -38,14 +37,6 @@ interface TestState {
 }
 
 let state: TestState
-
-function isolatedEnvironment(secret?: string): NodeJS.ProcessEnv {
-  const env = { ...process.env }
-  for (const key of AI_ENVIRONMENT_KEYS) delete env[key]
-  if (secret === undefined) delete env.TTRPG_AUTH_SECRET
-  else env.TTRPG_AUTH_SECRET = secret
-  return env
-}
 
 async function unusedLoopbackPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -114,7 +105,7 @@ async function startServer(options: {
   if (options.public) args.push('-allowed-origin', origin)
 
   const child = spawn(BINARY, args, {
-    env: isolatedEnvironment(options.secret),
+    env: sanitizedE2EEnvironment({ TTRPG_AUTH_SECRET: options.secret }),
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   let output = ''
@@ -159,7 +150,8 @@ function generateCertificate(root: string): { certPath: string; keyPath: string 
     '-addext', 'subjectAltName=IP:127.0.0.1',
   ], { cwd: root, encoding: 'utf8' })
   if (result.status !== 0) {
-    throw new Error(`could not generate disposable TLS certificate: ${result.stderr}`)
+    const detail = result.error?.message || result.stderr?.trim() || `openssl exited ${result.status}`
+    throw new Error(`could not generate disposable TLS certificate: ${detail}`)
   }
   return { certPath, keyPath }
 }
@@ -176,7 +168,7 @@ function rejectedPublicStart(
     ...args,
   ], {
     encoding: 'utf8',
-    env: isolatedEnvironment(secret),
+    env: sanitizedE2EEnvironment({ TTRPG_AUTH_SECRET: secret }),
     timeout: 10_000,
   })
   return { status: result.status, output: `${result.stdout}${result.stderr}` }
@@ -187,7 +179,7 @@ async function loginInBrowser(browser: Browser) {
   const page = await context.newPage()
   await page.goto(state.tls.origin)
   await expect(page.getByRole('heading', { name: 'Unlock the table' })).toBeVisible()
-  await page.getByLabel('Master secret').fill(AUTH_SECRET)
+  await page.getByLabel('Master secret').fill(state.authSecret)
   await page.getByRole('button', { name: 'Unlock' }).click()
   await expect(page.locator('.grimoire')).toBeVisible()
   return { context, page }
@@ -207,7 +199,7 @@ async function createCampaign(api: APIRequestContext, name: string): Promise<num
   return (await campaignResponse.json() as { id: number }).id
 }
 
-function rejectedWebSocketUpgrade(origin: string): Promise<{ body: string; status: number }> {
+function rejectedWebSocketUpgrade(origin: string, secret: string): Promise<{ body: string; status: number }> {
   const url = new URL('/ws', origin)
   return new Promise((resolve, reject) => {
     const request = https.request({
@@ -217,7 +209,7 @@ function rejectedWebSocketUpgrade(origin: string): Promise<{ body: string; statu
       method: 'GET',
       rejectUnauthorized: false,
       headers: {
-        Authorization: `Bearer ${AUTH_SECRET}`,
+        Authorization: `Bearer ${secret}`,
         Connection: 'Upgrade',
         Origin: 'https://attacker.invalid',
         'Sec-WebSocket-Key': randomBytes(16).toString('base64'),
@@ -240,10 +232,95 @@ function rejectedWebSocketUpgrade(origin: string): Promise<{ body: string; statu
   })
 }
 
+function permittedWebSocketUpgrade(origin: string, secret: string): Promise<number> {
+  const url = new URL('/ws', origin)
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'GET',
+      rejectUnauthorized: false,
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        Connection: 'Upgrade',
+        Origin: origin,
+        'Sec-WebSocket-Key': randomBytes(16).toString('base64'),
+        'Sec-WebSocket-Version': '13',
+        Upgrade: 'websocket',
+      },
+    })
+    request.once('upgrade', (response, socket) => {
+      const status = response.statusCode ?? 0
+      socket.destroy()
+      resolve(status)
+    })
+    request.once('response', (response) => {
+      response.resume()
+      reject(new Error(`permitted WebSocket origin was rejected (${response.statusCode})`))
+    })
+    request.once('error', reject)
+    request.end()
+  })
+}
+
+function expectSanitizedChildEnvironment(): void {
+  const previous = new Map<string, string | undefined>()
+  try {
+    for (const key of TTRPG_SERVER_ENVIRONMENT_KEYS) {
+      previous.set(key, process.env[key])
+      process.env[key] = 'hostile-ambient-marker'
+    }
+    const childEnvironment = sanitizedE2EEnvironment()
+    for (const key of TTRPG_SERVER_ENVIRONMENT_KEYS) {
+      expect(childEnvironment[key], `${key} should be cleared`).toBe('')
+    }
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
+
+function expectIsolatedRecursiveCleanup(): void {
+  const first = createE2ERunDirectory()
+  const second = createE2ERunDirectory()
+  try {
+    fs.writeFileSync(path.join(first, 'smoke.db-wal'), 'sidecar')
+    fs.writeFileSync(path.join(first, 'smoke.db.backup-interrupted'), 'backup')
+    const staging = path.join(first, '.smoke.db.backup-stage-interrupted')
+    fs.mkdirSync(staging)
+    fs.writeFileSync(path.join(staging, 'database.sqlite'), 'staging')
+    fs.writeFileSync(path.join(second, 'concurrent-run.db'), 'other run')
+
+    removeE2ERunDirectory(first)
+    expect(fs.existsSync(first)).toBe(false)
+    expect(fs.existsSync(second)).toBe(true)
+    expect(fs.readFileSync(path.join(second, 'concurrent-run.db'), 'utf8')).toBe('other run')
+  } finally {
+    removeE2ERunDirectory(first)
+    removeE2ERunDirectory(second)
+  }
+
+  const previousRunDirectory = process.env[E2E_RUN_DIRECTORY_ENV]
+  let shared: string | undefined
+  try {
+    delete process.env[E2E_RUN_DIRECTORY_ENV]
+    shared = getOrCreateE2ERunDirectory()
+    expect(getOrCreateE2ERunDirectory()).toBe(shared)
+  } finally {
+    if (shared) removeE2ERunDirectory(shared)
+    if (previousRunDirectory === undefined) delete process.env[E2E_RUN_DIRECTORY_ENV]
+    else process.env[E2E_RUN_DIRECTORY_ENV] = previousRunDirectory
+  }
+}
+
 test.describe('phase one security boundaries', () => {
   test.beforeAll(async () => {
     expect(fs.existsSync(BINARY), 'run `make build` before the E2E suite').toBe(true)
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inkandbone-security-e2e-'))
+    const authSecret = randomBytes(32).toString('base64url')
     let loopback: RunningServer | undefined
     let tls: RunningServer | undefined
     try {
@@ -253,10 +330,10 @@ test.describe('phase one security boundaries', () => {
         dbName: 'tls.db',
         root,
         public: true,
-        secret: AUTH_SECRET,
+        secret: authSecret,
         tls: { certPath, keyPath },
       })
-      state = { certPath, keyPath, loopback, root, tls }
+      state = { authSecret, certPath, keyPath, loopback, root, tls }
     } catch (error) {
       await stopServer(tls)
       await stopServer(loopback)
@@ -272,6 +349,7 @@ test.describe('phase one security boundaries', () => {
   })
 
   test('loopback startup does not require login', async ({ page }) => {
+    expectSanitizedChildEnvironment()
     const sessionResponse = await page.request.get(`${state.loopback.origin}/api/auth/session`)
     expect(sessionResponse.ok()).toBe(true)
     expect(await sessionResponse.json()).toEqual({ authenticated: true })
@@ -282,6 +360,7 @@ test.describe('phase one security boundaries', () => {
   })
 
   test('public startup rejects missing secret, TLS, and origin controls', () => {
+    expectIsolatedRecursiveCleanup()
     const noSecret = rejectedPublicStart(state.root, 'no-secret', [])
     expect(noSecret.status).not.toBe(0)
     expect(noSecret.output).toContain('TTRPG_AUTH_SECRET')
@@ -290,7 +369,7 @@ test.describe('phase one security boundaries', () => {
       state.root,
       'no-tls',
       ['-allowed-origin', 'https://127.0.0.1:7443'],
-      AUTH_SECRET,
+      state.authSecret,
     )
     expect(noTLS.status).not.toBe(0)
     expect(noTLS.output).toContain('TLS certificate and key')
@@ -299,7 +378,7 @@ test.describe('phase one security boundaries', () => {
       state.root,
       'no-origin',
       ['-tls-cert', state.certPath, '-tls-key', state.keyPath],
-      AUTH_SECRET,
+      state.authSecret,
     )
     expect(noOrigin.status).not.toBe(0)
     expect(noOrigin.output).toContain('at least one allowed origin')
@@ -308,6 +387,19 @@ test.describe('phase one security boundaries', () => {
   test('TLS browser login establishes an authenticated session', async ({ browser }) => {
     const { context, page } = await loginInBrowser(browser)
     try {
+      const cookies = await context.cookies(state.tls.origin)
+      const cookie = cookies.find((candidate) => candidate.name === 'ttrpg_session')
+      expect(cookie).toBeDefined()
+      expect(cookie!.value).not.toBe('')
+      expect(cookie!.value).not.toBe(state.authSecret)
+      expect(cookie!.value).toMatch(/^[A-Za-z0-9_-]+$/)
+      expect(cookie).toMatchObject({
+        httpOnly: true,
+        path: '/',
+        sameSite: 'Strict',
+        secure: true,
+      })
+
       const session = await page.evaluate(async () => {
         const response = await fetch('/api/auth/session')
         return { body: await response.json(), status: response.status }
@@ -324,23 +416,41 @@ test.describe('phase one security boundaries', () => {
   test('authenticated cookies cannot mutate state without CSRF', async ({ browser }) => {
     const { context, page } = await loginInBrowser(browser)
     try {
-      const rejected = await page.evaluate(async () => {
-        const response = await fetch('/api/settings', {
+      const result = await page.evaluate(async () => {
+        const sessionResponse = await fetch('/api/auth/session')
+        const session = await sessionResponse.json() as { csrf_token?: string }
+        const init: RequestInit = {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ campaign_id: null }),
+        }
+        const rejected = await fetch('/api/settings', init)
+        const accepted = await fetch('/api/settings', {
+          ...init,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': session.csrf_token ?? '',
+          },
         })
-        return { body: await response.text(), status: response.status }
+        return {
+          acceptedStatus: accepted.status,
+          rejectedBody: await rejected.text(),
+          rejectedStatus: rejected.status,
+          tokenPresent: Boolean(session.csrf_token),
+        }
       })
-      expect(rejected.status).toBe(403)
-      expect(rejected.body).toContain('invalid CSRF token')
+      expect(result.tokenPresent).toBe(true)
+      expect(result.rejectedStatus).toBe(403)
+      expect(result.rejectedBody).toContain('invalid CSRF token')
+      expect(result.acceptedStatus).toBe(204)
     } finally {
       await context.close()
     }
   })
 
   test('WebSocket upgrades reject an untrusted origin', async () => {
-    const response = await rejectedWebSocketUpgrade(state.tls.origin)
+    expect(await permittedWebSocketUpgrade(state.tls.origin, state.authSecret)).toBe(101)
+    const response = await rejectedWebSocketUpgrade(state.tls.origin, state.authSecret)
     expect(response.status).toBe(403)
     expect(response.body).toContain('Forbidden')
   })

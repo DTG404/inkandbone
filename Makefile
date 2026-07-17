@@ -25,8 +25,8 @@ test:
 	go test ./... -v
 	cd web && npm test -- --run
 
-# Run Playwright E2E smoke tests (requires ttrpg-e2e binary — run `make build` first and rename)
-e2e:
+# Build the current binary, then run Playwright smoke and security tests.
+e2e: build
 	cd e2e && npm test
 
 # Lint Go with golangci-lint and web with ESLint

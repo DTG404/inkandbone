@@ -889,6 +889,14 @@ make test
 
 Tests cover the database layer, API handlers, automation goroutines, and AI integration.
 
+Run the browser smoke and security suite with:
+
+```bash
+make e2e
+```
+
+The E2E suite requires Playwright Chromium and the `openssl` executable. `make e2e` builds the current embedded frontend/server binary first. Each run uses a unique temporary directory for its SQLite database, sidecars, backups, uploaded assets, and generated one-day TLS key pair; the directory is recursively removed after the test server shuts down.
+
 ---
 
 ## License

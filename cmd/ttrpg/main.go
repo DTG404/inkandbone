@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/api"
@@ -23,7 +24,21 @@ func main() {
 	}
 	defaultDBPath := filepath.Join(home, ".ttrpg", "ttrpg.db")
 	dbFlag := flag.String("db", defaultDBPath, "path to SQLite database file")
+	listenFlag := flag.String("listen", "127.0.0.1:7432", "HTTP listen address")
+	tlsCertFlag := flag.String("tls-cert", "", "path to TLS certificate file")
+	tlsKeyFlag := flag.String("tls-key", "", "path to TLS private key file")
+	var allowedOrigins originListFlag
+	flag.Var(&allowedOrigins, "allowed-origin", "allowed browser origin (repeatable or comma-separated)")
 	flag.Parse()
+	securityConfig := api.ListenSecurityConfig{
+		AuthSecret:     os.Getenv("TTRPG_AUTH_SECRET"),
+		TLSCertFile:    *tlsCertFlag,
+		TLSKeyFile:     *tlsKeyFlag,
+		AllowedOrigins: allowedOrigins,
+	}
+	if err := api.ValidateListenSecurity(*listenFlag, securityConfig); err != nil {
+		log.Fatalf("listen security: %v", err)
+	}
 
 	dbPath := *dbFlag
 	dataDir := filepath.Dir(dbPath)
@@ -90,8 +105,23 @@ func main() {
 		}()
 	}
 
-	log.Println("HTTP server listening on :7432")
-	if err := httpServer.ListenAndServe(":7432"); err != nil {
+	log.Printf("HTTP server listening on %s", *listenFlag)
+	if err := httpServer.ListenAndServe(*listenFlag); err != nil {
 		log.Printf("HTTP server stopped: %v", err)
 	}
+}
+
+type originListFlag []string
+
+func (origins *originListFlag) String() string {
+	return strings.Join(*origins, ",")
+}
+
+func (origins *originListFlag) Set(value string) error {
+	for _, origin := range strings.Split(value, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			*origins = append(*origins, origin)
+		}
+	}
+	return nil
 }

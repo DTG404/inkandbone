@@ -267,6 +267,122 @@ func TestTemplateRulesetRemovedWithoutDeletingCustomRulesets(t *testing.T) {
 	assert.Contains(t, string(template), "INSERT OR IGNORE INTO rulesets")
 }
 
+func TestIntegrityMigrationPreservesAutoincrementHighWaterMarks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sequences.db")
+	seed, err := sql.Open("sqlite", sqliteDSN(path))
+	require.NoError(t, err)
+	seed.SetMaxOpenConns(1)
+	_, err = runMigrationsFromFS(seed, migrationsThrough055(t), "migrations", migrationRunOptions{databasePath: path})
+	require.NoError(t, err)
+
+	var rulesetID int64
+	require.NoError(t, seed.QueryRow(`SELECT id FROM rulesets WHERE name = 'dnd5e'`).Scan(&rulesetID))
+	_, err = seed.Exec(`
+		INSERT INTO campaigns(id, ruleset_id, name) VALUES (100, ?, 'sequence root');
+		INSERT INTO characters(id, campaign_id, name) VALUES (101, 100, 'sequence hero');
+		INSERT INTO sessions(id, campaign_id, title, date) VALUES (102, 100, 'sequence session', 'x');
+		INSERT INTO combat_encounters(id, session_id, name) VALUES (103, 102, 'sequence encounter');
+		INSERT INTO maps(id, campaign_id, name) VALUES (104, 100, 'sequence map');
+
+		INSERT INTO campaigns(id, ruleset_id, name) VALUES (60001, ?, 'deleted campaign');
+		INSERT INTO characters(id, campaign_id, name) VALUES (60002, 100, 'deleted character');
+		INSERT INTO sessions(id, campaign_id, title, date) VALUES (60003, 100, 'deleted session', 'x');
+		INSERT INTO messages(id, session_id, role, content) VALUES (60004, 102, 'user', 'deleted message');
+		INSERT INTO combat_encounters(id, session_id, name) VALUES (60005, 102, 'deleted encounter');
+		INSERT INTO combatants(id, encounter_id, name) VALUES (60006, 103, 'deleted combatant');
+		INSERT INTO world_notes(id, campaign_id, title) VALUES (60007, 100, 'deleted note');
+		INSERT INTO maps(id, campaign_id, name) VALUES (60008, 100, 'deleted map');
+		INSERT INTO map_pins(id, map_id, x, y) VALUES (60009, 104, .5, .5);
+		INSERT INTO dice_rolls(id, session_id, expression, result) VALUES (60010, 102, '1d20', 1);
+		INSERT INTO rulebook_chunks(id, ruleset_id, heading, content) VALUES (60011, ?, 'deleted rules', 'body');
+		INSERT INTO session_npcs(id, session_id, name) VALUES (60012, 102, 'deleted npc');
+		INSERT INTO objectives(id, campaign_id, title) VALUES (60013, 100, 'deleted objective');
+		INSERT INTO items(id, character_id, name) VALUES (60014, 101, 'deleted item');
+		INSERT INTO secrets(id, campaign_id, title, content) VALUES (60015, 100, 'deleted secret', 'body');
+		INSERT INTO calendar_events(id, campaign_id, title) VALUES (60016, 100, 'deleted event');
+
+		DELETE FROM calendar_events WHERE id = 60016;
+		DELETE FROM secrets WHERE id = 60015;
+		DELETE FROM items WHERE id = 60014;
+		DELETE FROM objectives WHERE id = 60013;
+		DELETE FROM session_npcs WHERE id = 60012;
+		DELETE FROM rulebook_chunks WHERE id = 60011;
+		DELETE FROM dice_rolls WHERE id = 60010;
+		DELETE FROM map_pins WHERE id = 60009;
+		DELETE FROM maps WHERE id = 60008;
+		DELETE FROM world_notes WHERE id = 60007;
+		DELETE FROM combatants WHERE id = 60006;
+		DELETE FROM combat_encounters WHERE id = 60005;
+		DELETE FROM messages WHERE id = 60004;
+		DELETE FROM sessions WHERE id = 60003;
+		DELETE FROM characters WHERE id = 60002;
+		DELETE FROM campaigns WHERE id = 60001;
+	`, rulesetID, rulesetID, rulesetID)
+	require.NoError(t, err)
+	require.NoError(t, seed.Close())
+
+	d, err := Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, d.Close()) })
+	wantSequences := map[string]int64{
+		"campaigns": 60001, "characters": 60002, "sessions": 60003,
+		"messages": 60004, "combat_encounters": 60005, "combatants": 60006,
+		"world_notes": 60007, "maps": 60008, "map_pins": 60009,
+		"dice_rolls": 60010, "rulebook_chunks": 60011, "session_npcs": 60012,
+		"objectives": 60013, "items": 60014, "secrets": 60015,
+		"calendar_events": 60016,
+	}
+	for table, want := range wantSequences {
+		var got int64
+		require.NoError(t, d.db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&got), table)
+		assert.GreaterOrEqual(t, got, want, table)
+	}
+	nextCharacterID, err := d.CreateCharacter(100, "after repair")
+	require.NoError(t, err)
+	assert.Greater(t, nextCharacterID, int64(60002))
+}
+
+func TestIntegrityMigrationRewritesLegacyMapURLsWithinCampaignOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "map-links.db")
+	seed, err := sql.Open("sqlite", sqliteDSN(path))
+	require.NoError(t, err)
+	seed.SetMaxOpenConns(1)
+	_, err = runMigrationsFromFS(seed, migrationsThrough055(t), "migrations", migrationRunOptions{databasePath: path})
+	require.NoError(t, err)
+	var rulesetID int64
+	require.NoError(t, seed.QueryRow(`SELECT id FROM rulesets WHERE name = 'dnd5e'`).Scan(&rulesetID))
+
+	campaignA := mustInsertID(t, seed, `INSERT INTO campaigns(ruleset_id, name) VALUES (?, 'A')`, rulesetID)
+	campaignB := mustInsertID(t, seed, `INSERT INTO campaigns(ruleset_id, name) VALUES (?, 'B')`, rulesetID)
+	campaignC := mustInsertID(t, seed, `INSERT INTO campaigns(ruleset_id, name) VALUES (?, 'C')`, rulesetID)
+	sessionA := mustInsertID(t, seed, `INSERT INTO sessions(campaign_id, title, date) VALUES (?, 'A', 'x')`, campaignA)
+	sessionB := mustInsertID(t, seed, `INSERT INTO sessions(campaign_id, title, date) VALUES (?, 'B', 'x')`, campaignB)
+	sessionC := mustInsertID(t, seed, `INSERT INTO sessions(campaign_id, title, date) VALUES (?, 'C', 'x')`, campaignC)
+	sharedA := mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'shared A', 'maps/shared.svg')`, campaignA)
+	firstA := mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'first A', 'maps/first.svg')`, campaignA)
+	secondA := mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'second A', 'maps/second.svg')`, campaignA)
+	shortA := mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'short overlap', 'maps/overlap')`, campaignA)
+	longA := mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'long overlap', 'maps/overlap.svg')`, campaignA)
+	sharedB := mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'shared B', 'maps/shared.svg')`, campaignB)
+	mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'ambiguous one', 'maps/ambiguous.svg')`, campaignC)
+	mustInsertID(t, seed, `INSERT INTO maps(campaign_id, name, image_path) VALUES (?, 'ambiguous two', 'maps/ambiguous.svg')`, campaignC)
+	mustInsertID(t, seed, `INSERT INTO messages(session_id, role, content) VALUES (?, 'assistant', 'A /api/files/maps/shared.svg /api/files/maps/first.svg /api/files/maps/second.svg /api/files/maps/overlap.svg /api/files/maps/overlap')`, sessionA)
+	mustInsertID(t, seed, `INSERT INTO messages(session_id, role, content) VALUES (?, 'assistant', 'B /api/files/maps/shared.svg')`, sessionB)
+	mustInsertID(t, seed, `INSERT INTO messages(session_id, role, content) VALUES (?, 'assistant', 'C /api/files/maps/ambiguous.svg')`, sessionC)
+	require.NoError(t, seed.Close())
+
+	d, err := Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, d.Close()) })
+	var gotA, gotB, gotC string
+	require.NoError(t, d.db.QueryRow(`SELECT content FROM messages WHERE session_id = ?`, sessionA).Scan(&gotA))
+	require.NoError(t, d.db.QueryRow(`SELECT content FROM messages WHERE session_id = ?`, sessionB).Scan(&gotB))
+	require.NoError(t, d.db.QueryRow(`SELECT content FROM messages WHERE session_id = ?`, sessionC).Scan(&gotC))
+	assert.Equal(t, fmt.Sprintf("A /api/assets/maps/%d /api/assets/maps/%d /api/assets/maps/%d /api/assets/maps/%d /api/assets/maps/%d", sharedA, firstA, secondA, longA, shortA), gotA)
+	assert.Equal(t, fmt.Sprintf("B /api/assets/maps/%d", sharedB), gotB)
+	assert.Equal(t, "C /api/files/maps/ambiguous.svg", gotC)
+}
+
 func TestIntegrityMigrationQuarantinesOrphansAndRewritesLegacyMapURLs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "orphaned.db")
 	preRepairFS := migrationsThrough055(t)
@@ -330,6 +446,9 @@ func TestIntegrityMigrationQuarantinesOrphansAndRewritesLegacyMapURLs(t *testing
 		INSERT INTO objectives(id, campaign_id, title, parent_id) VALUES (9833, 9700, 'orphan parent', 999999);
 		INSERT INTO map_tokens(id, map_id, entity_type, entity_id, x, y) VALUES (9835, 9705, 'character', 999999, .5, .5);
 		INSERT INTO map_tokens(id, map_id, entity_type, entity_id, x, y) VALUES (9836, 9705, 'npc', 999999, .5, .5);
+		INSERT INTO objectives(id, campaign_id, title, description, parent_id) VALUES (9840, 9700, 'missing root', 'root payload', 999999);
+		INSERT INTO objectives(id, campaign_id, title, description, parent_id) VALUES (9841, 9700, 'orphan child', 'child payload', 9840);
+		INSERT INTO objectives(id, campaign_id, title, description, parent_id) VALUES (9842, 9700, 'orphan grandchild', 'grandchild payload', 9841);
 	`, rulesetID)
 	require.NoError(t, err)
 	_, err = seed.Exec(`INSERT INTO campaigns(id, ruleset_id, name) VALUES (9834, ?, 'uses historical template')`, templateRulesetID)
@@ -361,6 +480,7 @@ func TestIntegrityMigrationQuarantinesOrphansAndRewritesLegacyMapURLs(t *testing
 		{"deck_draws", 9828}, {"combatants", 9829}, {"map_pins", 9830},
 		{"map_tokens", 9831}, {"map_zones", 9832}, {"objectives", 9833},
 		{"map_tokens", 9835}, {"map_tokens", 9836},
+		{"objectives", 9840}, {"objectives", 9841}, {"objectives", 9842},
 	}
 	for _, orphan := range requiredOrphans {
 		var payload, reason string
@@ -454,16 +574,22 @@ func TestIntegrityIndexesServeHighFrequencyQueries(t *testing.T) {
 		query string
 		args  []any
 		index string
+		avoid string
 	}{
-		{"messages session order", `SELECT id FROM messages WHERE session_id = ? ORDER BY created_at, id`, []any{1}, "idx_messages_session_order"},
-		{"sessions campaign", `SELECT id FROM sessions WHERE campaign_id = ? ORDER BY date DESC`, []any{1}, "idx_sessions_campaign_date"},
-		{"characters campaign", `SELECT id FROM characters WHERE campaign_id = ? ORDER BY name`, []any{1}, "idx_characters_campaign_name"},
-		{"objectives campaign status", `SELECT id FROM objectives WHERE campaign_id = ? AND status = ?`, []any{1, "active"}, "idx_objectives_campaign_status"},
-		{"maps campaign", `SELECT id FROM maps WHERE campaign_id = ? ORDER BY created_at`, []any{1}, "idx_maps_campaign_created"},
-		{"map pins", `SELECT id FROM map_pins WHERE map_id = ?`, []any{1}, "idx_map_pins_map"},
-		{"map tokens", `SELECT id FROM map_tokens WHERE map_id = ?`, []any{1}, "sqlite_autoindex_map_tokens_1"},
-		{"map zones", `SELECT id FROM map_zones WHERE map_id = ?`, []any{1}, "idx_map_zones_map"},
-		{"combatant order", `SELECT id FROM combatants WHERE encounter_id = ? ORDER BY sort_order, id`, []any{1}, "idx_combatants_encounter_order"},
+		{name: "messages session order", query: `SELECT id FROM messages WHERE session_id = ? ORDER BY created_at, id`, args: []any{1}, index: "idx_messages_session_order"},
+		{name: "sessions campaign", query: `SELECT id FROM sessions WHERE campaign_id = ? ORDER BY date DESC`, args: []any{1}, index: "idx_sessions_campaign_date"},
+		{name: "characters campaign", query: `SELECT id FROM characters WHERE campaign_id = ? ORDER BY name`, args: []any{1}, index: "idx_characters_campaign_name"},
+		{
+			name: "objectives production list",
+			query: `SELECT id, campaign_id, title, description, status, parent_id, created_at
+				FROM objectives WHERE campaign_id = ? ORDER BY created_at DESC`,
+			args: []any{1}, index: "idx_objectives_campaign_created", avoid: "TEMP B-TREE",
+		},
+		{name: "maps campaign", query: `SELECT id FROM maps WHERE campaign_id = ? ORDER BY created_at`, args: []any{1}, index: "idx_maps_campaign_created"},
+		{name: "map pins", query: `SELECT id FROM map_pins WHERE map_id = ?`, args: []any{1}, index: "idx_map_pins_map"},
+		{name: "map tokens", query: `SELECT id FROM map_tokens WHERE map_id = ?`, args: []any{1}, index: "sqlite_autoindex_map_tokens_1"},
+		{name: "map zones", query: `SELECT id FROM map_zones WHERE map_id = ?`, args: []any{1}, index: "idx_map_zones_map"},
+		{name: "combatant order", query: `SELECT id FROM combatants WHERE encounter_id = ? ORDER BY sort_order, id`, args: []any{1}, index: "idx_combatants_encounter_order"},
 	}
 	for _, tt := range queries {
 		t.Run(tt.name, func(t *testing.T) {
@@ -478,7 +604,11 @@ func TestIntegrityIndexesServeHighFrequencyQueries(t *testing.T) {
 				details = append(details, detail)
 			}
 			require.NoError(t, rows.Err())
-			assert.Contains(t, strings.Join(details, "\n"), tt.index)
+			plan := strings.Join(details, "\n")
+			assert.Contains(t, plan, tt.index)
+			if tt.avoid != "" {
+				assert.NotContains(t, plan, tt.avoid)
+			}
 		})
 	}
 }

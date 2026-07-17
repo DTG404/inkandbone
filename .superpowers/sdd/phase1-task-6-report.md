@@ -84,3 +84,29 @@ Result after the legacy token fixture was corrected to use a real character: PAS
 - Confirmed campaign cascade and direct optional-parent deletion use separate fixtures.
 - Confirmed all required and optional historical relationship classes have quarantine fixtures, including both deck-draw parents and both polymorphic token targets.
 - Confirmed recovery payload assertions include late-added campaign/session/combat/calendar fields and deterministic BLOB encoding.
+
+## Reviewer-fix cycle
+
+The first task review returned four Important findings. Each was reproduced with a failing regression before changing migration 056:
+
+1. Rebuilt AUTOINCREMENT tables reset deleted high-water IDs. The upgrade fixture inserted and deleted explicit IDs 60001-60016, then showed all 16 rebuilt table sequences fell to their surviving maximum (or zero) and the next character reused ID 102.
+2. Objective cleanup quarantined only a missing root. A root/child/grandchild fixture left child row 9841 violating `foreign_key_check` after the root was removed.
+3. Global map-link rewriting mapped campaign B's duplicate filename to campaign A's lowest map ID and arbitrarily rewrote a same-campaign ambiguous filename. A follow-up prefix fixture also proved that replacing `maps/overlap` before `maps/overlap.svg` corrupted the longer URL.
+4. The speculative objectives status index was selected for the exact production list query but still emitted `USE TEMP B-TREE FOR ORDER BY`.
+
+Fixes:
+
+- Migration 056 snapshots `sqlite_sequence` for every rebuilt AUTOINCREMENT table before repair and transactionally restores `max(old,current)` after all renames. The test asserts all 16 high-water marks and proves the next generated ID exceeds the deleted high ID.
+- A recursive CTE identifies each missing-root objective and its complete descendant subtree. Every row retains its original full JSON payload before the subtree is deleted; final foreign-key validation is clean.
+- Rewrite candidates now join `messages -> sessions -> campaign`, include only unique `(campaign_id,image_path)` mappings, and leave same-campaign ambiguity unchanged. Each message can rewrite multiple distinct URLs; candidates are applied by descending path length and then map ID to protect prefix-overlapping filenames.
+- `idx_objectives_campaign_status` was replaced with `idx_objectives_campaign_created(campaign_id, created_at DESC, id)`. The query-plan test uses the exact `ListObjectives` SQL and rejects a temporary sort.
+
+Reviewer-fix verification:
+
+- RED command: `go test ./internal/db -run 'PreservesAutoincrement|RewritesLegacyMapURLsWithinCampaign|IntegrityMigrationQuarantinesOrphans|IntegrityIndexes' -v -count=1 -timeout=30s` — failed on all four findings as described above.
+- Prefix-overlap RED: `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` — failed with the longer URL rewritten as `/api/assets/maps/4.svg`.
+- GREEN focused command: same four-test command — PASS, 0 failures, 0.279s.
+- Full DB: `go test ./internal/db -count=1 -timeout=90s` — PASS, 0 failures, 5.055s.
+- Focused race: `go test -race ./internal/db -run 'PreservesAutoincrement|RewritesLegacyMapURLsWithinCampaign|IntegrityMigrationQuarantinesOrphans|IntegrityIndexes' -v -count=1 -timeout=60s` — PASS, 0 failures, 6.984s.
+- Affected API: legacy asset and campaign/character/session deletion focus — PASS, 0 failures, 0.463s.
+- Frontend: 16 files and 144 tests PASS; ESLint PASS; TypeScript/Vite production build PASS.

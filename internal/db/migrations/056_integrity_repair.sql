@@ -12,6 +12,21 @@ CREATE TABLE orphaned_records (
 );
 CREATE INDEX idx_orphaned_records_source ON orphaned_records(source_table, source_id);
 
+-- Rebuilding an AUTOINCREMENT table drops its sqlite_sequence high-water mark.
+-- Preserve those marks so deleted IDs are never reused after repair.
+CREATE TEMP TABLE integrity_old_sequences (
+    name TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL
+);
+INSERT INTO integrity_old_sequences(name, seq)
+SELECT name, seq FROM sqlite_sequence
+WHERE name IN (
+    'campaigns', 'characters', 'sessions', 'messages', 'combat_encounters',
+    'combatants', 'world_notes', 'maps', 'map_pins', 'dice_rolls',
+    'rulebook_chunks', 'session_npcs', 'objectives', 'items', 'secrets',
+    'calendar_events'
+);
+
 -- Ruleset-owned records. A campaign with a missing ruleset cannot be made
 -- meaningful automatically, so quarantine it before walking its descendants.
 INSERT INTO orphaned_records(source_table, source_id, payload_json, reason)
@@ -370,30 +385,68 @@ DELETE FROM map_tokens
 WHERE (entity_type = 'character' AND NOT EXISTS (SELECT 1 FROM characters WHERE characters.id = map_tokens.entity_id))
    OR (entity_type = 'npc' AND NOT EXISTS (SELECT 1 FROM session_npcs WHERE session_npcs.id = map_tokens.entity_id));
 
--- Objective children have no independent meaning without their parent.
+-- Objective children have no independent meaning without their parent. Start
+-- at every missing root and recursively quarantine its complete descendant
+-- subtree before deleting any row.
+WITH RECURSIVE orphan_objectives(id) AS (
+    SELECT x.id
+    FROM objectives x LEFT JOIN objectives p ON p.id = x.parent_id
+    WHERE x.parent_id IS NOT NULL AND p.id IS NULL
+    UNION
+    SELECT child.id
+    FROM objectives child JOIN orphan_objectives parent ON child.parent_id = parent.id
+)
 INSERT INTO orphaned_records(source_table, source_id, payload_json, reason)
 SELECT 'objectives', x.id,
        json_object('id', x.id, 'campaign_id', x.campaign_id, 'title', x.title,
                    'description', x.description, 'status', x.status,
                    'parent_id', x.parent_id, 'created_at', x.created_at),
-       'missing objectives parent'
-FROM objectives x LEFT JOIN objectives p ON p.id = x.parent_id
-WHERE x.parent_id IS NOT NULL AND p.id IS NULL;
-DELETE FROM objectives
-WHERE parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM objectives p WHERE p.id = objectives.parent_id);
+       'missing objectives parent or ancestor'
+FROM objectives x JOIN orphan_objectives orphan ON orphan.id = x.id;
+WITH RECURSIVE orphan_objectives(id) AS (
+    SELECT x.id
+    FROM objectives x LEFT JOIN objectives p ON p.id = x.parent_id
+    WHERE x.parent_id IS NOT NULL AND p.id IS NULL
+    UNION
+    SELECT child.id
+    FROM objectives child JOIN orphan_objectives parent ON child.parent_id = parent.id
+)
+DELETE FROM objectives WHERE id IN (SELECT id FROM orphan_objectives);
 
 -- Rewrite every known generated-map link before removing HTTP compatibility.
 WITH RECURSIVE
-map_rewrites AS (
-    SELECT id, image_path, row_number() OVER (ORDER BY id) AS step
-    FROM maps WHERE image_path <> ''
+unambiguous_maps AS (
+    SELECT campaign_id, image_path, min(id) AS map_id
+    FROM maps
+    WHERE image_path <> ''
+    GROUP BY campaign_id, image_path
+    HAVING count(*) = 1
+),
+message_rewrites AS (
+    SELECT message_id, map_id, image_path,
+           row_number() OVER (
+               PARTITION BY message_id
+               ORDER BY length(image_path) DESC, map_id
+           ) AS step
+    FROM (
+        SELECT msg.id AS message_id, candidate.map_id, candidate.image_path
+        FROM messages msg
+        JOIN sessions session ON session.id = msg.session_id
+        JOIN unambiguous_maps candidate ON candidate.campaign_id = session.campaign_id
+        WHERE instr(msg.content, '/api/files/' || candidate.image_path) > 0
+    )
 ),
 rewritten(message_id, step, content) AS (
-    SELECT id, 0, content FROM messages
+    SELECT msg.id, 0, msg.content
+    FROM messages msg
+    WHERE EXISTS (SELECT 1 FROM message_rewrites candidate WHERE candidate.message_id = msg.id)
     UNION ALL
     SELECT r.message_id, r.step + 1,
-           replace(r.content, '/api/files/' || m.image_path, '/api/assets/maps/' || m.id)
-    FROM rewritten r JOIN map_rewrites m ON m.step = r.step + 1
+           replace(r.content, '/api/files/' || candidate.image_path,
+                   '/api/assets/maps/' || candidate.map_id)
+    FROM rewritten r
+    JOIN message_rewrites candidate
+      ON candidate.message_id = r.message_id AND candidate.step = r.step + 1
 )
 UPDATE messages
 SET content = (
@@ -401,7 +454,7 @@ SET content = (
     WHERE r.message_id = messages.id
     ORDER BY r.step DESC LIMIT 1
 )
-WHERE instr(content, '/api/files/') > 0;
+WHERE EXISTS (SELECT 1 FROM message_rewrites candidate WHERE candidate.message_id = messages.id);
 
 -- Rebuild only tables whose historical action is absent or incorrect.
 CREATE TABLE campaigns_new (
@@ -595,7 +648,7 @@ CREATE INDEX idx_messages_character_id ON messages(character_id);
 CREATE INDEX idx_messages_session_order ON messages(session_id, created_at, id);
 CREATE INDEX idx_sessions_campaign_date ON sessions(campaign_id, date DESC, id);
 CREATE INDEX idx_characters_campaign_name ON characters(campaign_id, name, id);
-CREATE INDEX idx_objectives_campaign_status ON objectives(campaign_id, status, id);
+CREATE INDEX idx_objectives_campaign_created ON objectives(campaign_id, created_at DESC, id);
 CREATE INDEX idx_maps_campaign_created ON maps(campaign_id, created_at, id);
 CREATE INDEX idx_map_pins_map ON map_pins(map_id, id);
 CREATE INDEX idx_map_zones_map ON map_zones(map_id, id);
@@ -640,6 +693,20 @@ AFTER DELETE ON session_npcs
 BEGIN
     DELETE FROM map_tokens WHERE entity_type = 'npc' AND entity_id = OLD.id;
 END;
+
+-- Restore the greater of the pre-rebuild and newly populated sequence for
+-- every rebuilt AUTOINCREMENT table, then remove the transaction-local copy.
+UPDATE sqlite_sequence
+SET seq = max(
+    seq,
+    COALESCE((SELECT old.seq FROM integrity_old_sequences old WHERE old.name = sqlite_sequence.name), seq)
+)
+WHERE name IN (SELECT name FROM integrity_old_sequences);
+INSERT INTO sqlite_sequence(name, seq)
+SELECT old.name, old.seq
+FROM integrity_old_sequences old
+WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence current WHERE current.name = old.name);
+DROP TABLE integrity_old_sequences;
 
 -- Remove only the unreferenced accidental template seed. If a historical
 -- campaign or other record deliberately references it, preserve that data.

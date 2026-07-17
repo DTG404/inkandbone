@@ -7,13 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 var validPNG = []byte("\x89PNG\r\n\x1a\nasset-data")
+var validJPEG = []byte("\xff\xd8\xff\xdbasset-data")
 
 func createAssetMap(t *testing.T, s *Server, campaignID int64, imagePath string) int64 {
 	t.Helper()
@@ -163,6 +166,66 @@ func TestAssetRouteRejectsSymlinkEscape(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestOpenedAssetDescriptorRemainsStableAfterPathSwap(t *testing.T) {
+	dataDir := t.TempDir()
+	mapsDir := filepath.Join(dataDir, "maps")
+	approvedPath := writeAssetFile(t, dataDir, "maps/world.png", validPNG)
+	attackerDir := t.TempDir()
+	attackerPath := writeAssetFile(t, attackerDir, "attacker.png", []byte("attacker-controlled bytes"))
+
+	f, mimeType, err := openValidatedAsset(mapsDir, "world.png", mapAssetTypes)
+	require.NoError(t, err)
+	defer f.Close()
+
+	require.NoError(t, os.Rename(approvedPath, filepath.Join(mapsDir, "approved-original.png")))
+	require.NoError(t, os.Symlink(attackerPath, approvedPath))
+
+	w := httptest.NewRecorder()
+	serveOpenedAsset(w, httptest.NewRequest(http.MethodGet, "/api/assets/maps/1", nil), f, "world.png", mimeType)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, validPNG, w.Body.Bytes())
+	assert.NotContains(t, w.Body.String(), "attacker-controlled")
+}
+
+func TestOpenValidatedAssetRejectsSymlinkEscapesAndSpecialFilesWithoutBlocking(t *testing.T) {
+	dataDir := t.TempDir()
+	mapsDir := filepath.Join(dataDir, "maps")
+	require.NoError(t, os.MkdirAll(mapsDir, 0750))
+	outsideDir := t.TempDir()
+	outsidePath := writeAssetFile(t, outsideDir, "outside.png", validPNG)
+
+	require.NoError(t, os.Symlink(outsidePath, filepath.Join(mapsDir, "final.png")))
+	f, _, err := openValidatedAsset(mapsDir, "final.png", mapAssetTypes)
+	if f != nil {
+		f.Close()
+	}
+	require.Error(t, err)
+
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(mapsDir, "intermediate")))
+	f, _, err = openValidatedAsset(mapsDir, "intermediate/outside.png", mapAssetTypes)
+	if f != nil {
+		f.Close()
+	}
+	require.Error(t, err)
+
+	require.NoError(t, syscall.Mkfifo(filepath.Join(mapsDir, "pipe.png"), 0600))
+	result := make(chan error, 1)
+	go func() {
+		f, _, err := openValidatedAsset(mapsDir, "pipe.png", mapAssetTypes)
+		if f != nil {
+			f.Close()
+		}
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		require.Error(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("opening a special file blocked")
+	}
+}
+
 func TestAssetRouteEnforcesTypeSpecificExtensions(t *testing.T) {
 	dataDir := t.TempDir()
 	writeAssetFile(t, dataDir, "maps/animated.gif", []byte("GIF89aasset-data"))
@@ -230,4 +293,18 @@ func TestAssetLegacyMapRedirectRequiresExactUnambiguousDatabasePath(t *testing.T
 	_, err := s.db.CreateMap(campaignID, "Duplicate", "maps/world.png")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, getAsset(t, s, "/api/files/maps/world.png").Code)
+}
+
+func TestLegacyMapSubdirectoryCanonicalizationFailsClosed(t *testing.T) {
+	dataDir := t.TempDir()
+	writeAssetFile(t, dataDir, "maps/world.png", validPNG)
+	s := newTestServerWithDir(t, dataDir)
+
+	w := getAsset(t, s, "/api/files/maps/subdir/../world.png")
+	require.Equal(t, http.StatusTemporaryRedirect, w.Code)
+	assert.Equal(t, "/api/files/maps/world.png", w.Header().Get("Location"))
+
+	followed := getAsset(t, s, w.Header().Get("Location"))
+	assert.Equal(t, http.StatusNotFound, followed.Code)
+	assert.NotEqual(t, validPNG, followed.Body.Bytes())
 }

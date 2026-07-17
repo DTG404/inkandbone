@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	mathrand "math/rand"
 	"net/http"
@@ -301,8 +300,7 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	ext := strings.ToLower(filepath.Ext(filepath.Base(header.Filename)))
-	allowedMapExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
-	if !allowedMapExts[ext] {
+	if _, ok := mapAssetTypes[ext]; !ok {
 		http.Error(w, "unsupported image format", http.StatusBadRequest)
 		return
 	}
@@ -312,15 +310,11 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out, err := os.Create(filepath.Join(destDir, filename))
-	if err != nil {
-		http.Error(w, "create file: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, file); err != nil {
-		out.Close()
-		os.Remove(filepath.Join(destDir, filename))
+	if err := writeValidatedUpload(destDir, filename, file, mapAssetTypes); err != nil {
+		if err == errInvalidAsset {
+			http.Error(w, "image content does not match its format", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "write file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -328,6 +322,7 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 	imagePath := "maps/" + filename
 	mapID, err := s.db.CreateMap(id, name, imagePath)
 	if err != nil {
+		removeStoredAsset(destDir, filename)
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

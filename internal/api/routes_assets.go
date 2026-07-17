@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 var errInvalidAsset = errors.New("invalid asset")
@@ -45,48 +46,57 @@ func storedAssetRelative(storedPath, directory string) (string, error) {
 	return strings.TrimPrefix(clean, prefix), nil
 }
 
-func resolveAsset(baseDir, relative string, allowedExt map[string]string) (string, string, error) {
+func openValidatedAsset(baseDir, relative string, allowedExt map[string]string) (*os.File, string, error) {
 	if relative == "" || filepath.IsAbs(relative) {
-		return "", "", errInvalidAsset
+		return nil, "", errInvalidAsset
 	}
 	clean := filepath.Clean(relative)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", "", errInvalidAsset
+	if clean != relative || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return nil, "", errInvalidAsset
 	}
 
-	base, err := filepath.EvalSymlinks(baseDir)
+	root, err := os.OpenRoot(baseDir)
 	if err != nil {
-		return "", "", errInvalidAsset
+		return nil, "", errInvalidAsset
 	}
-	full, err := filepath.EvalSymlinks(filepath.Join(base, clean))
-	if err != nil {
-		return "", "", errInvalidAsset
-	}
-	rel, err := filepath.Rel(base, full)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", "", errInvalidAsset
-	}
+	defer root.Close()
 
-	info, err := os.Stat(full)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", "", errInvalidAsset
+	f, err := root.OpenFile(clean, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, "", errInvalidAsset
 	}
-	mimeType, ok := allowedExt[strings.ToLower(filepath.Ext(full))]
-	if !ok || !assetContentMatches(full, mimeType) {
-		return "", "", errInvalidAsset
+	mimeType, err := validateOpenedAsset(f, clean, allowedExt)
+	if err != nil {
+		f.Close()
+		return nil, "", err
 	}
-	return full, mimeType, nil
+	return f, mimeType, nil
 }
 
-func assetContentMatches(fullPath, expected string) bool {
-	f, err := os.Open(fullPath)
-	if err != nil {
-		return false
+func validateOpenedAsset(f *os.File, filename string, allowedExt map[string]string) (string, error) {
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return "", errInvalidAsset
 	}
-	defer f.Close()
+	mimeType, ok := allowedExt[strings.ToLower(filepath.Ext(filename))]
+	if !ok {
+		return "", errInvalidAsset
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", errInvalidAsset
+	}
+	if !assetContentMatches(f, mimeType) {
+		return "", errInvalidAsset
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", errInvalidAsset
+	}
+	return mimeType, nil
+}
 
+func assetContentMatches(r io.Reader, expected string) bool {
 	if expected == "image/svg+xml" {
-		decoder := xml.NewDecoder(io.LimitReader(f, 64<<10))
+		decoder := xml.NewDecoder(io.LimitReader(r, 64<<10))
 		for {
 			token, err := decoder.Token()
 			if err != nil {
@@ -102,11 +112,59 @@ func assetContentMatches(fullPath, expected string) bool {
 	}
 
 	buf := make([]byte, 512)
-	n, err := f.Read(buf)
+	n, err := r.Read(buf)
 	if err != nil && err != io.EOF {
 		return false
 	}
 	return http.DetectContentType(buf[:n]) == expected
+}
+
+func writeValidatedUpload(baseDir, filename string, src io.Reader, allowedExt map[string]string) error {
+	if _, ok := allowedExt[strings.ToLower(filepath.Ext(filename))]; !ok {
+		return errInvalidAsset
+	}
+	root, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	tempName := ".upload-" + randomHex(16)
+	out, err := root.OpenFile(tempName, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0640)
+	if err != nil {
+		return err
+	}
+	keep := false
+	defer func() {
+		out.Close()
+		if !keep {
+			_ = root.Remove(tempName)
+		}
+	}()
+
+	if _, err := io.Copy(out, src); err != nil {
+		return err
+	}
+	if _, err := validateOpenedAsset(out, filename, allowedExt); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if err := root.Rename(tempName, filename); err != nil {
+		return err
+	}
+	keep = true
+	return nil
+}
+
+func removeStoredAsset(baseDir, filename string) {
+	root, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	_ = root.Remove(filename)
 }
 
 func (s *Server) handleMapAsset(w http.ResponseWriter, r *http.Request) {
@@ -151,24 +209,23 @@ func (s *Server) serveTypedAsset(w http.ResponseWriter, r *http.Request, directo
 		http.NotFound(w, r)
 		return
 	}
-	fullPath, mimeType, err := resolveAsset(filepath.Join(s.dataDir, directory), relative, allowedExt)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	f, err := os.Open(fullPath)
+	f, mimeType, err := openValidatedAsset(filepath.Join(s.dataDir, directory), relative, allowedExt)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	defer f.Close()
+	serveOpenedAsset(w, r, f, filepath.Base(relative), mimeType)
+}
+
+func serveOpenedAsset(w http.ResponseWriter, r *http.Request, f *os.File, filename, mimeType string) {
 	info, err := f.Stat()
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	disposition := mime.FormatMediaType("inline", map[string]string{"filename": filepath.Base(fullPath)})
+	disposition := mime.FormatMediaType("inline", map[string]string{"filename": filepath.Base(filename)})
 	if disposition == "" {
 		http.NotFound(w, r)
 		return
@@ -177,7 +234,7 @@ func (s *Server) serveTypedAsset(w http.ResponseWriter, r *http.Request, directo
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", disposition)
-	http.ServeContent(w, r, filepath.Base(fullPath), info.ModTime(), f)
+	http.ServeContent(w, r, filepath.Base(filename), info.ModTime(), f)
 }
 
 func (s *Server) handleLegacyMapAsset(w http.ResponseWriter, r *http.Request) {

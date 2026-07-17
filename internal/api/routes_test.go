@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -362,11 +361,18 @@ func TestServeFile_arbitraryDataFileNotServed(t *testing.T) {
 }
 
 func TestServeFile_traversalCannotServe(t *testing.T) {
-	s := newTestServer(t)
+	dir := t.TempDir()
+	writeAssetFile(t, dir, "etc/passwd", []byte("arbitrary-file-sentinel"))
+	s := newTestServerWithDir(t, dir)
 	req := httptest.NewRequest(http.MethodGet, "/api/files/../etc/passwd", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	assert.NotEqual(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusTemporaryRedirect, w.Code)
+	assert.Equal(t, "/api/etc/passwd", w.Header().Get("Location"))
+
+	followed := getAsset(t, s, w.Header().Get("Location"))
+	assert.Equal(t, http.StatusNotFound, followed.Code)
+	assert.NotContains(t, followed.Body.String(), "arbitrary-file-sentinel")
 }
 
 func TestListMaps_empty(t *testing.T) {
@@ -616,19 +622,16 @@ func TestHandleGMRespondStream_FailureDirection(t *testing.T) {
 	assert.Contains(t, stub.capturedSys, "FAILED")
 }
 
-func TestUploadMap_ok(t *testing.T) {
-	dir := t.TempDir()
-	s := newTestServerWithDir(t, dir)
-	campID, _ := seedCampaign(t, s.db)
-
+func uploadMapRequest(t *testing.T, s *Server, campID int64, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	fw, err := mw.CreateFormFile("image", "map.png")
+	fw, err := mw.CreateFormFile("image", filename)
 	require.NoError(t, err)
-	_, err = io.WriteString(fw, "fake-image-data")
+	_, err = fw.Write(content)
 	require.NoError(t, err)
 	require.NoError(t, mw.WriteField("name", "World Map"))
-	mw.Close()
+	require.NoError(t, mw.Close())
 
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/campaigns/"+strconv.FormatInt(campID, 10)+"/maps",
@@ -636,6 +639,15 @@ func TestUploadMap_ok(t *testing.T) {
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
+	return w
+}
+
+func TestUploadMap_ok(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServerWithDir(t, dir)
+	campID, _ := seedCampaign(t, s.db)
+
+	w := uploadMapRequest(t, s, campID, "map.png", validPNG)
 	assert.Equal(t, http.StatusCreated, w.Code)
 	var m db.Map
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &m))
@@ -643,6 +655,35 @@ func TestUploadMap_ok(t *testing.T) {
 	assert.Equal(t, "World Map", m.Name)
 	assert.True(t, strings.HasPrefix(m.ImagePath, "maps/"))
 	assert.FileExists(t, filepath.Join(dir, "maps", filepath.Base(m.ImagePath)))
+}
+
+func TestUploadMapRejectsDisallowedOrMismatchedContentWithoutSideEffects(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		content  []byte
+	}{
+		{name: "GIF is not a map asset", filename: "animated.gif", content: []byte("GIF89aasset-data")},
+		{name: "PNG extension with JPEG content", filename: "mismatch.png", content: validJPEG},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := newTestServerWithDir(t, dir)
+			campID, _ := seedCampaign(t, s.db)
+
+			w := uploadMapRequest(t, s, campID, tt.filename, tt.content)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+
+			maps, err := s.db.ListMaps(campID)
+			require.NoError(t, err)
+			assert.Empty(t, maps)
+			files, err := filepath.Glob(filepath.Join(dir, "maps", "*"))
+			require.NoError(t, err)
+			assert.Empty(t, files)
+		})
+	}
 }
 
 func TestHandlePatchSession_SceneTags(t *testing.T) {

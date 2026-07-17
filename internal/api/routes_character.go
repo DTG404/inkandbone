@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -87,8 +86,7 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 
 	filename := fmt.Sprintf("%d_%s", id, filepath.Base(header.Filename))
 	ext := strings.ToLower(filepath.Ext(filename))
-	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
-	if !allowed[ext] {
+	if _, ok := portraitAssetTypes[ext]; !ok {
 		http.Error(w, "unsupported image format", http.StatusBadRequest)
 		return
 	}
@@ -97,21 +95,18 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out, err := os.Create(filepath.Join(destDir, filename))
-	if err != nil {
-		http.Error(w, "create file: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, file); err != nil {
-		out.Close()
-		os.Remove(filepath.Join(destDir, filename))
+	if err := writeValidatedUpload(destDir, filename, file, portraitAssetTypes); err != nil {
+		if err == errInvalidAsset {
+			http.Error(w, "image content does not match its format", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "write file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	relativePath := "portraits/" + filename
 	if err := s.db.UpdateCharacterPortrait(id, relativePath); err != nil {
+		removeStoredAsset(destDir, filename)
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

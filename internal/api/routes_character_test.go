@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -149,7 +149,7 @@ func TestUploadPortrait(t *testing.T) {
 	mw := multipart.NewWriter(&body)
 	fw, err := mw.CreateFormFile("portrait", "avatar.jpg")
 	require.NoError(t, err)
-	_, err = io.WriteString(fw, "fake-image-bytes")
+	_, err = fw.Write(validJPEG)
 	require.NoError(t, err)
 	mw.Close()
 
@@ -185,4 +185,39 @@ func TestUploadPortrait(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, charID, payload["id"])
 	assert.Equal(t, resp.PortraitPath, payload["portrait_path"])
+}
+
+func TestUploadPortraitRejectsMismatchedContentWithoutSideEffects(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServerWithDir(t, dir)
+	campID, _ := seedCampaign(t, s.db)
+	charID, err := s.db.CreateCharacter(campID, "Mira")
+	require.NoError(t, err)
+	ch := s.bus.Subscribe()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, err := mw.CreateFormFile("portrait", "avatar.jpg")
+	require.NoError(t, err)
+	_, err = fw.Write(validPNG)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/characters/%d/portrait", charID), &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	character, err := s.db.GetCharacter(charID)
+	require.NoError(t, err)
+	assert.Empty(t, character.PortraitPath)
+	files, err := filepath.Glob(filepath.Join(dir, "portraits", "*"))
+	require.NoError(t, err)
+	assert.Empty(t, files)
+	select {
+	case event := <-ch:
+		t.Fatalf("unexpected success event: %#v", event)
+	default:
+	}
 }

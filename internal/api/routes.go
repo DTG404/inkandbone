@@ -322,7 +322,9 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 	imagePath := "maps/" + filename
 	mapID, err := s.db.CreateMap(id, name, imagePath)
 	if err != nil {
-		removeStoredAsset(destDir, filename)
+		if cleanupErr := removeStoredAsset(destDir, filename); cleanupErr != nil {
+			log.Printf("map upload cleanup failed: %v", cleanupErr)
+		}
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

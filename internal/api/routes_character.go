@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -84,12 +85,12 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	filename := fmt.Sprintf("%d_%s", id, filepath.Base(header.Filename))
-	ext := strings.ToLower(filepath.Ext(filename))
+	ext := strings.ToLower(filepath.Ext(filepath.Base(header.Filename)))
 	if _, ok := portraitAssetTypes[ext]; !ok {
 		http.Error(w, "unsupported image format", http.StatusBadRequest)
 		return
 	}
+	filename := fmt.Sprintf("%d_%s%s", id, randomHex(16), ext)
 	destDir := filepath.Join(s.dataDir, "portraits")
 	if err := os.MkdirAll(destDir, 0750); err != nil {
 		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
@@ -106,7 +107,9 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 
 	relativePath := "portraits/" + filename
 	if err := s.db.UpdateCharacterPortrait(id, relativePath); err != nil {
-		removeStoredAsset(destDir, filename)
+		if cleanupErr := removeStoredAsset(destDir, filename); cleanupErr != nil {
+			log.Printf("portrait upload cleanup failed: %v", cleanupErr)
+		}
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

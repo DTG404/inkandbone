@@ -158,13 +158,13 @@ func writeValidatedUpload(baseDir, filename string, src io.Reader, allowedExt ma
 	return nil
 }
 
-func removeStoredAsset(baseDir, filename string) {
+func removeStoredAsset(baseDir, filename string) error {
 	root, err := os.OpenRoot(baseDir)
 	if err != nil {
-		return
+		return err
 	}
 	defer root.Close()
-	_ = root.Remove(filename)
+	return root.Remove(filename)
 }
 
 func (s *Server) handleMapAsset(w http.ResponseWriter, r *http.Request) {

@@ -686,6 +686,28 @@ func TestUploadMapRejectsDisallowedOrMismatchedContentWithoutSideEffects(t *test
 	}
 }
 
+func TestUploadMapDBFailureRemovesUnpublishedFile(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServerWithDir(t, dir)
+	campID, _ := seedCampaign(t, s.db)
+	_, err := s.db.SQL().Exec(`
+		CREATE TRIGGER fail_map_insert
+		BEFORE INSERT ON maps
+		BEGIN
+			SELECT RAISE(ABORT, 'forced map insert failure');
+		END`)
+	require.NoError(t, err)
+
+	w := uploadMapRequest(t, s, campID, "world.png", validPNG)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	maps, err := s.db.ListMaps(campID)
+	require.NoError(t, err)
+	assert.Empty(t, maps)
+	entries, err := os.ReadDir(filepath.Join(dir, "maps"))
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
 func TestHandlePatchSession_SceneTags(t *testing.T) {
 	s := newTestServer(t)
 	_, sessID := seedCampaign(t, s.db)

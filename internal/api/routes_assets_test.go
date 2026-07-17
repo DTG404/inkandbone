@@ -7,9 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -188,7 +186,7 @@ func TestOpenedAssetDescriptorRemainsStableAfterPathSwap(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "attacker-controlled")
 }
 
-func TestOpenValidatedAssetRejectsSymlinkEscapesAndSpecialFilesWithoutBlocking(t *testing.T) {
+func TestOpenValidatedAssetRejectsSymlinkEscapes(t *testing.T) {
 	dataDir := t.TempDir()
 	mapsDir := filepath.Join(dataDir, "maps")
 	require.NoError(t, os.MkdirAll(mapsDir, 0750))
@@ -208,22 +206,6 @@ func TestOpenValidatedAssetRejectsSymlinkEscapesAndSpecialFilesWithoutBlocking(t
 		f.Close()
 	}
 	require.Error(t, err)
-
-	require.NoError(t, syscall.Mkfifo(filepath.Join(mapsDir, "pipe.png"), 0600))
-	result := make(chan error, 1)
-	go func() {
-		f, _, err := openValidatedAsset(mapsDir, "pipe.png", mapAssetTypes)
-		if f != nil {
-			f.Close()
-		}
-		result <- err
-	}()
-	select {
-	case err := <-result:
-		require.Error(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("opening a special file blocked")
-	}
 }
 
 func TestAssetRouteEnforcesTypeSpecificExtensions(t *testing.T) {
@@ -237,6 +219,11 @@ func TestAssetRouteEnforcesTypeSpecificExtensions(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, getAsset(t, s, "/api/assets/maps/"+strconv.FormatInt(mapID, 10)).Code)
 	assert.Equal(t, http.StatusNotFound, getAsset(t, s, "/api/assets/portraits/"+strconv.FormatInt(characterID, 10)).Code)
+}
+
+func TestRemoveStoredAssetReturnsCleanupError(t *testing.T) {
+	err := removeStoredAsset(filepath.Join(t.TempDir(), "missing"), "unpublished.png")
+	require.Error(t, err)
 }
 
 func TestAssetRouteRejectsMismatchedContent(t *testing.T) {

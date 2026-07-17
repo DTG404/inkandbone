@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -185,6 +186,97 @@ func TestUploadPortrait(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, charID, payload["id"])
 	assert.Equal(t, resp.PortraitPath, payload["portrait_path"])
+}
+
+func uploadPortraitRequest(t *testing.T, s *Server, charID int64, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, err := mw.CreateFormFile("portrait", filename)
+	require.NoError(t, err)
+	_, err = fw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/characters/%d/portrait", charID), &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	return w
+}
+
+func portraitPathFromResponse(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp struct {
+		PortraitPath string `json:"portrait_path"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	return resp.PortraitPath
+}
+
+func TestUploadPortraitDBFailurePreservesExistingPortrait(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServerWithDir(t, dir)
+	campID, _ := seedCampaign(t, s.db)
+	charID, err := s.db.CreateCharacter(campID, "Mira")
+	require.NoError(t, err)
+
+	oldRelative := fmt.Sprintf("portraits/%d_avatar.jpg", charID)
+	oldBytes := append(append([]byte{}, validJPEG...), []byte("-old")...)
+	oldPath := writeAssetFile(t, dir, oldRelative, oldBytes)
+	require.NoError(t, s.db.UpdateCharacterPortrait(charID, oldRelative))
+	_, err = s.db.SQL().Exec(fmt.Sprintf(`
+		CREATE TRIGGER fail_portrait_update
+		BEFORE UPDATE OF portrait_path ON characters
+		WHEN OLD.id = %d
+		BEGIN
+			SELECT RAISE(ABORT, 'forced portrait update failure');
+		END`, charID))
+	require.NoError(t, err)
+
+	newBytes := append(append([]byte{}, validJPEG...), []byte("-new")...)
+	w := uploadPortraitRequest(t, s, charID, "avatar.jpg", newBytes)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	character, err := s.db.GetCharacter(charID)
+	require.NoError(t, err)
+	assert.Equal(t, oldRelative, character.PortraitPath)
+	gotOldBytes, err := os.ReadFile(oldPath)
+	require.NoError(t, err)
+	assert.Equal(t, oldBytes, gotOldBytes)
+	entries, err := os.ReadDir(filepath.Join(dir, "portraits"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, filepath.Base(oldRelative), entries[0].Name())
+}
+
+func TestUploadPortraitSameOriginalNameCreatesUniqueStoredFiles(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServerWithDir(t, dir)
+	campID, _ := seedCampaign(t, s.db)
+	charID, err := s.db.CreateCharacter(campID, "Mira")
+	require.NoError(t, err)
+
+	firstBytes := append(append([]byte{}, validJPEG...), []byte("-first")...)
+	first := uploadPortraitRequest(t, s, charID, "avatar.jpg", firstBytes)
+	require.Equal(t, http.StatusOK, first.Code)
+	firstPath := portraitPathFromResponse(t, first)
+
+	secondBytes := append(append([]byte{}, validJPEG...), []byte("-second")...)
+	second := uploadPortraitRequest(t, s, charID, "avatar.jpg", secondBytes)
+	require.Equal(t, http.StatusOK, second.Code)
+	secondPath := portraitPathFromResponse(t, second)
+
+	assert.NotEqual(t, firstPath, secondPath)
+	gotFirst, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(firstPath)))
+	require.NoError(t, err)
+	assert.Equal(t, firstBytes, gotFirst)
+	gotSecond, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(secondPath)))
+	require.NoError(t, err)
+	assert.Equal(t, secondBytes, gotSecond)
+	character, err := s.db.GetCharacter(charID)
+	require.NoError(t, err)
+	assert.Equal(t, secondPath, character.PortraitPath)
 }
 
 func TestUploadPortraitRejectsMismatchedContentWithoutSideEffects(t *testing.T) {

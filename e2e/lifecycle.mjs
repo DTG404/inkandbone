@@ -19,9 +19,41 @@ const HOST = '127.0.0.1'
 let serverChild
 let testChild
 let receivedSignal
+const childStates = new WeakMap()
 
 function running(child) {
-  return child && child.exitCode === null && child.signalCode === null
+  return Boolean(child?.pid) && child.exitCode === null && child.signalCode === null
+}
+
+function spawnTracked(command, args, options) {
+  const child = spawn(command, args, options)
+  const state = { error: undefined, result: undefined }
+  state.spawned = new Promise((resolve) => {
+    child.once('spawn', () => resolve({}))
+    child.once('error', (error) => {
+      state.error = error
+      resolve({ error })
+    })
+  })
+  state.exited = new Promise((resolve) => {
+    child.once('error', (error) => {
+      state.error = error
+      resolve({ error })
+    })
+    child.once('exit', (code, signal) => {
+      state.result = { code, signal }
+      resolve(state.result)
+    })
+  })
+  childStates.set(child, state)
+  return child
+}
+
+async function waitForSpawn(child) {
+  const state = childStates.get(child)
+  if (!state) throw new Error('untracked child process')
+  const result = await state.spawned
+  if (result.error) throw result.error
 }
 
 function parsePort() {
@@ -33,21 +65,30 @@ function parsePort() {
   return port
 }
 
-function waitForExit(child) {
-  if (!running(child)) return Promise.resolve({ code: child.exitCode, signal: child.signalCode })
-  return new Promise((resolve) => {
-    child.once('exit', (code, signal) => resolve({ code, signal }))
-  })
+async function waitForExit(child) {
+  if (!child) return { code: null, signal: null }
+  const state = childStates.get(child)
+  if (!state) throw new Error('untracked child process')
+  const result = await state.exited
+  if (result.error) throw result.error
+  return result
 }
 
 async function terminateAndReap(child) {
-  if (!running(child)) return
-  const exited = waitForExit(child)
+  if (!child) return
+  const exited = waitForExit(child).catch(() => ({ code: child.exitCode, signal: child.signalCode }))
+  if (!running(child)) {
+    await exited
+    return
+  }
   child.kill('SIGTERM')
+  let timeout
   const graceful = await Promise.race([
     exited.then(() => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
-  ])
+    new Promise((resolve) => {
+      timeout = setTimeout(() => resolve(false), 1_000)
+    }),
+  ]).finally(() => clearTimeout(timeout))
   if (!graceful && running(child)) {
     child.kill('SIGKILL')
     await exited
@@ -68,6 +109,8 @@ function probe(url) {
 async function waitUntilHealthy(child, origin, output) {
   const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
+    const state = childStates.get(child)
+    if (state?.error) throw state.error
     if (!running(child)) {
       throw new Error(`server exited before readiness: ${output()}`)
     }
@@ -101,10 +144,12 @@ async function run() {
   const databasePath = path.join(runDirectory, 'smoke.db')
   let serverOutput = ''
 
-  process.once('SIGINT', handleSignal)
-  process.once('SIGTERM', handleSignal)
+  const handleSIGINT = () => handleSignal('SIGINT')
+  const handleSIGTERM = () => handleSignal('SIGTERM')
+  process.once('SIGINT', handleSIGINT)
+  process.once('SIGTERM', handleSIGTERM)
   try {
-    serverChild = spawn(binary, ['-db', databasePath, '-listen', `${HOST}:${port}`], {
+    serverChild = spawnTracked(binary, ['-db', databasePath, '-listen', `${HOST}:${port}`], {
       env: sanitizedE2EEnvironment(),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -113,11 +158,12 @@ async function run() {
       serverOutput = (serverOutput + text).slice(-16_384)
       process.stderr.write(`[WebServer] ${text}`)
     }
-    serverChild.stdout.on('data', appendServerOutput)
-    serverChild.stderr.on('data', appendServerOutput)
+    serverChild.stdout?.on('data', appendServerOutput)
+    serverChild.stderr?.on('data', appendServerOutput)
+    await waitForSpawn(serverChild)
     await waitUntilHealthy(serverChild, origin, () => serverOutput)
 
-    testChild = spawn(process.execPath, [playwrightCLI, 'test', ...process.argv.slice(2)], {
+    testChild = spawnTracked(process.execPath, [playwrightCLI, 'test', ...process.argv.slice(2)], {
       env: sanitizedE2EEnvironment({ INKANDBONE_E2E_BASE_URL: origin }),
       stdio: 'inherit',
     })
@@ -132,8 +178,8 @@ async function run() {
     await terminateAndReap(testChild)
     await terminateAndReap(serverChild)
     removeE2ERunDirectory(runDirectory)
-    process.removeListener('SIGINT', handleSignal)
-    process.removeListener('SIGTERM', handleSignal)
+    process.removeListener('SIGINT', handleSIGINT)
+    process.removeListener('SIGTERM', handleSIGTERM)
   }
 }
 

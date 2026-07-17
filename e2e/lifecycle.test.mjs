@@ -34,15 +34,16 @@ function unusedPort() {
   })
 }
 
-function runLifecycle(environment) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [LIFECYCLE], {
-      env: { ...process.env, ...environment },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let output = ''
-    child.stdout.on('data', (chunk) => { output += chunk })
-    child.stderr.on('data', (chunk) => { output += chunk })
+function startLifecycle(environment) {
+  const child = spawn(process.execPath, [LIFECYCLE], {
+    env: { ...process.env, ...environment },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const startedAt = Date.now()
+  let output = ''
+  child.stdout.on('data', (chunk) => { output += chunk })
+  child.stderr.on('data', (chunk) => { output += chunk })
+  const completed = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       child.kill('SIGKILL')
       reject(new Error(`lifecycle test timed out: ${output}`))
@@ -50,9 +51,26 @@ function runLifecycle(environment) {
     child.once('error', reject)
     child.once('exit', (code, signal) => {
       clearTimeout(timeout)
-      resolve({ code, output, signal })
+      resolve({ code, durationMs: Date.now() - startedAt, output, signal })
     })
   })
+  return { child, completed, output: () => output }
+}
+
+function runLifecycle(environment) {
+  return startLifecycle(environment).completed
+}
+
+async function waitForOutput(lifecycle, pattern) {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    if (pattern.test(lifecycle.output())) return
+    if (lifecycle.child.exitCode !== null) {
+      throw new Error(`lifecycle exited before output ${pattern}: ${lifecycle.output()}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`lifecycle output timed out waiting for ${pattern}: ${lifecycle.output()}`)
 }
 
 function listen(port) {
@@ -91,9 +109,24 @@ test('external E2E lifecycle cleans startup, pass, and test-failure paths', asyn
   fs.writeFileSync(path.join(unrelated, 'keep.txt'), 'do not remove')
   const runner = path.join(fixtureRoot, 'fake-runner.mjs')
   fs.writeFileSync(runner, 'process.exit(Number(process.env.INKANDBONE_E2E_FAKE_EXIT || 0))\n')
+  const hangingRunner = path.join(fixtureRoot, 'hanging-runner.mjs')
+  fs.writeFileSync(hangingRunner, "process.stdout.write('fake runner ready\\n'); setInterval(() => {}, 1_000)\n")
 
   try {
     const baseline = runRoots()
+
+    for (const [missing, expectedError] of [
+      [{ INKANDBONE_E2E_BINARY: path.join(fixtureRoot, 'missing-server') }, /ENOENT/],
+      [{ INKANDBONE_E2E_BINARY: BINARY, INKANDBONE_E2E_PLAYWRIGHT_CLI: path.join(fixtureRoot, 'missing-runner') }, /MODULE_NOT_FOUND/],
+    ]) {
+      const port = await unusedPort()
+      const result = await runLifecycle({ ...missing, INKANDBONE_E2E_PORT: String(port) })
+      assert.notEqual(result.code, 0)
+      assert.match(result.output, expectedError)
+      assert.ok(result.durationMs < 4_000, `spawn failure cleanup took ${result.durationMs}ms: ${result.output}`)
+      assert.deepEqual(runRoots(), baseline)
+      await expectPortClosed(port)
+    }
 
     const blockedPort = await unusedPort()
     const blocker = await listen(blockedPort)
@@ -120,9 +153,26 @@ test('external E2E lifecycle cleans startup, pass, and test-failure paths', asyn
         OLLAMA_MODEL: 'hostile-lifecycle-marker',
       })
       assert.equal(result.code, exitCode)
+      assert.ok(result.durationMs < 4_000, `graceful lifecycle took ${result.durationMs}ms`)
       assert.match(result.output, /AI: disabled/)
       assert.deepEqual(runRoots(), baseline)
       assert.equal(fs.readFileSync(path.join(unrelated, 'keep.txt'), 'utf8'), 'do not remove')
+      await expectPortClosed(port)
+    }
+
+    for (const [signal, expectedCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+      const port = await unusedPort()
+      const lifecycle = startLifecycle({
+        INKANDBONE_E2E_BINARY: BINARY,
+        INKANDBONE_E2E_PLAYWRIGHT_CLI: hangingRunner,
+        INKANDBONE_E2E_PORT: String(port),
+      })
+      await waitForOutput(lifecycle, /fake runner ready/)
+      assert.equal(lifecycle.child.kill(signal), true)
+      const result = await lifecycle.completed
+      assert.equal(result.code, expectedCode)
+      assert.equal(result.signal, null)
+      assert.deepEqual(runRoots(), baseline)
       await expectPortClosed(port)
     }
   } finally {

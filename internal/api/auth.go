@@ -233,15 +233,18 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Secret string `json:"secret"`
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
-	if err := decoder.Decode(&input); err != nil || !s.sessions.compareSecret(input.Secret, s.sessions.secret) {
+	if err := decodeJSON(w, r, &input, shortJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if !s.sessions.compareSecret(input.Secret, s.sessions.secret) {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 	s.sessions.clearFailures(address)
 	token, _, err := s.sessions.create()
 	if err != nil {
-		http.Error(w, "could not create session", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	http.SetCookie(w, s.authCookie(r, token, 0))

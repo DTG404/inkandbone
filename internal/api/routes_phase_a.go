@@ -17,10 +17,10 @@ func (s *Server) handleNextTurn(w http.ResponseWriter, r *http.Request) {
 	nextIdx, roundNumber, err := s.db.AdvanceTurn(id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			respondError(w, "not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventTurnAdvanced, Payload: map[string]any{
@@ -41,7 +41,7 @@ func (s *Server) handleListXP(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.db.ListXP(id)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if entries == nil {
@@ -64,8 +64,8 @@ func (s *Server) handleCreateXP(w http.ResponseWriter, r *http.Request) {
 		Note   string `json:"note"`
 		Amount *int   `json:"amount"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Note == "" {
@@ -74,7 +74,7 @@ func (s *Server) handleCreateXP(w http.ResponseWriter, r *http.Request) {
 	}
 	entry, err := s.db.CreateXP(id, body.Note, body.Amount)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventXPAdded, Payload: map[string]any{
@@ -97,7 +97,7 @@ func (s *Server) handleDeleteXP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteXP(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

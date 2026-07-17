@@ -13,7 +13,7 @@ import (
 func (s *Server) handleListRulesets(w http.ResponseWriter, r *http.Request) {
 	rulesets, err := s.db.ListRulesets()
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	writeJSON(w, rulesets)
@@ -27,8 +27,8 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		RulesetID   int64  `json:"ruleset_id"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -41,7 +41,7 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateCampaign(body.RulesetID, body.Name, body.Description)
 	if err != nil {
-		respondError(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventCampaignCreated, Payload: map[string]any{"campaign_id": id, "name": body.Name}})
@@ -79,7 +79,7 @@ func (s *Server) handleDeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.db.DeleteCampaign(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventCampaignDeleted, Payload: map[string]any{"campaign_id": id}})
@@ -119,8 +119,8 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 		Name      string            `json:"name"`
 		Overrides map[string]string `json:"overrides"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -129,7 +129,7 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 	}
 	camp, err := s.db.GetCampaign(campaignID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if camp == nil {
@@ -138,7 +138,7 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateCharacter(campaignID, body.Name)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -164,8 +164,12 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	char, err := s.db.GetCharacter(id)
-	if err != nil || char == nil {
-		http.Error(w, "db: could not retrieve character", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if char == nil {
+		serverErrorText(w, r, "db: could not retrieve character")
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterCreated, Payload: map[string]any{"character_id": id, "name": body.Name}})
@@ -186,7 +190,7 @@ func (s *Server) handleDeleteCharacter(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.SetSetting("active_character_id", "")
 	}
 	if err := s.db.DeleteCharacter(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -204,8 +208,8 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		Title string `json:"title"`
 		Date  string `json:"date"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Title == "" {
@@ -217,12 +221,16 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateSession(campaignID, body.Title, body.Date)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	sess, err := s.db.GetSession(id)
-	if err != nil || sess == nil {
-		http.Error(w, "db: could not retrieve session", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if sess == nil {
+		serverErrorText(w, r, "db: could not retrieve session")
 		return
 	}
 	s.bus.Publish(Event{Type: EventSessionStarted, Payload: map[string]any{"session_id": id, "title": body.Title}})
@@ -243,7 +251,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.SetSetting("active_session_id", "")
 	}
 	if err := s.db.DeleteSession(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventSessionDeleted, Payload: map[string]any{"session_id": id}})
@@ -258,8 +266,8 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 		CharacterID *int64 `json:"character_id"`
 		SessionID   *int64 `json:"session_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.CampaignID != nil {
@@ -269,19 +277,19 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			// Auto-reopen closed campaigns, mirroring MCP set_active behaviour.
 			campaign, err := s.db.GetCampaign(*body.CampaignID)
 			if err != nil {
-				http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+				serverError(w, r, err)
 				return
 			}
 			if campaign != nil && !campaign.Active {
 				if err := s.db.ReopenCampaign(*body.CampaignID); err != nil {
-					http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+					serverError(w, r, err)
 					return
 				}
 				s.bus.Publish(Event{Type: EventCampaignReopened, Payload: map[string]any{"campaign_id": *body.CampaignID}})
 			}
 		}
 		if err := s.db.SetSetting("active_campaign_id", val); err != nil {
-			http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -291,7 +299,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			val = strconv.FormatInt(*body.CharacterID, 10)
 		}
 		if err := s.db.SetSetting("active_character_id", val); err != nil {
-			http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -301,7 +309,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			val = strconv.FormatInt(*body.SessionID, 10)
 		}
 		if err := s.db.SetSetting("active_session_id", val); err != nil {
-			http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -318,4 +326,3 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 	s.bus.Publish(Event{Type: EventContextUpdated, Payload: ctxPayload})
 	w.WriteHeader(http.StatusNoContent)
 }
-

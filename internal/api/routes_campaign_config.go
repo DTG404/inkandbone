@@ -29,7 +29,7 @@ func (s *Server) handleGetCampaignConfig(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondJSON(w, map[string]any{
-		"description":             camp.Description,
+		"description":            camp.Description,
 		"gm_notes":               camp.GmNotes,
 		"system_prompt_override": camp.SystemPromptOverride,
 		"character_count":        len(chars),
@@ -50,8 +50,8 @@ func (s *Server) handlePatchCampaignConfig(w http.ResponseWriter, r *http.Reques
 		GmNotes              *string `json:"gm_notes"`
 		SystemPromptOverride *string `json:"system_prompt_override"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 
@@ -62,10 +62,10 @@ func (s *Server) handlePatchCampaignConfig(w http.ResponseWriter, r *http.Reques
 
 	if err := s.db.UpdateCampaignConfig(id, body.Description, body.GmNotes, body.SystemPromptOverride); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			respondError(w, err.Error(), http.StatusNotFound)
+			respondError(w, "not found", http.StatusNotFound)
 			return
 		}
-		respondError(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 

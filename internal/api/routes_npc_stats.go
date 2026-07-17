@@ -27,7 +27,11 @@ func (s *Server) handleCreateNpcStat(w http.ResponseWriter, r *http.Request) {
 		Loot          string `json:"loot"`
 		Notes         string `json:"notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Name == "" {
 		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
@@ -38,7 +42,7 @@ func (s *Server) handleCreateNpcStat(w http.ResponseWriter, r *http.Request) {
 
 	createdID, err := s.db.CreateNpcStat(campaignID, body.Name, body.Role, body.DataJSON, hpMax, body.ArmorClass, body.InitiativeMod, body.Skills, body.Abilities, body.Loot, body.Notes)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -58,7 +62,7 @@ func (s *Server) handleListNpcStats(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, err := s.db.ListNpcStats(campaignID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if stats == nil {
@@ -103,8 +107,8 @@ func (s *Server) handleUpdateNpcStat(w http.ResponseWriter, r *http.Request) {
 		Loot          string `json:"loot"`
 		Notes         string `json:"notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -117,7 +121,7 @@ func (s *Server) handleUpdateNpcStat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateNpcStats(id, body.Name, body.Role, body.DataJSON, hpMax, body.ArmorClass, body.InitiativeMod, body.Skills, body.Abilities, body.Loot, body.Notes); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"id": id}})
@@ -132,7 +136,7 @@ func (s *Server) handleDeleteNpcStat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteNpcStat(id); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

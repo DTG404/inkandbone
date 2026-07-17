@@ -174,7 +174,7 @@ func (s *Server) handleMapAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.db.GetMap(id)
 	if err != nil {
-		http.Error(w, "failed to load map", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if m == nil {
@@ -192,7 +192,7 @@ func (s *Server) handlePortraitAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	character, err := s.db.GetCharacter(id)
 	if err != nil {
-		http.Error(w, "failed to load character", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if character == nil {

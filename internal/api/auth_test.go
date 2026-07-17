@@ -17,6 +17,12 @@ import (
 
 const testAuthCookieName = "ttrpg_session"
 
+func newAuthLoginRequest(secret string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"`+secret+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
 func newSecureTestServer(t *testing.T, secret string, origin string) *Server {
 	t.Helper()
 	database, err := db.Open(":memory:")
@@ -42,7 +48,7 @@ func newSecureTestServer(t *testing.T, secret string, origin string) *Server {
 
 func loginTestSession(t *testing.T, s *Server, secret, remoteAddr string) (*http.Cookie, string) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"`+secret+`"}`))
+	req := newAuthLoginRequest(secret)
 	req.RemoteAddr = remoteAddr
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -76,7 +82,7 @@ func TestAuthLoginCreatesOpaqueSession(t *testing.T) {
 	secret := strings.Repeat("s", 32)
 	s := newSecureTestServer(t, secret, "https://table.example")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"`+secret+`"}`))
+	req := newAuthLoginRequest(secret)
 	req.RemoteAddr = "192.0.2.4:1234"
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -107,7 +113,7 @@ func TestAuthSessionResponseIsNotCacheable(t *testing.T) {
 
 func TestAuthLoginRejectsInvalidSecret(t *testing.T) {
 	s := newSecureTestServer(t, strings.Repeat("s", 32), "https://table.example")
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+	req := newAuthLoginRequest("wrong")
 	req.RemoteAddr = "192.0.2.4:1234"
 	w := httptest.NewRecorder()
 
@@ -120,7 +126,7 @@ func TestAuthLoginRejectsInvalidSecret(t *testing.T) {
 func TestAuthLoginRateLimitsFailedAttemptsPerAddress(t *testing.T) {
 	s := newSecureTestServer(t, strings.Repeat("s", 32), "https://table.example")
 	for attempt := 1; attempt <= 6; attempt++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+		req := newAuthLoginRequest("wrong")
 		req.RemoteAddr = "192.0.2.4:1234"
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
@@ -131,7 +137,7 @@ func TestAuthLoginRateLimitsFailedAttemptsPerAddress(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+	req := newAuthLoginRequest("wrong")
 	req.RemoteAddr = "198.51.100.8:1234"
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -156,7 +162,7 @@ func TestAuthLoginConcurrentFailuresAreAtomicallyLimited(t *testing.T) {
 	for range attempts {
 		go func() {
 			<-start
-			req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+			req := newAuthLoginRequest("wrong")
 			req.RemoteAddr = "192.0.2.4:1234"
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)
@@ -244,7 +250,7 @@ func TestAuthLoginFailureAddressTrackingIsBoundedAndRecovers(t *testing.T) {
 
 func failedLogin(t *testing.T, s *Server, remoteAddr string) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+	req := newAuthLoginRequest("wrong")
 	req.RemoteAddr = remoteAddr
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)

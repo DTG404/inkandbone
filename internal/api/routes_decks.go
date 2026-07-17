@@ -18,7 +18,7 @@ func (s *Server) handleListDecks(w http.ResponseWriter, r *http.Request) {
 	}
 	decks, err := s.db.ListDecks(campaignID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if decks == nil {
@@ -37,7 +37,11 @@ func (s *Server) handleCreateDeck(w http.ResponseWriter, r *http.Request) {
 		Name  string            `json:"name"`
 		Cards []json.RawMessage `json:"cards"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.Name == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Name == "" {
 		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
@@ -51,12 +55,12 @@ func (s *Server) handleCreateDeck(w http.ResponseWriter, r *http.Request) {
 	}
 	cardsJSON, err := json.Marshal(body.Cards)
 	if err != nil {
-		http.Error(w, "encode cards: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "cards contain invalid JSON", http.StatusBadRequest)
 		return
 	}
 	id, err := s.db.CreateDeck(campaignID, body.Name, string(cardsJSON))
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -71,7 +75,7 @@ func (s *Server) handleDeleteDeck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteDeck(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -90,13 +94,13 @@ func (s *Server) handleShuffleDeck(w http.ResponseWriter, r *http.Request) {
 	}
 	var cards []json.RawMessage
 	if err := json.Unmarshal([]byte(deck.CardsJSON), &cards); err != nil {
-		http.Error(w, "deck cards malformed", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	order := rand.Perm(len(cards))
 	orderJSON, _ := json.Marshal(order)
 	if err := s.db.ShuffleDeck(id, string(orderJSON)); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -111,7 +115,11 @@ func (s *Server) handleDrawCard(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SessionID int64 `json:"session_id"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.SessionID == 0 {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.SessionID == 0 {
 		http.Error(w, "session_id required", http.StatusBadRequest)
 		return
 	}
@@ -122,7 +130,7 @@ func (s *Server) handleDrawCard(w http.ResponseWriter, r *http.Request) {
 	}
 	var cards []json.RawMessage
 	if err := json.Unmarshal([]byte(deck.CardsJSON), &cards); err != nil {
-		http.Error(w, "deck malformed", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	var order []int
@@ -136,7 +144,7 @@ func (s *Server) handleDrawCard(w http.ResponseWriter, r *http.Request) {
 	}
 	cardIdx := order[deck.DrawIndex]
 	if cardIdx >= len(cards) {
-		http.Error(w, "card index out of range", http.StatusInternalServerError)
+		serverErrorText(w, r, "card index out of range")
 		return
 	}
 	cardJSON := string(cards[cardIdx])
@@ -145,7 +153,7 @@ func (s *Server) handleDrawCard(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "draw conflict: try again", http.StatusConflict)
 			return
 		}
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	var card map[string]any
@@ -169,7 +177,7 @@ func (s *Server) handleListDeckDraws(w http.ResponseWriter, r *http.Request) {
 	}
 	draws, err := s.db.ListDeckDraws(sessionID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if draws == nil {

@@ -360,7 +360,7 @@ func TestOracleRoll_invalidTable(t *testing.T) {
 
 func TestCreateRelationship(t *testing.T) {
 	s, campID, _ := newTestServerWithSeed(t)
-	body := bytes.NewReader([]byte(`{"from_name":"Paul Atreides","to_name":"Baron Harkonnen","type":"enemy","description":"Mortal enemies"}`))
+	body := bytes.NewReader([]byte(`{"from_name":"Paul Atreides","to_name":"Baron Harkonnen","relationship_type":"enemy","description":"Mortal enemies"}`))
 	req := httptest.NewRequest(http.MethodPost, "/api/campaigns/"+strconv.FormatInt(campID, 10)+"/relationships", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -563,5 +563,4 @@ func TestPatchSession_sceneTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "dungeon,night", sess.SceneTags)
 }
-
 

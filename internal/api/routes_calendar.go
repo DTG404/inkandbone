@@ -32,14 +32,14 @@ func (s *Server) handlePatchCalendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		InGameYear    *int    `json:"in_game_year"`
-		InGameMonth   *int    `json:"in_game_month"`
-		InGameDay     *int    `json:"in_game_day"`
+		InGameYear     *int    `json:"in_game_year"`
+		InGameMonth    *int    `json:"in_game_month"`
+		InGameDay      *int    `json:"in_game_day"`
 		CalendarConfig *string `json:"calendar_config"`
-		AdvanceDays   *int    `json:"advance_days"`
+		AdvanceDays    *int    `json:"advance_days"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (s *Server) handlePatchCalendar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateCampaignDate(campaignID, year, month, day, &cfg); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -88,9 +88,9 @@ func (s *Server) handlePatchCalendar(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"in_game_year":   year,
-		"in_game_month":  month,
-		"in_game_day":    day,
+		"in_game_year":    year,
+		"in_game_month":   month,
+		"in_game_day":     day,
 		"calendar_config": cfg,
 	}) //nolint:errcheck
 }
@@ -111,7 +111,11 @@ func (s *Server) handleCreateCalendarEvent(w http.ResponseWriter, r *http.Reques
 		EventType   string `json:"event_type"`
 		SessionID   *int64 `json:"session_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Title == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
@@ -121,7 +125,7 @@ func (s *Server) handleCreateCalendarEvent(w http.ResponseWriter, r *http.Reques
 	}
 	id, err := s.db.CreateCalendarEvent(campaignID, body.InGameYear, body.InGameMonth, body.InGameDay, body.Title, body.Description, eventType, body.SessionID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventCalendarUpdated, Payload: map[string]any{"campaign_id": campaignID}})
@@ -139,7 +143,7 @@ func (s *Server) handleListCalendarEvents(w http.ResponseWriter, r *http.Request
 	}
 	events, err := s.db.ListCalendarEvents(campaignID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if events == nil {
@@ -157,7 +161,7 @@ func (s *Server) handleDeleteCalendarEvent(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := s.db.DeleteCalendarEvent(id); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

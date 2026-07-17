@@ -17,7 +17,11 @@ func (s *Server) handleTriggerMapFX(w http.ResponseWriter, r *http.Request) {
 		Y          float64 `json:"y"`
 		DurationMS int     `json:"duration_ms"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.Effect == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Effect == "" {
 		http.Error(w, "effect required", http.StatusBadRequest)
 		return
 	}

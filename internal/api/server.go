@@ -77,6 +77,10 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w)
+	id := newRequestID()
+	w.Header().Set("X-Request-ID", id)
+	r = withRequestID(r, id)
 	if r.URL.Path == "/api/files" || strings.HasPrefix(r.URL.Path, "/api/files/") {
 		http.NotFound(w, r)
 		return
@@ -171,14 +175,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/campaigns/{id}", s.handlePatchCampaign)
 	s.mux.HandleFunc("PATCH /api/sessions/{id}", s.handlePatchSession)
 	s.mux.HandleFunc("POST /api/sessions/{id}/recap", s.handleGenerateRecap)
-	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", withMaxBody(4096, s.handleDraftWorldNote))
+	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", withMaxBody(shortJSONLimit, s.handleDraftWorldNote))
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}", s.handlePatchWorldNote)
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}/personality", s.handlePatchWorldNotePersonality)
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}/reveal", s.handlePatchWorldNoteRevealed)
 	s.mux.HandleFunc("GET /api/rulesets/{id}", s.handleGetRuleset)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/character-options", s.handleGetCharacterOptions)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/rulebook", s.handleListRulebookSources)
-	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", withMaxBody(50<<20, s.handleIngestRulebook))
+	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", withMaxBody(rulebookLimit, s.handleIngestRulebook))
 	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook/search", s.handleSearchRulebook)
 	s.mux.HandleFunc("PATCH /api/characters/{id}", s.handlePatchCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/portrait", s.handleUploadPortrait)

@@ -17,7 +17,7 @@ func (s *Server) handleGetRuleset(w http.ResponseWriter, r *http.Request) {
 	}
 	rs, err := s.db.GetRuleset(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if rs == nil {
@@ -38,13 +38,13 @@ func (s *Server) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 		CurrencyBalance *int64  `json:"currency_balance"`
 		CurrencyLabel   *string `json:"currency_label"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.DataJSON != nil {
 		if err := s.db.UpdateCharacterData(id, *body.DataJSON); err != nil {
-			respondError(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -54,13 +54,13 @@ func (s *Server) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 			balance = 0
 		}
 		if err := s.db.UpdateCharacterCurrencyBalance(id, balance); err != nil {
-			respondError(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
 	if body.CurrencyLabel != nil {
 		if err := s.db.UpdateCharacterCurrencyLabel(id, *body.CurrencyLabel); err != nil {
-			respondError(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -74,13 +74,13 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid character id", http.StatusBadRequest)
 		return
 	}
-	if err := r.ParseMultipartForm(5 << 20); err != nil {
-		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+	if err := parseMultipartForm(w, r, 5<<20); err != nil {
+		respondBodyError(w, err)
 		return
 	}
 	file, header, err := r.FormFile("portrait")
 	if err != nil {
-		http.Error(w, "portrait is required: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "portrait is required", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
@@ -93,7 +93,7 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 	filename := fmt.Sprintf("%d_%s%s", id, randomHex(16), ext)
 	destDir := filepath.Join(s.dataDir, "portraits")
 	if err := os.MkdirAll(destDir, 0750); err != nil {
-		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if err := writeValidatedUpload(destDir, filename, file, portraitAssetTypes); err != nil {
@@ -101,7 +101,7 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "image content does not match its format", http.StatusBadRequest)
 			return
 		}
-		http.Error(w, "write file: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -110,7 +110,7 @@ func (s *Server) handleUploadPortrait(w http.ResponseWriter, r *http.Request) {
 		if cleanupErr := removeStoredAsset(destDir, filename); cleanupErr != nil {
 			log.Printf("portrait upload cleanup failed: %v", cleanupErr)
 		}
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{

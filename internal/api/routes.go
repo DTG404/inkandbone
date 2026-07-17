@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	advancement "github.com/digitalghost404/inkandbone/internal/ruleset"
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
+	advancement "github.com/digitalghost404/inkandbone/internal/ruleset"
 )
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -31,10 +31,10 @@ func parsePathID(r *http.Request, key string) (int64, bool) {
 	return id, err == nil && id > 0
 }
 
-func (s *Server) handleListCampaigns(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListCampaigns(w http.ResponseWriter, r *http.Request) {
 	campaigns, err := s.db.ListCampaigns()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if campaigns == nil {
@@ -51,7 +51,7 @@ func (s *Server) handleListCharacters(w http.ResponseWriter, r *http.Request) {
 	}
 	characters, err := s.db.ListCharacters(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if characters == nil {
@@ -68,7 +68,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	sessions, err := s.db.ListSessions(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if sessions == nil {
@@ -85,7 +85,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	messages, err := s.db.ListMessages(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if messages == nil {
@@ -102,7 +102,7 @@ func (s *Server) handleListDiceRolls(w http.ResponseWriter, r *http.Request) {
 	}
 	rolls, err := s.db.ListDiceRolls(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if rolls == nil {
@@ -119,7 +119,7 @@ func (s *Server) handleListMapPins(w http.ResponseWriter, r *http.Request) {
 	}
 	pins, err := s.db.ListMapPins(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if pins == nil {
@@ -147,7 +147,7 @@ func (s *Server) handleListWorldNotes(w http.ResponseWriter, r *http.Request) {
 	}
 	notes, err := s.db.SearchWorldNotes(id, q, category, tag, revealed)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if notes == nil {
@@ -180,8 +180,8 @@ func (s *Server) handlePatchWorldNote(w http.ResponseWriter, r *http.Request) {
 		Content  string `json:"content"`
 		TagsJSON string `json:"tags_json"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Title == "" || body.Content == "" {
@@ -189,7 +189,7 @@ func (s *Server) handlePatchWorldNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.UpdateWorldNote(id, body.Title, body.Content, body.TagsJSON); err != nil {
-		respondError(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"note_id": id}})
@@ -206,12 +206,12 @@ func (s *Server) handlePatchWorldNotePersonality(w http.ResponseWriter, r *http.
 	var body struct {
 		PersonalityJSON string `json:"personality_json"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if err := s.db.UpdateWorldNotePersonality(id, body.PersonalityJSON); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"note_id": id}})
@@ -227,12 +227,12 @@ func (s *Server) handlePatchWorldNoteRevealed(w http.ResponseWriter, r *http.Req
 	var body struct {
 		IsRevealed bool `json:"is_revealed"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if err := s.db.PatchWorldNoteRevealed(id, body.IsRevealed); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventWorldNoteRevealed, Payload: map[string]any{
@@ -250,7 +250,7 @@ func (s *Server) handleListMaps(w http.ResponseWriter, r *http.Request) {
 	}
 	maps, err := s.db.ListMaps(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if maps == nil {
@@ -267,7 +267,7 @@ func (s *Server) handleGetMap(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.db.GetMap(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if m == nil {
@@ -283,8 +283,8 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid campaign id", http.StatusBadRequest)
 		return
 	}
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+	if err := parseMultipartForm(w, r, imageUploadLimit); err != nil {
+		respondBodyError(w, err)
 		return
 	}
 	name := r.FormValue("name")
@@ -294,7 +294,7 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 	}
 	file, header, err := r.FormFile("image")
 	if err != nil {
-		http.Error(w, "image is required: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "image is required", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
@@ -307,7 +307,7 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 	filename := randomHex(16) + ext
 	destDir := filepath.Join(s.dataDir, "maps")
 	if err := os.MkdirAll(destDir, 0750); err != nil {
-		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if err := writeValidatedUpload(destDir, filename, file, mapAssetTypes); err != nil {
@@ -315,7 +315,7 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "image content does not match its format", http.StatusBadRequest)
 			return
 		}
-		http.Error(w, "write file: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -325,12 +325,16 @@ func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
 		if cleanupErr := removeStoredAsset(destDir, filename); cleanupErr != nil {
 			log.Printf("map upload cleanup failed: %v", cleanupErr)
 		}
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	m, err := s.db.GetMap(mapID)
-	if err != nil || m == nil {
-		http.Error(w, "fetch created map", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if m == nil {
+		serverErrorText(w, r, "fetch created map")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -357,8 +361,8 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		Whisper     bool   `json:"whisper"`
 		CharacterID *int64 `json:"character_id"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Role != "user" && body.Role != "assistant" {
@@ -383,7 +387,7 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	msgID, err := s.db.CreateMessage(id, body.Role, body.Content, body.Whisper, body.CharacterID)
 	if err != nil {
-		respondError(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventMessageCreated, Payload: map[string]any{
@@ -405,8 +409,8 @@ func (s *Server) handlePatchCampaign(w http.ResponseWriter, r *http.Request) {
 		Active         *bool `json:"active"`
 		ChronicleNight *int  `json:"chronicle_night"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Active == nil && body.ChronicleNight == nil {
@@ -416,10 +420,10 @@ func (s *Server) handlePatchCampaign(w http.ResponseWriter, r *http.Request) {
 	if body.ChronicleNight != nil {
 		if err := s.db.UpdateCampaignChronicleNight(id, *body.ChronicleNight); err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				respondError(w, err.Error(), http.StatusNotFound)
+				respondError(w, "not found", http.StatusNotFound)
 				return
 			}
-			respondError(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 		campaign, err := s.db.GetCampaign(id)
@@ -445,10 +449,10 @@ func (s *Server) handlePatchCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			respondError(w, err.Error(), http.StatusNotFound)
+			respondError(w, "not found", http.StatusNotFound)
 			return
 		}
-		respondError(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -465,18 +469,18 @@ func (s *Server) handlePatchSession(w http.ResponseWriter, r *http.Request) {
 		Notes     *string `json:"notes"`
 		SceneTags *string `json:"scene_tags"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	payload := map[string]any{"session_id": id}
 	if body.Summary != nil {
 		if err := s.db.UpdateSessionSummary(id, *body.Summary); err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				http.Error(w, err.Error(), http.StatusNotFound)
+				respondError(w, "not found", http.StatusNotFound)
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 		payload["summary"] = *body.Summary
@@ -484,17 +488,17 @@ func (s *Server) handlePatchSession(w http.ResponseWriter, r *http.Request) {
 	if body.Notes != nil {
 		if err := s.db.UpdateSessionNotes(id, *body.Notes); err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				http.Error(w, err.Error(), http.StatusNotFound)
+				respondError(w, "not found", http.StatusNotFound)
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 		payload["notes"] = *body.Notes
 	}
 	if body.SceneTags != nil {
 		if err := s.db.UpdateSceneTags(id, *body.SceneTags); err != nil {
-			http.Error(w, "db error", http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 		payload["scene_tags"] = *body.SceneTags
@@ -516,8 +520,8 @@ func (s *Server) handleDraftWorldNote(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Hint string `json:"hint"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, shortJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Hint == "" {
@@ -531,7 +535,7 @@ func (s *Server) handleDraftWorldNote(w http.ResponseWriter, r *http.Request) {
 	)
 	generated, err := s.aiClient.Generate(r.Context(), prompt, 256)
 	if err != nil {
-		http.Error(w, "AI error: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -545,13 +549,13 @@ func (s *Server) handleDraftWorldNote(w http.ResponseWriter, r *http.Request) {
 
 	noteID, err := s.db.CreateWorldNote(id, title, content, "npc")
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	created, err := s.db.GetWorldNote(noteID)
 	if err != nil {
-		http.Error(w, "fetch note: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -582,8 +586,8 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		Name    string `json:"name"`
 		Context string `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, shortJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -595,7 +599,7 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 	prompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + body.Context
 	svgRaw, err := completer.Generate(r.Context(), prompt, 4096)
 	if err != nil {
-		http.Error(w, "AI error: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -610,24 +614,24 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 	}
 	svgContent := extractSVG(svgPart)
 	if svgContent == "" {
-		http.Error(w, "AI did not return valid SVG", http.StatusInternalServerError)
+		serverErrorText(w, r, "AI did not return valid SVG")
 		return
 	}
 
 	destDir := filepath.Join(s.dataDir, "maps")
 	if err := os.MkdirAll(destDir, 0750); err != nil {
-		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	filename := "map_" + randomHex(8) + ".svg"
 	if err := os.WriteFile(filepath.Join(destDir, filename), []byte(svgContent), 0640); err != nil {
-		http.Error(w, "write file: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	mapID, err := s.db.CreateMap(id, body.Name, "maps/"+filename)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -660,8 +664,12 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m, err := s.db.GetMap(mapID)
-	if err != nil || m == nil {
-		http.Error(w, "fetch created map", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if m == nil {
+		serverErrorText(w, r, "fetch created map")
 		return
 	}
 
@@ -684,15 +692,15 @@ func (s *Server) handleGenerateRecap(w http.ResponseWriter, r *http.Request) {
 
 	summary, err := s.buildRecap(r.Context(), id)
 	if err != nil {
-		http.Error(w, "recap: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if err := s.db.UpdateSessionSummary(id, summary); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			respondError(w, "not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: map[string]any{
@@ -701,8 +709,6 @@ func (s *Server) handleGenerateRecap(w http.ResponseWriter, r *http.Request) {
 	}})
 	writeJSON(w, map[string]string{"summary": summary})
 }
-
-
 
 func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 	if s.aiClient == nil {
@@ -723,7 +729,7 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 
 	msgs, err := s.db.ListAIVisibleMessages(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if len(msgs) == 0 || msgs[len(msgs)-1].Role != "user" {
@@ -810,13 +816,13 @@ The base prompt above says "the player controls only their character" — that r
 
 	response, err := gmResponder.Respond(r.Context(), systemPrompt, history, 2048)
 	if err != nil {
-		http.Error(w, "AI error: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	msgID, err := s.db.CreateMessage(id, "assistant", response, false, nil)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventMessageCreated, Payload: map[string]any{
@@ -842,7 +848,7 @@ func (s *Server) handleGetTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.db.GetSessionTimeline(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if entries == nil {
@@ -907,7 +913,7 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 
 	msgs, err := s.db.ListAIVisibleMessages(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if len(msgs) == 0 || msgs[len(msgs)-1].Role != "user" {
@@ -1121,7 +1127,11 @@ func (s *Server) handleTyping(w http.ResponseWriter, r *http.Request) {
 		CharacterID int64  `json:"character_id"`
 		Status      string `json:"status"` // "thinking" or "done"
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CharacterID == 0 {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.CharacterID == 0 {
 		http.Error(w, "character_id required", http.StatusBadRequest)
 		return
 	}
@@ -1129,9 +1139,9 @@ func (s *Server) handleTyping(w http.ResponseWriter, r *http.Request) {
 		body.Status = "thinking"
 	}
 	s.bus.Publish(Event{Type: EventTyping, Payload: map[string]any{
-		"session_id":    sessionID,
-		"character_id":  body.CharacterID,
-		"status":        body.Status,
+		"session_id":   sessionID,
+		"character_id": body.CharacterID,
+		"status":       body.Status,
 	}})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1529,7 +1539,7 @@ Return ONLY a JSON object with the fields that must change and their new values.
 					"potence": true, "presence": true, "protean": true,
 					"clan": true, "sect": true, "predator_type": true, "generation": true,
 					"character_type": true,
-					"ambition": true, "desire": true, "convictions": true, "touchstones": true,
+					"ambition":       true, "desire": true, "convictions": true, "touchstones": true,
 					"merits_flaws": true,
 				}
 				if vtmProtectedFields[k] {
@@ -2025,7 +2035,6 @@ If NO dice roll is required, respond with ONLY:
 	}
 }
 
-
 // extractNPCs uses the AI to extract newly introduced named NPCs from a GM
 // response and adds any that don't already exist in the session roster.
 // It also removes NPCs that are dead, captured, permanently gone, or otherwise
@@ -2194,8 +2203,8 @@ func (s *Server) handleRollDice(w http.ResponseWriter, r *http.Request) {
 		CharacterName string `json:"character_name"`
 		Hidden        bool   `json:"hidden"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Expression == "" {
@@ -2250,7 +2259,7 @@ func (s *Server) handleRollDice(w http.ResponseWriter, r *http.Request) {
 	breakdownBytes, _ := json.Marshal(rolls)
 	_, err := s.db.LogDiceRoll(id, body.Expression, total, string(breakdownBytes))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -2282,8 +2291,8 @@ func (s *Server) handlePatchCombatant(w http.ResponseWriter, r *http.Request) {
 		ConditionsJSON string `json:"conditions_json"`
 		Initiative     *int   `json:"initiative"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 
@@ -2307,12 +2316,12 @@ func (s *Server) handlePatchCombatant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.db.UpdateCombatant(id, hp, conditions); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if body.Initiative != nil {
 		if err := s.db.PatchCombatantInitiative(id, *body.Initiative); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -2335,20 +2344,20 @@ func (s *Server) handleCreateMapPin(w http.ResponseWriter, r *http.Request) {
 		Note  string  `json:"note"`
 		Color string  `json:"color"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 
 	pinID, err := s.db.AddMapPin(id, body.X, body.Y, body.Label, body.Note, body.Color)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	pins, err := s.db.ListMapPins(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	var created *db.MapPin
@@ -2359,7 +2368,7 @@ func (s *Server) handleCreateMapPin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if created == nil {
-		http.Error(w, "pin not found after create", http.StatusInternalServerError)
+		serverErrorText(w, r, "pin not found after create")
 		return
 	}
 
@@ -2379,7 +2388,7 @@ func (s *Server) handleListNPCs(w http.ResponseWriter, r *http.Request) {
 	}
 	npcs, err := s.db.ListSessionNPCs(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if npcs == nil {
@@ -2398,8 +2407,8 @@ func (s *Server) handleCreateNPC(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 		Note string `json:"note"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -2408,7 +2417,7 @@ func (s *Server) handleCreateNPC(w http.ResponseWriter, r *http.Request) {
 	}
 	npc, err := s.db.CreateSessionNPC(id, body.Name, body.Note)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"session_id": id, "npc_id": npc.ID}})
@@ -2426,12 +2435,12 @@ func (s *Server) handlePatchNPC(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Note string `json:"note"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if err := s.db.UpdateSessionNPC(id, body.Note); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"npc_id": id}})
@@ -2445,7 +2454,7 @@ func (s *Server) handleDeleteNPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteSessionNPC(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"npc_id": id}})
@@ -2462,7 +2471,7 @@ func (s *Server) handleListObjectives(w http.ResponseWriter, r *http.Request) {
 	}
 	objectives, err := s.db.ListObjectives(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if objectives == nil {
@@ -2482,8 +2491,8 @@ func (s *Server) handleCreateObjective(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		ParentID    *int64 `json:"parent_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Title == "" {
@@ -2493,7 +2502,7 @@ func (s *Server) handleCreateObjective(w http.ResponseWriter, r *http.Request) {
 	if body.ParentID != nil {
 		parent, err := s.db.GetObjective(*body.ParentID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 		if parent == nil {
@@ -2507,7 +2516,7 @@ func (s *Server) handleCreateObjective(w http.ResponseWriter, r *http.Request) {
 	}
 	obj, err := s.db.CreateObjective(id, body.Title, body.Description, body.ParentID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"campaign_id": id, "objective_id": obj.ID}})
@@ -2525,8 +2534,8 @@ func (s *Server) handlePatchObjective(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Status string `json:"status"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Status == "" {
@@ -2539,7 +2548,7 @@ func (s *Server) handlePatchObjective(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.UpdateObjectiveStatus(id, body.Status); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"objective_id": id}})
@@ -2553,7 +2562,7 @@ func (s *Server) handleDeleteObjective(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteObjective(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"objective_id": id}})
@@ -2571,7 +2580,7 @@ func (s *Server) handleDeduplicateObjectives(w http.ResponseWriter, r *http.Requ
 	}
 	n, err := s.db.DeduplicateObjectives(campaignID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if n > 0 {
@@ -2790,7 +2799,7 @@ func (s *Server) handleListItems(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := s.db.ListItems(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if items == nil {
@@ -2810,8 +2819,8 @@ func (s *Server) handleCreateItem(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Quantity    *int   `json:"quantity"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -2824,7 +2833,7 @@ func (s *Server) handleCreateItem(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := s.db.CreateItem(id, body.Name, body.Description, qty)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventItemUpdated, Payload: map[string]any{"character_id": id, "item_id": item.ID}})
@@ -2841,7 +2850,7 @@ func (s *Server) handlePatchItem(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := s.db.GetItem(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if existing == nil {
@@ -2854,8 +2863,8 @@ func (s *Server) handlePatchItem(w http.ResponseWriter, r *http.Request) {
 		Quantity    *int    `json:"quantity"`
 		Equipped    *bool   `json:"equipped"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	// Apply only provided fields.
@@ -2876,7 +2885,7 @@ func (s *Server) handlePatchItem(w http.ResponseWriter, r *http.Request) {
 		equipped = *body.Equipped
 	}
 	if err := s.db.UpdateItem(id, name, description, quantity, equipped); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventItemUpdated, Payload: map[string]any{"character_id": existing.CharacterID, "item_id": id}})
@@ -2891,7 +2900,7 @@ func (s *Server) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := s.db.GetItem(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if existing == nil {
@@ -2899,7 +2908,7 @@ func (s *Server) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteItem(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventItemUpdated, Payload: map[string]any{"character_id": existing.CharacterID, "item_id": id}})
@@ -3031,23 +3040,23 @@ Story passage:
 // sceneTagKeywords maps each scene tag to keywords that strongly indicate it.
 // Keyword matching replaces an AI call — same accuracy, zero token cost.
 var sceneTagKeywords = map[string][]string{
-	"battle":      {"battle", "fight", "combat", "attack", "enemy", "clash", "sword", "skirmish", "weapon", "strike", "wound", "blood", "war"},
-	"dungeon":     {"dungeon", "corridor", "cell", "prison", "iron door", "torch"},
-	"cave":        {"cave", "cavern", "stalactite", "stalagmite", "underground", "tunnel", "grotto"},
-	"forest":      {"forest", "tree", "woods", "grove", "undergrowth", "canopy", "thicket", "bark"},
-	"castle":      {"castle", "throne", "tower", "battlement", "great hall", "rampart", "fortress", "keep", "parapet"},
-	"tavern":      {"tavern", "inn", "alehouse", "taproom", "barmaid", "bartender", "tankard", "common room"},
-	"market":      {"market", "stall", "merchant", "vendor", "bazaar", "goods", "wares"},
-	"temple":      {"temple", "shrine", "altar", "priest", "prayer", "ritual", "holy", "sacred", "chapel"},
-	"ruins":       {"ruins", "ruin", "crumble", "ancient", "collapse", "decay", "abandoned", "overgrown", "rubble"},
-	"city":        {"city", "street", "alley", "crowd", "cobblestone", "district", "urban", "plaza"},
-	"ocean":       {"ocean", "sea", "ship", "wave", "sail", "harbor", "dock", "tide", "shore"},
-	"rain":        {"rain", "storm", "thunder", "lightning", "drizzle", "downpour", "soaked", "puddle"},
-	"night":       {"night", "midnight", "moonlight", "dusk", "twilight"},
-	"elysium":     {"elysium", "court of elysium", "neutral ground", "the salon", "gathering of kindred"},
-	"haven":       {"haven", "lair", "sanctuary", "your haven", "safe house", "feeding ground"},
-	"hunt":        {"hunting", "stalking", "feeding ground", "prey", "the hunt", "the rack"},
-	"masquerade":  {"masquerade breach", "mortal witnesses", "humans watching", "public eye", "crowd of mortals"},
+	"battle":     {"battle", "fight", "combat", "attack", "enemy", "clash", "sword", "skirmish", "weapon", "strike", "wound", "blood", "war"},
+	"dungeon":    {"dungeon", "corridor", "cell", "prison", "iron door", "torch"},
+	"cave":       {"cave", "cavern", "stalactite", "stalagmite", "underground", "tunnel", "grotto"},
+	"forest":     {"forest", "tree", "woods", "grove", "undergrowth", "canopy", "thicket", "bark"},
+	"castle":     {"castle", "throne", "tower", "battlement", "great hall", "rampart", "fortress", "keep", "parapet"},
+	"tavern":     {"tavern", "inn", "alehouse", "taproom", "barmaid", "bartender", "tankard", "common room"},
+	"market":     {"market", "stall", "merchant", "vendor", "bazaar", "goods", "wares"},
+	"temple":     {"temple", "shrine", "altar", "priest", "prayer", "ritual", "holy", "sacred", "chapel"},
+	"ruins":      {"ruins", "ruin", "crumble", "ancient", "collapse", "decay", "abandoned", "overgrown", "rubble"},
+	"city":       {"city", "street", "alley", "crowd", "cobblestone", "district", "urban", "plaza"},
+	"ocean":      {"ocean", "sea", "ship", "wave", "sail", "harbor", "dock", "tide", "shore"},
+	"rain":       {"rain", "storm", "thunder", "lightning", "drizzle", "downpour", "soaked", "puddle"},
+	"night":      {"night", "midnight", "moonlight", "dusk", "twilight"},
+	"elysium":    {"elysium", "court of elysium", "neutral ground", "the salon", "gathering of kindred"},
+	"haven":      {"haven", "lair", "sanctuary", "your haven", "safe house", "feeding ground"},
+	"hunt":       {"hunting", "stalking", "feeding ground", "prey", "the hunt", "the rack"},
+	"masquerade": {"masquerade breach", "mortal witnesses", "humans watching", "public eye", "crowd of mortals"},
 }
 
 // autoUpdateSceneTags classifies the scene via keyword matching and updates the
@@ -3104,7 +3113,6 @@ func (s *Server) autoUpdateSceneTags(_ context.Context, sessionID int64, gmText 
 	}})
 }
 
-
 // crisisRE matches crisis keywords at word boundaries to avoid false positives
 // (e.g. "trapped" should not match "trap", "critical" should not match alone).
 var crisisRE = regexp.MustCompile(
@@ -3149,9 +3157,6 @@ func (s *Server) autoUpdateTension(sessionID int64, gmText string) {
 		"tension_level": newLevel,
 	}})
 }
-
-
-
 
 // autoUpdateCurrency analyzes a GM response for explicit currency transactions
 // (e.g. "you receive 30 gold", "costs 15 coin") and updates the active character's
@@ -3262,12 +3267,16 @@ func (s *Server) handleReorderCombatants(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		IDs []int64 `json:"ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) == 0 {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if len(body.IDs) == 0 {
 		http.Error(w, "ids required", http.StatusBadRequest)
 		return
 	}
 	if err := s.db.ReorderCombatants(id, body.IDs); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventCombatantUpdated, Payload: map[string]any{"encounter_id": id}})

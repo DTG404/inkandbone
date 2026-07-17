@@ -14,14 +14,18 @@ func (s *Server) handleOracleRoll(w http.ResponseWriter, r *http.Request) {
 		Roll      int    `json:"roll"`
 		RulesetID *int64 `json:"ruleset_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Table == "" || body.Roll < 1 || body.Roll > 50 {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Table == "" || body.Roll < 1 || body.Roll > 50 {
 		http.Error(w, "table and roll (1-50) required", http.StatusBadRequest)
 		return
 	}
 
 	result, err := s.db.RollOracle(body.RulesetID, body.Table, body.Roll)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -47,7 +51,7 @@ func (s *Server) handleGetTension(w http.ResponseWriter, r *http.Request) {
 
 	level, err := s.db.GetTension(sessionID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -68,7 +72,11 @@ func (s *Server) handleCreateRelationship(w http.ResponseWriter, r *http.Request
 		RelationshipType string `json:"relationship_type"`
 		Description      string `json:"description"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.FromName == "" || body.ToName == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.FromName == "" || body.ToName == "" {
 		http.Error(w, "from_name and to_name required", http.StatusBadRequest)
 		return
 	}
@@ -79,7 +87,7 @@ func (s *Server) handleCreateRelationship(w http.ResponseWriter, r *http.Request
 
 	id, err := s.db.CreateRelationship(campaignID, body.FromName, body.ToName, relType, body.Description)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -99,7 +107,7 @@ func (s *Server) handleListRelationships(w http.ResponseWriter, r *http.Request)
 	}
 	rels, err := s.db.ListRelationships(campaignID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if rels == nil {
@@ -120,15 +128,15 @@ func (s *Server) handleUpdateRelationship(w http.ResponseWriter, r *http.Request
 		RelationshipType string `json:"relationship_type"`
 		Description      string `json:"description"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.RelationshipType == "" {
 		body.RelationshipType = "neutral"
 	}
 	if err := s.db.UpdateRelationship(id, body.RelationshipType, body.Description); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"id": id}})
@@ -143,7 +151,7 @@ func (s *Server) handleDeleteRelationship(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.db.DeleteRelationship(id); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -158,7 +166,7 @@ func (s *Server) handleGetMasqueradeIntegrity(w http.ResponseWriter, r *http.Req
 	}
 	level, err := s.db.GetMasqueradeIntegrity(sessionID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -175,12 +183,16 @@ func (s *Server) handlePatchMasqueradeIntegrity(w http.ResponseWriter, r *http.R
 	var body struct {
 		MasqueradeIntegrity *int `json:"masquerade_integrity"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MasqueradeIntegrity == nil {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.MasqueradeIntegrity == nil {
 		http.Error(w, "masquerade_integrity required", http.StatusBadRequest)
 		return
 	}
 	if err := s.db.UpdateMasqueradeIntegrity(sessionID, *body.MasqueradeIntegrity); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: map[string]any{
@@ -201,13 +213,17 @@ func (s *Server) handlePatchTension(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TensionLevel *int `json:"tension_level"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.TensionLevel == nil {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.TensionLevel == nil {
 		http.Error(w, "tension_level required", http.StatusBadRequest)
 		return
 	}
 
 	if err := s.db.UpdateTension(sessionID, *body.TensionLevel); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 

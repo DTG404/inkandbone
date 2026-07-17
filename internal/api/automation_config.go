@@ -79,7 +79,11 @@ func (s *Server) handlePatchAutomationSetting(w http.ResponseWriter, r *http.Req
 		Key     string `json:"key"`
 		Enabled bool   `json:"enabled"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.Key == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Key == "" {
 		respondError(w, "key and enabled are required", http.StatusBadRequest)
 		return
 	}
@@ -88,7 +92,7 @@ func (s *Server) handlePatchAutomationSetting(w http.ResponseWriter, r *http.Req
 		val = "1"
 	}
 	if err := s.db.SetSetting(body.Key, val); err != nil {
-		respondError(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -15,7 +15,7 @@ func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.db.ListMapTokens(mapID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if tokens == nil {
@@ -36,8 +36,8 @@ func (s *Server) handlePlaceToken(w http.ResponseWriter, r *http.Request) {
 		X          float64 `json:"x"`
 		Y          float64 `json:"y"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.EntityType != "character" && body.EntityType != "npc" {
@@ -54,12 +54,16 @@ func (s *Server) handlePlaceToken(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "token already placed", http.StatusConflict)
 			return
 		}
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	token, err := s.db.GetToken(tokenID)
-	if err != nil || token == nil {
-		http.Error(w, "fetch token", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if token == nil {
+		serverErrorText(w, r, "fetch token")
 		return
 	}
 	s.bus.Publish(Event{Type: EventTokenPlaced, Payload: map[string]any{
@@ -81,8 +85,8 @@ func (s *Server) handleMoveToken(w http.ResponseWriter, r *http.Request) {
 		X float64 `json:"x"`
 		Y float64 `json:"y"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.X < 0 || body.X > 1 || body.Y < 0 || body.Y > 1 {
@@ -95,7 +99,7 @@ func (s *Server) handleMoveToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.MoveToken(id, body.X, body.Y); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventTokenMoved, Payload: map[string]any{
@@ -119,7 +123,7 @@ func (s *Server) handleRemoveToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.RemoveToken(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventTokenRemoved, Payload: map[string]any{

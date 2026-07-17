@@ -21,7 +21,11 @@ func (s *Server) handleCreateAdventure(w http.ResponseWriter, r *http.Request) {
 		Status      string `json:"status"`
 		SortOrder   int    `json:"sort_order"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Title == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
@@ -32,7 +36,7 @@ func (s *Server) handleCreateAdventure(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.db.CreateAdventure(campaignID, body.Title, body.Description, status, body.SortOrder)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -52,7 +56,7 @@ func (s *Server) handleListAdventures(w http.ResponseWriter, r *http.Request) {
 	}
 	adventures, err := s.db.ListAdventures(campaignID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if adventures == nil {
@@ -91,8 +95,8 @@ func (s *Server) handleUpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		Status      string `json:"status"`
 		SortOrder   int    `json:"sort_order"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Title == "" {
@@ -104,7 +108,7 @@ func (s *Server) handleUpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		status = "upcoming"
 	}
 	if err := s.db.UpdateAdventure(id, body.Title, body.Description, status, body.SortOrder); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"id": id}})
@@ -119,7 +123,7 @@ func (s *Server) handleDeleteAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteAdventure(id); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -135,12 +139,12 @@ func (s *Server) handleSetSessionAdventure(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		AdventureID *int64 `json:"adventure_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if err := s.db.SetSessionAdventure(sessionID, body.AdventureID); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"session_id": sessionID}})

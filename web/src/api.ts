@@ -9,6 +9,14 @@ export interface CampaignMap {
   created_at: string;
 }
 
+export function mapAssetURL(mapId: number): string {
+  return `/api/assets/maps/${mapId}`
+}
+
+export function portraitAssetURL(characterId: number): string {
+  return `/api/assets/portraits/${characterId}`
+}
+
 export interface MapPin {
   id: number;
   map_id: number;

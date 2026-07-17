@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { CampaignMap, MapPin, MapToken, MapZone } from './api'
-import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone } from './api'
+import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone, mapAssetURL } from './api'
 import type { SessionNPC, Character } from './types'
 
 function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id: number } } {
@@ -321,7 +321,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
           >
             <img
               ref={mapImgRef}
-              src={`/api/files/${activeMap.image_path}`}
+              src={mapAssetURL(activeMap.id)}
               alt={activeMap.name}
               style={{ width: '100%', display: 'block', minWidth: '400px' }}
               onDragOver={(e) => e.preventDefault()}

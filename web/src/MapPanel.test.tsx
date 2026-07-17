@@ -51,7 +51,7 @@ describe('MapPanel', () => {
     render(<MapPanel campaignId={1} lastEvent={null} />)
 
     const img = await screen.findByRole('img', { name: 'Dungeon' })
-    expect(img).toHaveAttribute('src', '/api/files/maps/dungeon.png')
+    expect(img).toHaveAttribute('src', '/api/assets/maps/42')
 
     const entrancePin = await screen.findByTitle('Main door')
     const bossRoomPin = await screen.findByTitle('Boss Room')

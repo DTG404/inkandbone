@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
-import { fetchRuleset, patchCharacter, uploadPortrait } from './api'
+import { fetchRuleset, patchCharacter, portraitAssetURL, uploadPortrait } from './api'
 import type { Ruleset } from './api'
 import type { Character } from './types'
 
@@ -638,7 +638,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         {effectiveCharacter.portrait_path ? (
           <img
             className="portrait-circle"
-            src={`/api/files/${effectiveCharacter.portrait_path}`}
+            src={portraitAssetURL(effectiveCharacter.id)}
             alt={effectiveCharacter.name}
           />
         ) : (

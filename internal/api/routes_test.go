@@ -351,23 +351,22 @@ func TestGetTimeline_invalidID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestServeFile_ok(t *testing.T) {
+func TestServeFile_arbitraryDataFileNotServed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("world"), 0600))
 	s := newTestServerWithDir(t, dir)
 	req := httptest.NewRequest(http.MethodGet, "/api/files/hello.txt", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "world", w.Body.String())
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestServeFile_traversal(t *testing.T) {
+func TestServeFile_traversalCannotServe(t *testing.T) {
 	s := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/files/../etc/passwd", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestListMaps_empty(t *testing.T) {

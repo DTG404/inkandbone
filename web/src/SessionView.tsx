@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings, fetchNPCs } from './api'
+import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings, fetchNPCs, mapAssetURL } from './api'
 import type { GameContext, Message, Session, XPSpendSuggestionsEvent, SessionNPC } from './types'
 import { CombatPanel } from './CombatPanel'
 import { WorldNotesPanel } from './WorldNotesPanel'
@@ -62,12 +62,11 @@ function TurnOrderStrip({ combatants }: TurnOrderStripProps) {
 
 interface PinPlacementModalProps {
   mapId: number
-  mapImagePath: string
   defaultLabel: string
   onClose: () => void
 }
 
-function PinPlacementModal({ mapId, mapImagePath, defaultLabel, onClose }: PinPlacementModalProps) {
+function PinPlacementModal({ mapId, defaultLabel, onClose }: PinPlacementModalProps) {
   const [label, setLabel] = useState(defaultLabel.slice(0, 60))
   const [note, setNote] = useState('')
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
@@ -107,7 +106,7 @@ function PinPlacementModal({ mapId, mapImagePath, defaultLabel, onClose }: PinPl
         <div className="pin-modal-map-wrap">
           <img
             ref={imgRef}
-            src={`/api/files/${mapImagePath}`}
+            src={mapAssetURL(mapId)}
             alt="Map"
             className="pin-modal-map"
             onClick={handleImageClick}
@@ -243,7 +242,6 @@ function ProseJournal({
       {pinModal && activeMapId !== null && activeMapImagePath !== null && (
         <PinPlacementModal
           mapId={activeMapId}
-          mapImagePath={activeMapImagePath}
           defaultLabel={pinModal.content}
           onClose={() => setPinModal(null)}
         />

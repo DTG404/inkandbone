@@ -77,12 +77,6 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Block path traversal attempts on file-serving routes before the mux
-	// redirects them (Go's mux normalises .. segments via 307).
-	if strings.HasPrefix(r.URL.Path, "/api/files/") && strings.Contains(r.URL.Path, "..") {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
 	if s.sessions != nil && s.isProtectedPath(r) && !s.requireAuthentication(w, r) {
 		return
 	}
@@ -163,8 +157,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/context", s.handleGetContext)
 	// Plan 7
 	s.mux.HandleFunc("GET /api/sessions/{id}/timeline", s.handleGetTimeline)
-	// Plan 8
-	s.mux.HandleFunc("GET /api/files/{path...}", s.handleServeFile)
+	// Typed assets and temporary exact compatibility for generated-map links.
+	s.mux.HandleFunc("GET /api/assets/maps/{id}", s.handleMapAsset)
+	s.mux.HandleFunc("GET /api/assets/portraits/{id}", s.handlePortraitAsset)
+	s.mux.HandleFunc("GET /api/files/maps/{filename}", s.handleLegacyMapAsset)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/maps", s.handleListMaps)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/maps", s.handleUploadMap)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/maps/generate", s.handleGenerateMap)

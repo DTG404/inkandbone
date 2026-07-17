@@ -110,7 +110,7 @@ describe('App', () => {
     // Both the state-bar portrait and the character sheet panel render an img with name "Zara"
     const imgs = await screen.findAllByRole('img', { name: 'Zara' })
     expect(imgs.length).toBeGreaterThanOrEqual(1)
-    expect(imgs[0]).toHaveAttribute('src', '/api/files/portraits/zara.jpg')
+    expect(imgs[0]).toHaveAttribute('src', '/api/assets/portraits/1')
   })
 
   it('does not render portrait img when portrait_path is empty', async () => {

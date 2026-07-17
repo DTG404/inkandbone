@@ -243,24 +243,6 @@ func (s *Server) handlePatchWorldNoteRevealed(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleServeFile(w http.ResponseWriter, r *http.Request) {
-	rel := filepath.Clean(r.PathValue("path"))
-	// Reject any path that tries to escape the data directory
-	if strings.HasPrefix(rel, "..") {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	abs := filepath.Join(s.dataDir, rel)
-	if !strings.HasPrefix(abs+string(filepath.Separator), s.dataDir+string(filepath.Separator)) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if strings.HasSuffix(strings.ToLower(rel), ".svg") {
-		w.Header().Set("Content-Type", "image/svg+xml")
-	}
-	http.ServeFile(w, r, abs)
-}
-
 func (s *Server) handleListMaps(w http.ResponseWriter, r *http.Request) {
 	id, ok := parsePathID(r, "id")
 	if !ok {

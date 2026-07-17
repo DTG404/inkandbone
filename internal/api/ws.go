@@ -17,19 +17,26 @@ import (
 // per-connection read goroutine in ServeWS.
 type Hub struct {
 	mu      sync.Mutex
-	clients map[*websocket.Conn]hubClient
+	clients map[*websocket.Conn]*hubClient
 	bus     *Bus
 	origins map[string]struct{}
 }
 
 type hubClient struct {
-	send       chan Event
-	authorized func() bool
+	mu           sync.Mutex
+	conn         *websocket.Conn
+	send         chan Event
+	done         chan struct{}
+	revoked      bool
+	deliverEvent func(Event) bool
+	onClose      func()
+	writeJSON    func(any) error
+	closeConn    func() error
 }
 
 func NewHub(bus *Bus) *Hub {
 	return &Hub{
-		clients: make(map[*websocket.Conn]hubClient),
+		clients: make(map[*websocket.Conn]*hubClient),
 		bus:     bus,
 		origins: make(map[string]struct{}),
 	}
@@ -60,17 +67,16 @@ func (h *Hub) Run() {
 
 func (h *Hub) broadcast(event Event) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	for conn, client := range h.clients {
-		if client.authorized != nil && !client.authorized() {
-			delete(h.clients, conn)
-			close(client.send)
-			continue
-		}
-		select {
-		case client.send <- event:
-		default:
-			// slow client; drop rather than block the broadcast goroutine
+	clients := make([]*hubClient, 0, len(h.clients))
+	for _, client := range h.clients {
+		clients = append(clients, client)
+	}
+	h.mu.Unlock()
+
+	for _, client := range clients {
+		if !client.deliver(event) {
+			client.revoke()
+			h.removeClient(client)
 		}
 	}
 }
@@ -88,9 +94,9 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeWSAuthorized upgrades and registers a connection whose authorization
-// is revalidated before each protected event is broadcast. A nil validator
-// preserves unsecured and bearer-authenticated connection behavior.
-func (h *Hub) ServeWSAuthorized(w http.ResponseWriter, r *http.Request, authorized func() bool) {
+// is configured before registration. A nil configurator preserves unsecured
+// and bearer-authenticated connection behavior.
+func (h *Hub) ServeWSAuthorized(w http.ResponseWriter, r *http.Request, configure func(*hubClient) bool) {
 	upgrader := websocket.Upgrader{CheckOrigin: h.originAllowed}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -98,30 +104,33 @@ func (h *Hub) ServeWSAuthorized(w http.ResponseWriter, r *http.Request, authoriz
 		return
 	}
 
-	send := make(chan Event, 64)
-
+	client := newHubClient(conn)
+	if configure != nil && !configure(client) {
+		client.revoke()
+		return
+	}
+	client.mu.Lock()
+	if client.revoked {
+		client.mu.Unlock()
+		if client.onClose != nil {
+			client.onClose()
+		}
+		return
+	}
 	h.mu.Lock()
-	h.clients[conn] = hubClient{send: send, authorized: authorized}
+	h.clients[conn] = client
 	h.mu.Unlock()
+	client.mu.Unlock()
 
 	// Write goroutine — the only goroutine that calls WriteJSON on this conn.
-	go func() {
-		for event := range send {
-			if err := conn.WriteJSON(event); err != nil {
-				log.Printf("ws write error: %v", err)
-				break
-			}
-		}
-		conn.Close()
-	}()
+	go client.runWriter()
 
 	defer func() {
-		h.mu.Lock()
-		if client, ok := h.clients[conn]; ok {
-			delete(h.clients, conn)
-			close(client.send)
+		client.revoke()
+		h.removeClient(client)
+		if client.onClose != nil {
+			client.onClose()
 		}
-		h.mu.Unlock()
 	}()
 
 	// Read loop — keeps connection alive; client messages are ignored for now.
@@ -130,6 +139,80 @@ func (h *Hub) ServeWSAuthorized(w http.ResponseWriter, r *http.Request, authoriz
 			break
 		}
 	}
+}
+
+func newHubClient(conn *websocket.Conn) *hubClient {
+	client := newHubClientWithIO(conn.WriteJSON, conn.Close)
+	client.conn = conn
+	return client
+}
+
+func newHubClientWithIO(writeJSON func(any) error, closeConn func() error) *hubClient {
+	return &hubClient{
+		send:      make(chan Event, 64),
+		done:      make(chan struct{}),
+		writeJSON: writeJSON,
+		closeConn: closeConn,
+	}
+}
+
+func (c *hubClient) deliver(event Event) bool {
+	if c.deliverEvent != nil {
+		return c.deliverEvent(event)
+	}
+	return c.enqueue(event)
+}
+
+func (c *hubClient) enqueue(event Event) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.revoked {
+		return false
+	}
+	select {
+	case c.send <- event:
+	default:
+		// Slow client; drop rather than block the broadcast goroutine.
+	}
+	return true
+}
+
+func (c *hubClient) revoke() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.revoked {
+		return
+	}
+	c.revoked = true
+	close(c.done)
+	_ = c.closeConn()
+}
+
+func (c *hubClient) runWriter() {
+	defer c.revoke()
+	for {
+		select {
+		case <-c.done:
+			return
+		case event := <-c.send:
+			select {
+			case <-c.done:
+				return
+			default:
+			}
+			if err := c.writeJSON(event); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (h *Hub) removeClient(client *hubClient) {
+	h.mu.Lock()
+	if current, ok := h.clients[client.conn]; ok && current == client {
+		delete(h.clients, client.conn)
+	}
+	h.mu.Unlock()
 }
 
 type normalizedOrigin struct {

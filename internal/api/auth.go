@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	authCookieName          = "ttrpg_session"
-	sessionIdleLifetime     = 30 * time.Minute
-	sessionAbsoluteLifetime = 12 * time.Hour
-	loginAttemptWindow      = time.Minute
-	maxLoginFailures        = 5
+	authCookieName             = "ttrpg_session"
+	sessionIdleLifetime        = 30 * time.Minute
+	sessionAbsoluteLifetime    = 12 * time.Hour
+	loginAttemptWindow         = time.Minute
+	maxLoginFailures           = 5
+	maxTrackedFailureAddresses = 4096
 )
 
 // SessionInfo describes the browser's current authentication state.
@@ -30,6 +31,7 @@ type sessionRecord struct {
 	csrf      string
 	createdAt time.Time
 	lastSeen  time.Time
+	clients   map[*hubClient]struct{}
 }
 
 type loginFailures struct {
@@ -82,7 +84,12 @@ func (m *sessionManager) create() (string, sessionRecord, error) {
 		return "", sessionRecord{}, err
 	}
 	now := m.now()
-	record := sessionRecord{csrf: csrfToken, createdAt: now, lastSeen: now}
+	record := sessionRecord{
+		csrf:      csrfToken,
+		createdAt: now,
+		lastSeen:  now,
+		clients:   make(map[*hubClient]struct{}),
+	}
 	m.mu.Lock()
 	m.sessions[sessionToken] = record
 	m.mu.Unlock()
@@ -92,13 +99,17 @@ func (m *sessionManager) create() (string, sessionRecord, error) {
 func (m *sessionManager) get(token string, refreshIdle bool) (sessionRecord, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.getLocked(token, refreshIdle)
+}
+
+func (m *sessionManager) getLocked(token string, refreshIdle bool) (sessionRecord, bool) {
 	record, ok := m.sessions[token]
 	if !ok {
 		return sessionRecord{}, false
 	}
 	now := m.now()
 	if now.Sub(record.lastSeen) >= sessionIdleLifetime || now.Sub(record.createdAt) >= sessionAbsoluteLifetime {
-		delete(m.sessions, token)
+		m.invalidateLocked(token)
 		return sessionRecord{}, false
 	}
 	if refreshIdle {
@@ -110,8 +121,57 @@ func (m *sessionManager) get(token string, refreshIdle bool) (sessionRecord, boo
 
 func (m *sessionManager) delete(token string) {
 	m.mu.Lock()
-	delete(m.sessions, token)
+	m.invalidateLocked(token)
 	m.mu.Unlock()
+}
+
+// Lock order is sessionManager.mu then hubClient.mu. Hub.mu is never held
+// while either lock is acquired. Keeping invalidation and enqueue under this
+// order gives cookie events a total order with logout and expiry.
+func (m *sessionManager) invalidateLocked(token string) {
+	record, ok := m.sessions[token]
+	if !ok {
+		return
+	}
+	delete(m.sessions, token)
+	for client := range record.clients {
+		client.revoke()
+	}
+}
+
+func (m *sessionManager) registerClient(token string, client *hubClient) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	record, ok := m.getLocked(token, false)
+	if !ok {
+		return false
+	}
+	record.clients[client] = struct{}{}
+	m.sessions[token] = record
+	return true
+}
+
+func (m *sessionManager) unregisterClient(token string, client *hubClient) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	record, ok := m.sessions[token]
+	if !ok {
+		return
+	}
+	delete(record.clients, client)
+}
+
+func (m *sessionManager) deliverEvent(token string, client *hubClient, event Event) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	record, ok := m.getLocked(token, false)
+	if !ok {
+		return false
+	}
+	if _, registered := record.clients[client]; !registered {
+		return false
+	}
+	return client.enqueue(event)
 }
 
 func (m *sessionManager) reserveLoginAttempt(address string) bool {
@@ -126,7 +186,10 @@ func (m *sessionManager) reserveLoginAttempt(address string) bool {
 		}
 		m.lastFailurePrune = now
 	}
-	failure := m.failures[address]
+	failure, tracked := m.failures[address]
+	if !tracked && len(m.failures) >= maxTrackedFailureAddresses {
+		return false
+	}
 	if failure.windowStarted.IsZero() || now.Sub(failure.windowStarted) >= loginAttemptWindow {
 		failure = loginFailures{windowStarted: now}
 	}
@@ -287,8 +350,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionToken := cookie.Value
-	s.hub.ServeWSAuthorized(w, r, func() bool {
-		_, ok := s.sessions.get(sessionToken, false)
-		return ok
+	s.hub.ServeWSAuthorized(w, r, func(client *hubClient) bool {
+		client.deliverEvent = func(event Event) bool {
+			return s.sessions.deliverEvent(sessionToken, client, event)
+		}
+		client.onClose = func() {
+			s.sessions.unregisterClient(sessionToken, client)
+		}
+		return s.sessions.registerClient(sessionToken, client)
 	})
 }

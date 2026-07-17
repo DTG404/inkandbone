@@ -225,6 +225,23 @@ func TestAuthLoginFailurePruningIsThrottled(t *testing.T) {
 	assert.Equal(t, firstPrune, s.sessions.lastFailurePrune)
 }
 
+func TestAuthLoginFailureAddressTrackingIsBoundedAndRecovers(t *testing.T) {
+	manager := newSessionManager(strings.Repeat("s", 32))
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
+
+	for address := range maxTrackedFailureAddresses {
+		assert.True(t, manager.reserveLoginAttempt(fmt.Sprintf("192.0.2.%d", address)))
+	}
+	assert.Len(t, manager.failures, maxTrackedFailureAddresses)
+	assert.False(t, manager.reserveLoginAttempt("capacity.example"))
+	assert.Len(t, manager.failures, maxTrackedFailureAddresses)
+
+	now = now.Add(loginAttemptWindow + time.Second)
+	assert.True(t, manager.reserveLoginAttempt("recovered.example"))
+	assert.Len(t, manager.failures, 1)
+}
+
 func failedLogin(t *testing.T, s *Server, remoteAddr string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))

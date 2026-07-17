@@ -3,9 +3,11 @@ package api
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,8 +79,156 @@ func TestAuthenticatedWebSocketRevokedAfterLogout(t *testing.T) {
 	response.Body.Close()
 	require.Equal(t, http.StatusNoContent, response.StatusCode)
 
-	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 18}})
 	assertWebSocketRevokedWithoutEvent(t, s.hub, conn)
+}
+
+func TestAuthenticatedWebSocketRevokedWhenHTTPDiscoversIdleExpiry(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	s.sessions.now = func() time.Time { return now }
+	cookie, _ := loginTestSession(t, s, secret, "192.0.2.4:1234")
+	srv, conn := openServerWebSocket(t, s, cookie, "")
+	now = now.Add(sessionIdleLifetime + time.Second)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/auth/session", nil)
+	require.NoError(t, err)
+	req.AddCookie(cookie)
+	response, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	var info SessionInfo
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&info))
+	response.Body.Close()
+	require.False(t, info.Authenticated)
+
+	assertWebSocketRevokedWithoutEvent(t, s.hub, conn)
+}
+
+func TestAuthenticatedWebSocketLogoutOrderedWithEventEnqueue(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	cookie, csrf := loginTestSession(t, s, secret, "192.0.2.4:1234")
+	srv, _ := openServerWebSocket(t, s, cookie, "")
+	client := soleHubClient(t, s.hub)
+
+	client.mu.Lock()
+	clientLocked := true
+	defer func() {
+		if clientLocked {
+			client.mu.Unlock()
+		}
+	}()
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 18}})
+	waitForSessionLockHeld(t, s.sessions)
+
+	logoutDone := make(chan int, 1)
+	go func() {
+		logoutDone <- logoutStatus(srv.URL, cookie, csrf)
+	}()
+	select {
+	case status := <-logoutDone:
+		t.Fatalf("logout returned %d while an authorized enqueue still held the session order", status)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	client.mu.Unlock()
+	clientLocked = false
+	select {
+	case status := <-logoutDone:
+		require.Equal(t, http.StatusNoContent, status)
+	case <-time.After(time.Second):
+		t.Fatal("logout did not complete after the ordered enqueue was released")
+	}
+	waitForHubClientCount(t, s.hub, 0)
+}
+
+func TestHubClientRevocationInterruptsWriterWithoutDrainingBacklog(t *testing.T) {
+	connectionClosed := make(chan struct{})
+	writeStarted := make(chan struct{})
+	var writes atomic.Int32
+	var closes atomic.Int32
+	client := newHubClientWithIO(
+		func(any) error {
+			writes.Add(1)
+			close(writeStarted)
+			<-connectionClosed
+			return errors.New("connection closed")
+		},
+		func() error {
+			closes.Add(1)
+			close(connectionClosed)
+			return nil
+		},
+	)
+	writerDone := make(chan struct{})
+	go func() {
+		client.runWriter()
+		close(writerDone)
+	}()
+
+	require.True(t, client.enqueue(Event{Type: EventDiceRolled}))
+	select {
+	case <-writeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("writer did not block on the first event")
+	}
+	for range cap(client.send) {
+		require.True(t, client.enqueue(Event{Type: EventDiceRolled}))
+	}
+	require.Len(t, client.send, cap(client.send))
+
+	client.revoke()
+	client.revoke()
+	select {
+	case <-writerDone:
+	case <-time.After(time.Second):
+		t.Fatal("revocation did not interrupt the blocked writer")
+	}
+	assert.EqualValues(t, 1, writes.Load())
+	assert.EqualValues(t, 1, closes.Load())
+	assert.Len(t, client.send, cap(client.send), "revocation must not close and drain buffered events")
+	assert.False(t, client.enqueue(Event{Type: EventDiceRolled}))
+}
+
+func soleHubClient(t *testing.T, hub *Hub) *hubClient {
+	t.Helper()
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	require.Len(t, hub.clients, 1)
+	for _, client := range hub.clients {
+		return client
+	}
+	return nil
+}
+
+func waitForSessionLockHeld(t *testing.T, sessions *sessionManager) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		if !sessions.mu.TryLock() {
+			return
+		}
+		sessions.mu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for event delivery to hold the session lock")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func logoutStatus(serverURL string, cookie *http.Cookie, csrf string) int {
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/auth/logout", nil)
+	if err != nil {
+		return 0
+	}
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrf)
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	response.Body.Close()
+	return response.StatusCode
 }
 
 func TestAuthenticatedWebSocketIdleRevalidationDoesNotRefreshSession(t *testing.T) {

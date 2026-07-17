@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchContext, fetchWorldNotes, fetchDiceRolls, fetchTimeline, fetchMaps, fetchMapPins, patchSessionSummary, generateRecap, draftWorldNote, uploadMap } from './api'
+import { fetchContext, fetchMessages, fetchWorldNotes, fetchDiceRolls, fetchTimeline, fetchMaps, fetchMapPins, patchSessionSummary, generateRecap, draftWorldNote, uploadMap } from './api'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -29,6 +29,24 @@ describe('fetchContext', () => {
     }))
 
     await expect(fetchContext()).rejects.toThrow('GET /api/context failed: 500')
+  })
+})
+
+describe('fetchMessages', () => {
+  it('loads the authorized session transcript including whisper metadata', async () => {
+    const messages = [
+      { id: 1, session_id: 7, role: 'user', content: 'PRIVATE_SENTINEL', whisper: true, created_at: '' },
+    ]
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(messages) })
+    vi.stubGlobal('fetch', mockFetch)
+
+    await expect(fetchMessages(7)).resolves.toEqual(messages)
+    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/7/messages')
+  })
+
+  it('throws when the authorized transcript cannot be loaded', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+    await expect(fetchMessages(7)).rejects.toThrow('GET /api/sessions/7/messages failed: 500')
   })
 })
 

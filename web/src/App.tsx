@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWebSocket, webSocketURL } from './useWebSocket'
-import { fetchContext, sendMessage, gmRespondStream, generateMap, fetchRuleset, suggestAdvances } from './api'
+import { fetchContext, fetchMessages, sendMessage, gmRespondStream, generateMap, fetchRuleset, suggestAdvances } from './api'
 import type { GameContext, Message, XPSpendSuggestionsEvent } from './types'
 import { ManagePanel } from './ManagePanel'
 import { GMScreenPanel } from './GMScreenPanel'
@@ -119,6 +119,7 @@ function GameApp() {
   })
   const [charactersList, setCharactersList] = useState<{ id: number; name: string }[]>([])
   const loadGenRef = useRef(0)
+  const messageSessionRef = useRef<number | null>(null)
 
   // Derived: character's current XP (or Karma) balance, parsed from data_json.
   const charXPBalance = (() => {
@@ -186,10 +187,22 @@ function GameApp() {
   const loadContext = useCallback(() => {
     const gen = ++loadGenRef.current
     fetchContext()
-      .then((data) => {
+      .then(async (data) => {
         if (loadGenRef.current !== gen) return // stale — a newer fetch already resolved
         setCtx(data)
-        setMessages(data.recent_messages ?? [])
+        const sessionId = data.session?.id ?? null
+        if (sessionId === null) {
+          messageSessionRef.current = null
+          setMessages([])
+          return
+        }
+        if (messageSessionRef.current !== sessionId) {
+          setMessages([])
+        }
+        const sessionMessages = await fetchMessages(sessionId)
+        if (loadGenRef.current !== gen) return
+        messageSessionRef.current = sessionId
+        setMessages(sessionMessages)
       })
       .catch(() => {
         if (loadGenRef.current !== gen) return
@@ -291,7 +304,7 @@ function GameApp() {
     if (!ctx?.campaign || !aiEnabled || generatingMap) return
     setGeneratingMap(true)
     setMapOpen(true)
-    const recentText = messages.slice(-6).map(m => `[${m.role}]: ${m.content}`).join('\n')
+    const recentText = messages.filter(m => !m.whisper).slice(-6).map(m => `[${m.role}]: ${m.content}`).join('\n')
     const context = `Campaign: ${ctx.campaign.name}\n\n${recentText}`
     const mapName = ctx.session?.title ?? ctx.campaign.name
     try {

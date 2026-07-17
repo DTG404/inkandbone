@@ -544,6 +544,48 @@ func TestAutoUpdateRecapExcludesWhispers(t *testing.T) {
 	assert.NotContains(t, stub.capturedPrompts(), "PRIVATE_SENTINEL")
 }
 
+type stubCompleterResponder struct {
+	response        string
+	capturedSystem  string
+	capturedHistory []ai.ChatMessage
+}
+
+func (s *stubCompleterResponder) Generate(_ context.Context, _ string, _ int) (string, error) {
+	return s.response, nil
+}
+
+func (s *stubCompleterResponder) Respond(_ context.Context, system string, history []ai.ChatMessage, _ int) (string, error) {
+	s.capturedSystem = system
+	s.capturedHistory = append([]ai.ChatMessage(nil), history...)
+	return s.response, nil
+}
+
+func TestHandleGMRespondExcludesWhispersFromProviderHistory(t *testing.T) {
+	stub := &stubCompleterResponder{response: "The public action continues."}
+	s := newTestServerWithAI(t, stub)
+	_, sessID := seedCampaign(t, s.db)
+	_, err := s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/sessions/"+strconv.FormatInt(sessID, 10)+"/gm-respond",
+		nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.NotEmpty(t, stub.capturedHistory)
+	assert.Equal(t, "PUBLIC_SENTINEL", stub.capturedHistory[len(stub.capturedHistory)-1].Content)
+	providerInput := stub.capturedSystem
+	for _, message := range stub.capturedHistory {
+		providerInput += "\n" + message.Content
+	}
+	assert.Contains(t, providerInput, "PUBLIC_SENTINEL")
+	assert.NotContains(t, providerInput, "PRIVATE_SENTINEL")
+}
+
 func TestGenerateRecap_noAI(t *testing.T) {
 	s := newTestServer(t)
 	_, sessID := seedCampaign(t, s.db)

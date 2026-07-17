@@ -1,5 +1,5 @@
 import { request } from './transport'
-import type { GameContext, WorldNote, DiceRoll, TimelineEntry, SessionNPC, Objective, Item, XPEntry, Adventure, Faction, Relationship, NpcStat, Secret, Macro, Deck, DeckCard, DeckDraw } from './types'
+import type { GameContext, Message, WorldNote, DiceRoll, TimelineEntry, SessionNPC, Objective, Item, XPEntry, Adventure, Faction, Relationship, NpcStat, Secret, Macro, Deck, DeckCard, DeckDraw } from './types'
 
 export interface CampaignMap {
   id: number;
@@ -31,6 +31,13 @@ export interface MapPin {
 export async function fetchContext(): Promise<GameContext> {
   const res = await request('/api/context')
   if (!res.ok) throw new Error(`GET /api/context failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchMessages(sessionId: number): Promise<Message[]> {
+  const url = `/api/sessions/${sessionId}/messages`
+  const res = await request(url)
+  if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`)
   return res.json()
 }
 

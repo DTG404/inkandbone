@@ -465,20 +465,61 @@ legacy_tokens AS (
           AND earlier.end_position > token.start_position
     )
 ),
+token_variants(
+    message_id, campaign_id, content, start_position, end_position, candidate_end_position
+) AS (
+    SELECT message_id, campaign_id, content, start_position, end_position, end_position
+    FROM legacy_tokens
+    UNION ALL
+    SELECT message_id, campaign_id, content, start_position, end_position,
+           candidate_end_position - 1
+    FROM token_variants
+    WHERE candidate_end_position > start_position + length('/api/files/')
+      AND instr(
+          '.,;:!?)]' || char(39) || char(96),
+          substr(content, candidate_end_position - 1, 1)
+      ) > 0
+),
+matched_token_variants AS (
+    SELECT variant.message_id, variant.start_position,
+           variant.candidate_end_position, matched.map_id,
+           row_number() OVER (
+               PARTITION BY variant.message_id, variant.start_position
+               ORDER BY variant.candidate_end_position DESC, matched.map_id
+           ) AS preference
+    FROM token_variants variant
+    JOIN unambiguous_maps matched
+      ON matched.campaign_id = variant.campaign_id
+     AND '/api/files/' || matched.image_path =
+         substr(
+             variant.content,
+             variant.start_position,
+             variant.candidate_end_position - variant.start_position
+         )
+),
+best_token_matches AS (
+    SELECT message_id, start_position, candidate_end_position, map_id
+    FROM matched_token_variants
+    WHERE preference = 1
+),
 token_edits AS (
     SELECT token.message_id, token.content, token.start_position, token.end_position,
            row_number() OVER (
                PARTITION BY token.message_id ORDER BY token.start_position
            ) AS step,
            COALESCE(
-               '/api/assets/maps/' || matched.map_id,
+               '/api/assets/maps/' || matched.map_id ||
+                   substr(
+                       token.content,
+                       matched.candidate_end_position,
+                       token.end_position - matched.candidate_end_position
+                   ),
                substr(token.content, token.start_position, token.end_position - token.start_position)
            ) AS replacement
     FROM legacy_tokens token
-    LEFT JOIN unambiguous_maps matched
-      ON matched.campaign_id = token.campaign_id
-     AND '/api/files/' || matched.image_path =
-         substr(token.content, token.start_position, token.end_position - token.start_position)
+    LEFT JOIN best_token_matches matched
+      ON matched.message_id = token.message_id
+     AND matched.start_position = token.start_position
 ),
 rewritten(message_id, step, cursor_position, original_content, rewritten_content) AS (
     SELECT message_id, 0, 1, content, ''

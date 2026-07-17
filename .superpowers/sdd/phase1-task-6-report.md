@@ -132,3 +132,26 @@ GREEN:
 - Full DB suite — PASS, 0 failures, 5.069s.
 - Focused race for URL migration and orphan repair — PASS, 0 failures, 4.173s.
 - API/frontend suites were not rerun because this final fix changes only embedded migration SQL and its DB regression fixture; their prior Task 6 verification remains applicable.
+
+## Punctuation-boundary re-review fix
+
+The final punctuation review found that conventional prose and Markdown suffixes were tokenized as part of otherwise valid legacy URLs. Registered map URLs followed by `),`, `.`, or a closing apostrophe therefore remained on the removed `/api/files/` surface, while a double-quoted URL happened to work because the double quote was already a hard token boundary.
+
+RED:
+
+- `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` failed: expected all four registered URLs in `[map](...), sentence .... quoted "..." apostrophe '...'` to rewrite, but the Markdown, sentence, and apostrophe forms remained unchanged. The double-quoted form alone rewrote.
+
+Fix:
+
+- Token matching now tries the complete token first, then recursively removes only conventional trailing prose/Markdown delimiters (`.,;:!?)]`, apostrophe, and backtick) one character at a time.
+- Exact campaign-local unambiguous map matches are ranked by candidate length, so the longest exact match wins. The trimmed suffix is appended verbatim to the asset URL.
+- Alphanumeric and path-extension characters are never trimmed. The regression therefore proves that a campaign registering only `maps/overlap` does not rewrite unknown `maps/overlap.svg` or `maps/overlap.svg.`.
+
+GREEN:
+
+- Focused punctuation/URL test — PASS, 0 failures, 0.070s.
+- Repeated focused punctuation/URL test (`-count=10`) — PASS, 10/10, 0.674s.
+- Full DB suite — PASS, 0 failures, 5.295s.
+- Focused race for URL migration and orphan repair — PASS, 0 failures, 4.340s.
+- `git diff --check` — PASS.
+- API/frontend suites were not rerun because this review fix changes only embedded migration SQL and its DB regression fixture; the prior Task 6 verification remains applicable.

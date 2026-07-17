@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	deepseekURL      = "https://api.deepseek.com/chat/completions"
-	DeepSeekModel    = "deepseek-v4-flash"
+	deepseekURL   = "https://api.deepseek.com/chat/completions"
+	DeepSeekModel = "deepseek-v4-flash"
 )
 
 // DeepSeekClient calls the DeepSeek API directly via its OpenAI-compatible endpoint.
@@ -36,7 +36,7 @@ func NewDeepSeekClient(apiKey string) *DeepSeekClient {
 	return &DeepSeekClient{
 		apiKey: apiKey,
 		model:  DeepSeekModel,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 		think:  true,
 	}
 }
@@ -45,7 +45,7 @@ func newDeepSeekClientWithModel(apiKey, model string) *DeepSeekClient {
 	return &DeepSeekClient{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 		think:  true,
 	}
 }
@@ -55,15 +55,19 @@ func newDeepSeekAutoClient(apiKey, model string) *DeepSeekClient {
 	return &DeepSeekClient{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 	}
 }
 
 func (c *DeepSeekClient) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
 	return c.chatOnce(ctx, "", []ChatMessage{{Role: "user", Content: prompt}}, maxTokens)
 }
 
 func (c *DeepSeekClient) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
 	text, err := c.chatOnce(ctx, system, history, maxTokens)
 	if err != nil {
 		return "", err
@@ -75,6 +79,9 @@ func (c *DeepSeekClient) Respond(ctx context.Context, system string, history []C
 }
 
 func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	payload := map[string]any{
 		"model":      c.model,
 		"max_tokens": maxTokens,

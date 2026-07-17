@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -26,13 +30,19 @@ type Server struct {
 	autoFailCount   int32        // incremented on automation failure, reset on success; circuit breaker at 3
 	sessions        *sessionManager
 	secureCookies   bool
+	rootCtx         context.Context
+	cancel          context.CancelFunc
 	httpServerMu    sync.Mutex
 	httpServer      *http.Server
+	started         bool
 }
 
 // ServerOptions configures optional security behavior for the HTTP server.
 type ServerOptions struct {
 	Security ListenSecurityConfig
+	// RootContext owns request and startup-background lifetimes. A nil context
+	// defaults to context.Background.
+	RootContext context.Context
 }
 
 // NewServer creates the HTTP server. dataDir is the base path for uploaded files
@@ -43,6 +53,11 @@ func NewServer(database *db.DB, dataDir string, aiClient ai.Completer) *Server {
 
 // NewServerWithOptions creates an HTTP server with explicit security options.
 func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer, options ServerOptions) *Server {
+	parentCtx := options.RootContext
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	rootCtx, cancel := context.WithCancel(parentCtx)
 	bus := NewBus()
 	hub := NewHub(bus)
 	s := &Server{
@@ -53,6 +68,8 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		dataDir:       dataDir,
 		aiClient:      aiClient,
 		secureCookies: options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
+		rootCtx:       rootCtx,
+		cancel:        cancel,
 	}
 	if options.Security.AuthSecret != "" {
 		s.sessions = newSessionManager(options.Security.AuthSecret)
@@ -63,7 +80,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 	// Capture the ruleset list before launching the goroutine so that rulesets
 	// created after NewServer returns are not included in the startup backfill.
 	existingRulesets, _ := database.ListRulesets()
-	go s.backfillEmbeddings(existingRulesets)
+	go s.backfillEmbeddings(rootCtx, existingRulesets)
 	return s
 }
 
@@ -99,28 +116,54 @@ func (s *Server) isProtectedPath(r *http.Request) bool {
 	return r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, "/api/")
 }
 
-// ListenAndServe starts the HTTP server on addr (e.g. ":7432").
-func (s *Server) ListenAndServe(addr string) error {
-	server := &http.Server{Addr: addr, Handler: s}
-	s.setHTTPServer(server)
+// Start starts the owned HTTP or HTTPS server and blocks until it stops. The
+// Server lifecycle is one-shot: concurrent or later Start calls are rejected.
+func (s *Server) Start(addr, certFile, keyFile string) error {
+	if (certFile == "") != (keyFile == "") {
+		return errors.New("both TLS certificate and key are required")
+	}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           s,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+		BaseContext: func(net.Listener) context.Context {
+			return s.rootCtx
+		},
+	}
+	s.httpServerMu.Lock()
+	if s.started {
+		s.httpServerMu.Unlock()
+		return errors.New("server already started")
+	}
+	if err := s.rootCtx.Err(); err != nil {
+		s.httpServerMu.Unlock()
+		return fmt.Errorf("server context: %w", err)
+	}
+	s.started = true
+	s.httpServer = server
+	s.httpServerMu.Unlock()
+
+	if certFile != "" {
+		return server.ListenAndServeTLS(certFile, keyFile)
+	}
 	return server.ListenAndServe()
 }
 
-// ListenAndServeTLS starts the HTTPS server on addr.
-func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
-	server := &http.Server{Addr: addr, Handler: s}
-	s.setHTTPServer(server)
-	return server.ListenAndServeTLS(certFile, keyFile)
+// ListenAndServe is retained for callers that do not use TLS.
+func (s *Server) ListenAndServe(addr string) error {
+	return s.Start(addr, "", "")
 }
 
-func (s *Server) setHTTPServer(server *http.Server) {
-	s.httpServerMu.Lock()
-	s.httpServer = server
-	s.httpServerMu.Unlock()
+// ListenAndServeTLS is retained for callers that use TLS.
+func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
+	return s.Start(addr, certFile, keyFile)
 }
 
 // Shutdown gracefully stops a server started by ListenAndServe or ListenAndServeTLS.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.cancel()
 	s.httpServerMu.Lock()
 	server := s.httpServer
 	s.httpServerMu.Unlock()
@@ -323,9 +366,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // backfillEmbeddings runs at startup to embed any chunks that have no embedding yet.
-func (s *Server) backfillEmbeddings(rulesets []db.Ruleset) {
-	ctx := context.Background()
+func (s *Server) backfillEmbeddings(ctx context.Context, rulesets []db.Ruleset) {
 	for _, rs := range rulesets {
+		if err := ctx.Err(); err != nil {
+			return
+		}
 		chunks, err := s.db.ListChunksForEmbedding(rs.ID)
 		if err != nil {
 			continue

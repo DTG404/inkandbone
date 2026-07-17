@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -216,8 +215,8 @@ func (s *Server) handleReanalyzeSession(w http.ResponseWriter, r *http.Request) 
 		corpus = corpus[len(corpus)-maxCorpusChars:]
 	}
 
-	go s.autoDetectObjectives(context.Background(), id, corpus)
-	go s.extractNPCs(context.Background(), id, corpus)
+	go s.autoDetectObjectives(s.rootCtx, id, corpus)
+	go s.extractNPCs(s.rootCtx, id, corpus)
 
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]string{"status": "reanalysis started"})

@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/api"
@@ -18,6 +23,9 @@ import (
 )
 
 func main() {
+	rootCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("home dir: %v", err)
@@ -85,7 +93,10 @@ func main() {
 		log.Println("AI: disabled (set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OLLAMA_MODEL)")
 	}
 
-	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{Security: securityConfig})
+	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{
+		Security:    securityConfig,
+		RootContext: rootCtx,
+	})
 
 	distFS, err := fs.Sub(ttrpgweb.Static, "dist")
 	if err != nil {
@@ -105,16 +116,36 @@ func main() {
 		}()
 	}
 
-	serve := func() error { return httpServer.ListenAndServe(*listenFlag) }
 	protocol := "HTTP"
 	if securityConfig.TLSCertFile != "" && securityConfig.TLSKeyFile != "" {
 		protocol = "HTTPS"
-		serve = func() error {
-			return httpServer.ListenAndServeTLS(*listenFlag, securityConfig.TLSCertFile, securityConfig.TLSKeyFile)
-		}
 	}
 	log.Printf("%s server listening on %s", protocol, *listenFlag)
-	if err := serve(); err != nil {
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- httpServer.Start(
+			*listenFlag,
+			securityConfig.TLSCertFile,
+			securityConfig.TLSKeyFile,
+		)
+	}()
+
+	select {
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP server stopped: %v", err)
+		}
+		return
+	case <-rootCtx.Done():
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelShutdown()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown: %v", err)
+		return
+	}
+	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("HTTP server stopped: %v", err)
 	}
 }

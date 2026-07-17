@@ -19,6 +19,14 @@ func newTestServer(t *testing.T) *Server {
 	return NewServer(d, t.TempDir(), nil)
 }
 
+func newTestServerWithOptions(t *testing.T, options ServerOptions) *Server {
+	t.Helper()
+	d, err := db.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
+	return NewServerWithOptions(d, t.TempDir(), nil, options)
+}
+
 func newTestServerWithDir(t *testing.T, dir string) *Server {
 	t.Helper()
 	d, err := db.Open(":memory:")

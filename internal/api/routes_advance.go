@@ -402,7 +402,7 @@ func (s *Server) handleTalentDescription(w http.ResponseWriter, r *http.Request)
 		systemLabel, name,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(s.rootCtx, 15*time.Second)
 	defer cancel()
 
 	desc, err := completer.Generate(ctx, prompt, 120)

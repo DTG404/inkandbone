@@ -49,15 +49,18 @@ type Client struct {
 
 // NewClient returns a Client using the production Anthropic API URL.
 func NewClient(apiKey string) *Client {
-	return &Client{apiKey: apiKey, url: defaultURL, http: &http.Client{}}
+	return &Client{apiKey: apiKey, url: defaultURL, http: NewHTTPClient()}
 }
 
 // NewClientWithURL returns a Client using a custom URL (for tests).
 func NewClientWithURL(apiKey, url string) *Client {
-	return &Client{apiKey: apiKey, url: url, http: &http.Client{}}
+	return &Client{apiKey: apiKey, url: url, http: NewHTTPClient()}
 }
 
 func (c *Client) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
+
 	body, err := json.Marshal(map[string]any{
 		"model":      model,
 		"max_tokens": maxTokens,
@@ -100,6 +103,9 @@ func (c *Client) Generate(ctx context.Context, prompt string, maxTokens int) (st
 }
 
 func (c *Client) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	msgs := make([]map[string]any, len(history))
 	for i, m := range history {
 		msgs[i] = map[string]any{"role": m.Role, "content": m.Content}
@@ -161,6 +167,9 @@ func stripEmDash(s string) string {
 // writes each text delta as an SSE data line to w. It returns the full
 // accumulated response text so the caller can persist it.
 func (c *Client) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	msgs := make([]map[string]any, len(history))
 	for i, m := range history {
 		msgs[i] = map[string]any{"role": m.Role, "content": m.Content}

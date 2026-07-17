@@ -1095,24 +1095,24 @@ The base prompt above says "the player controls only their character" — that r
 	}
 
 	s.autoRevealZones(r.Context(), id, fullText)
-	go s.extractNPCs(context.Background(), id, fullText)
-	go s.autoGenerateMap(context.Background(), id, fullText)
-	go s.autoUpdateCharacterStats(context.Background(), id, lastPlayerMsg, fullText)
-	go s.autoUpdateRecap(context.Background(), id)
-	go s.autoDetectObjectives(context.Background(), id, fullText)
-	go s.autoExtractItems(context.Background(), id, fullText)
-	go s.autoUpdateCurrency(context.Background(), id, fullText)
+	go s.extractNPCs(s.rootCtx, id, fullText)
+	go s.autoGenerateMap(s.rootCtx, id, fullText)
+	go s.autoUpdateCharacterStats(s.rootCtx, id, lastPlayerMsg, fullText)
+	go s.autoUpdateRecap(s.rootCtx, id)
+	go s.autoDetectObjectives(s.rootCtx, id, fullText)
+	go s.autoExtractItems(s.rootCtx, id, fullText)
+	go s.autoUpdateCurrency(s.rootCtx, id, fullText)
 	tensionText := fullText
 	if roll != nil && !roll.Success {
 		tensionText = "critical failure " + fullText
 	}
 	go s.autoUpdateTension(id, tensionText)
-	go s.autoUpdateMasquerade(context.Background(), id, fullText)
-	go s.autoUpdateSceneTags(context.Background(), id, fullText)
-	go s.autoUpdateChronicleNight(context.Background(), id, fullText)
-	go s.autoVtMDisciplineRouseChecks(context.Background(), id, lastPlayerMsg, fullText)
-	go s.autoDetectVtMEmbrace(context.Background(), id, fullText)
-	go s.autoDetectVtMNightDOW(context.Background(), id, fullText)
+	go s.autoUpdateMasquerade(s.rootCtx, id, fullText)
+	go s.autoUpdateSceneTags(s.rootCtx, id, fullText)
+	go s.autoUpdateChronicleNight(s.rootCtx, id, fullText)
+	go s.autoVtMDisciplineRouseChecks(s.rootCtx, id, lastPlayerMsg, fullText)
+	go s.autoDetectVtMEmbrace(s.rootCtx, id, fullText)
+	go s.autoDetectVtMNightDOW(s.rootCtx, id, fullText)
 }
 
 // handleTyping broadcasts a typing indicator from a player agent (e.g. Nyx).
@@ -1371,7 +1371,7 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 	// VtM: detect Humanity-violating acts and increment stains (async, non-blocking).
 	// Mortals do not have a Humanity/Stains track.
 	if ruleset.Name == "vtm" && vtmCharType != "mortal" {
-		go s.detectAndApplyVtMStains(context.Background(), sessionID, playerAction+" "+gmText)
+		go s.detectAndApplyVtMStains(s.rootCtx, sessionID, playerAction+" "+gmText)
 	}
 
 	schema := ruleset.SchemaJSON
@@ -1798,7 +1798,7 @@ If there are no good suggestions, return an empty JSON array: []
 		fieldHintsSection,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
 	defer cancel()
 
 	var raw string

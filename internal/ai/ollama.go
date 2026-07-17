@@ -26,12 +26,12 @@ type OllamaClient struct {
 // NewOllamaClient creates an OllamaClient for the given model using the default
 // localhost:11434 base URL. Override with OLLAMA_HOST env var via NewOllamaClientWithURL.
 func NewOllamaClient(model string) *OllamaClient {
-	return &OllamaClient{model: model, baseURL: defaultOllamaURL, http: &http.Client{}}
+	return &OllamaClient{model: model, baseURL: defaultOllamaURL, http: NewHTTPClient()}
 }
 
 // NewOllamaClientWithURL is like NewOllamaClient but uses the given base URL (for tests).
 func NewOllamaClientWithURL(model, baseURL string) *OllamaClient {
-	return &OllamaClient{model: model, baseURL: baseURL, http: &http.Client{}}
+	return &OllamaClient{model: model, baseURL: baseURL, http: NewHTTPClient()}
 }
 
 // NewOllamaGMClient creates an OllamaClient tuned for GM roleplay:
@@ -43,7 +43,7 @@ func NewOllamaGMClient(model string) *OllamaClient {
 	return &OllamaClient{
 		model:   model,
 		baseURL: defaultOllamaURL,
-		http:    &http.Client{},
+		http:    NewHTTPClient(),
 		options: map[string]any{
 			"num_ctx":        16384,
 			"temperature":    0.85,
@@ -58,11 +58,15 @@ func NewOllamaGMClient(model string) *OllamaClient {
 
 // Generate implements Completer. Sends a single-turn prompt and returns the response.
 func (c *OllamaClient) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
 	return c.chatOnce(ctx, "", []ChatMessage{{Role: "user", Content: prompt}}, maxTokens)
 }
 
 // Respond implements Responder. Sends a multi-turn conversation with a system prompt.
 func (c *OllamaClient) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
 	text, err := c.chatOnce(ctx, system, history, maxTokens)
 	if err != nil {
 		return "", err
@@ -75,6 +79,9 @@ func (c *OllamaClient) Respond(ctx context.Context, system string, history []Cha
 
 // StreamRespond implements Streamer. Streams the response as SSE data lines to w.
 func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	msgs := ollamaMessages(c.applyThink(system), history)
 	payload := map[string]any{
 		"model":      c.model,

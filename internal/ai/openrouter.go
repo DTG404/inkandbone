@@ -19,12 +19,12 @@ const (
 // OpenRouterClient calls the OpenRouter API using the OpenAI-compatible endpoint.
 // It implements Completer, Responder, and Streamer.
 type OpenRouterClient struct {
-	apiKey      string
-	model       string
-	http        *http.Client
-	think       bool // strip <think>...</think> blocks from responses
+	apiKey            string
+	model             string
+	http              *http.Client
+	think             bool // strip <think>...</think> blocks from responses
 	suppressReasoning bool // send "reasoning": {"exclude": true} to suppress server-side thinking tokens
-	options     map[string]any
+	options           map[string]any
 }
 
 // NewOpenRouterClient returns a GM client for DeepSeek V4 Flash:
@@ -33,7 +33,7 @@ func NewOpenRouterClient(apiKey string) *OpenRouterClient {
 	return &OpenRouterClient{
 		apiKey:            apiKey,
 		model:             OpenRouterModel,
-		http:              &http.Client{},
+		http:              NewHTTPClient(),
 		think:             true,
 		suppressReasoning: true,
 		options: map[string]any{
@@ -49,7 +49,7 @@ func newOpenRouterClientWithModel(apiKey, model string) *OpenRouterClient {
 	return &OpenRouterClient{
 		apiKey:            apiKey,
 		model:             model,
-		http:              &http.Client{},
+		http:              NewHTTPClient(),
 		think:             true,
 		suppressReasoning: true,
 	}
@@ -61,15 +61,19 @@ func newOpenRouterAutoClient(apiKey, model string) *OpenRouterClient {
 	return &OpenRouterClient{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 	}
 }
 
 func (c *OpenRouterClient) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
 	return c.chatOnce(ctx, "", []ChatMessage{{Role: "user", Content: prompt}}, maxTokens)
 }
 
 func (c *OpenRouterClient) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
 	text, err := c.chatOnce(ctx, system, history, maxTokens)
 	if err != nil {
 		return "", err
@@ -81,6 +85,9 @@ func (c *OpenRouterClient) Respond(ctx context.Context, system string, history [
 }
 
 func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	payload := map[string]any{
 		"model":      c.model,
 		"max_tokens": maxTokens,

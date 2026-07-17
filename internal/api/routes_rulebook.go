@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -121,7 +120,7 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 	// Embed new chunks asynchronously; invalidate cache for this ruleset.
 	s.embCache.Delete(rulesetID)
 	go func() {
-		ctx := context.Background()
+		ctx := s.rootCtx
 		pending, err := s.db.ListChunksForEmbedding(rulesetID)
 		if err != nil {
 			return

@@ -44,7 +44,7 @@ func TestRulesets(t *testing.T) {
 
 	list, err := d.ListRulesets()
 	require.NoError(t, err)
-	assert.Len(t, list, 15)
+	assert.Len(t, list, 14)
 }
 
 func TestRulesetGMContext(t *testing.T) {

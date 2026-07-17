@@ -39,6 +39,14 @@ var repairMigrations = map[string]struct{}{
 	"056_integrity_repair.sql": {},
 }
 
+// foreignKeyRebuildMigrations contains the exact repair scripts that rebuild
+// referenced parent tables. SQLite cannot change foreign-key enforcement from
+// inside a transaction, so the runner temporarily disables it on the held,
+// exclusively locked connection around only these scripts.
+var foreignKeyRebuildMigrations = map[string]struct{}{
+	"056_integrity_repair.sql": {},
+}
+
 // Open opens (or creates) the SQLite database at path and runs pending migrations.
 // Creates parent directories if they do not exist.
 func Open(path string) (*DB, error) {
@@ -126,6 +134,7 @@ type migrationRunOptions struct {
 	databasePath         string
 	backupBeforeRepair   bool
 	repairMigrations     map[string]struct{}
+	foreignKeyRebuilds   map[string]struct{}
 	afterValidatedBackup func(path string)
 	afterMigration       func(filename string)
 }
@@ -135,6 +144,7 @@ func runMigrations(db *sql.DB, databasePath string, opts OpenOptions) (string, e
 		databasePath:       databasePath,
 		backupBeforeRepair: opts.BackupBeforeRepair,
 		repairMigrations:   repairMigrations,
+		foreignKeyRebuilds: foreignKeyRebuildMigrations,
 	})
 }
 
@@ -230,20 +240,9 @@ func runMigrationsFromFS(db *sql.DB, source fs.FS, directory string, opts migrat
 		if err != nil {
 			return backupPath, migrationError(version, backupPath, err)
 		}
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return backupPath, migrationError(version, backupPath, fmt.Errorf("begin transaction: %w", err))
-		}
-		if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
-			_ = tx.Rollback()
+		_, rebuildsForeignKeys := opts.foreignKeyRebuilds[entry.Name()]
+		if err := runMigrationScript(ctx, conn, version, string(sqlBytes), rebuildsForeignKeys); err != nil {
 			return backupPath, migrationError(version, backupPath, err)
-		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (version) VALUES (?)", version); err != nil {
-			_ = tx.Rollback()
-			return backupPath, migrationError(version, backupPath, fmt.Errorf("record migration: %w", err))
-		}
-		if err := tx.Commit(); err != nil {
-			return backupPath, migrationError(version, backupPath, fmt.Errorf("commit: %w", err))
 		}
 		if opts.afterMigration != nil {
 			opts.afterMigration(entry.Name())
@@ -253,6 +252,56 @@ func runMigrationsFromFS(db *sql.DB, source fs.FS, directory string, opts migrat
 		return backupPath, err
 	}
 	return backupPath, nil
+}
+
+func runMigrationScript(ctx context.Context, conn *sql.Conn, version, script string, rebuildsForeignKeys bool) (err error) {
+	if rebuildsForeignKeys {
+		if err := setForeignKeyEnforcement(ctx, conn, false); err != nil {
+			return err
+		}
+		defer func() {
+			if restoreErr := setForeignKeyEnforcement(ctx, conn, true); restoreErr != nil {
+				err = errors.Join(err, restoreErr)
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, script); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (version) VALUES (?)", version); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("record migration: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+func setForeignKeyEnforcement(ctx context.Context, conn *sql.Conn, enabled bool) error {
+	value := 0
+	pragma := "PRAGMA foreign_keys=OFF"
+	if enabled {
+		value = 1
+		pragma = "PRAGMA foreign_keys=ON"
+	}
+	if _, err := conn.ExecContext(ctx, pragma); err != nil {
+		return fmt.Errorf("set foreign_keys=%d: %w", value, err)
+	}
+	var got int
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&got); err != nil {
+		return fmt.Errorf("verify foreign_keys=%d: %w", value, err)
+	}
+	if got != value {
+		return fmt.Errorf("set foreign_keys=%d: SQLite returned %d", value, got)
+	}
+	return nil
 }
 
 func acquireExclusiveMigrationLock(ctx context.Context, conn *sql.Conn) error {

@@ -77,6 +77,10 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/files" || strings.HasPrefix(r.URL.Path, "/api/files/") {
+		http.NotFound(w, r)
+		return
+	}
 	if s.sessions != nil && s.isProtectedPath(r) && !s.requireAuthentication(w, r) {
 		return
 	}
@@ -157,10 +161,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/context", s.handleGetContext)
 	// Plan 7
 	s.mux.HandleFunc("GET /api/sessions/{id}/timeline", s.handleGetTimeline)
-	// Typed assets and temporary exact compatibility for generated-map links.
+	// Typed database-backed assets.
 	s.mux.HandleFunc("GET /api/assets/maps/{id}", s.handleMapAsset)
 	s.mux.HandleFunc("GET /api/assets/portraits/{id}", s.handlePortraitAsset)
-	s.mux.HandleFunc("GET /api/files/maps/{filename}", s.handleLegacyMapAsset)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/maps", s.handleListMaps)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/maps", s.handleUploadMap)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/maps/generate", s.handleGenerateMap)

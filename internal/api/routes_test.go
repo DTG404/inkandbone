@@ -406,12 +406,8 @@ func TestServeFile_traversalCannotServe(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/files/../etc/passwd", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	require.Equal(t, http.StatusTemporaryRedirect, w.Code)
-	assert.Equal(t, "/api/etc/passwd", w.Header().Get("Location"))
-
-	followed := getAsset(t, s, w.Header().Get("Location"))
-	assert.Equal(t, http.StatusNotFound, followed.Code)
-	assert.NotContains(t, followed.Body.String(), "arbitrary-file-sentinel")
+	require.Equal(t, http.StatusNotFound, w.Code)
+	assert.NotContains(t, w.Body.String(), "arbitrary-file-sentinel")
 }
 
 func TestListMaps_empty(t *testing.T) {

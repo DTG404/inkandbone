@@ -252,46 +252,27 @@ func TestAssetRouteCannotServeDatabaseOrFilename(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, getAsset(t, s, fmt.Sprintf("/api/assets/maps/%d/world.png", mapID)).Code)
 }
 
-func TestAssetLegacyMapRedirectRequiresExactUnambiguousDatabasePath(t *testing.T) {
+func TestAssetLegacyFileSurfaceIsRemoved(t *testing.T) {
 	dataDir := t.TempDir()
 	writeAssetFile(t, dataDir, "maps/world.png", validPNG)
 	s := newTestServerWithDir(t, dataDir)
 	campaignID, _ := seedCampaign(t, s.db)
-	mapID := createAssetMap(t, s, campaignID, "maps/world.png")
-
-	w := getAsset(t, s, "/api/files/maps/world.png")
-	require.Equal(t, http.StatusTemporaryRedirect, w.Code)
-	assert.Equal(t, "/api/assets/maps/"+strconv.FormatInt(mapID, 10), w.Header().Get("Location"))
+	createAssetMap(t, s, campaignID, "maps/world.png")
 
 	tests := []string{
+		"/api/files",
+		"/api/files/",
 		"/api/files/ttrpg.db",
 		"/api/files/portraits/world.png",
-		"/api/files/maps/unknown.png",
+		"/api/files/maps/world.png",
 		"/api/files/maps/subdir/world.png",
 		"/api/files/maps/%2e%2e%2fworld.png",
 		"/api/files/maps/world.png/extra",
+		"/api/files/maps/subdir/../world.png",
 	}
 	for _, url := range tests {
 		t.Run(url, func(t *testing.T) {
 			assert.Equal(t, http.StatusNotFound, getAsset(t, s, url).Code)
 		})
 	}
-
-	_, err := s.db.CreateMap(campaignID, "Duplicate", "maps/world.png")
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusNotFound, getAsset(t, s, "/api/files/maps/world.png").Code)
-}
-
-func TestLegacyMapSubdirectoryCanonicalizationFailsClosed(t *testing.T) {
-	dataDir := t.TempDir()
-	writeAssetFile(t, dataDir, "maps/world.png", validPNG)
-	s := newTestServerWithDir(t, dataDir)
-
-	w := getAsset(t, s, "/api/files/maps/subdir/../world.png")
-	require.Equal(t, http.StatusTemporaryRedirect, w.Code)
-	assert.Equal(t, "/api/files/maps/world.png", w.Header().Get("Location"))
-
-	followed := getAsset(t, s, w.Header().Get("Location"))
-	assert.Equal(t, http.StatusNotFound, followed.Code)
-	assert.NotEqual(t, validPNG, followed.Body.Bytes())
 }

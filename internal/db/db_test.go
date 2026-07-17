@@ -395,6 +395,7 @@ func TestBackupDatabaseCleansPrivateStageAfterValidationFailure(t *testing.T) {
 	d, err := Open(path)
 	require.NoError(t, err)
 	defer d.Close()
+	baselineBackups := backupFiles(t, path)
 
 	var stageDir string
 	_, err = backupDatabaseWithHooks(d.SQL(), path, backupHooks{
@@ -414,7 +415,7 @@ func TestBackupDatabaseCleansPrivateStageAfterValidationFailure(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "validate backup")
 	assert.NoDirExists(t, stageDir)
-	assert.Empty(t, backupFiles(t, path))
+	assert.Equal(t, baselineBackups, backupFiles(t, path), "failed manual backup must publish no additional file")
 }
 
 func TestBackupDatabasePublishCollisionPreservesExistingTarget(t *testing.T) {
@@ -462,5 +463,5 @@ func TestRulesets_SeededByMigration(t *testing.T) {
 	for i, r := range list {
 		names[i] = r.Name
 	}
-	assert.ElementsMatch(t, []string{"dnd5e", "ironsworn", "vtm", "coc", "cyberpunk", "shadowrun", "wfrp", "starwars", "l5r", "theonering", "wrath_glory", "blades", "paranoia", "my_ruleset", "dune"}, names)
+	assert.ElementsMatch(t, []string{"dnd5e", "ironsworn", "vtm", "coc", "cyberpunk", "shadowrun", "wfrp", "starwars", "l5r", "theonering", "wrath_glory", "blades", "paranoia", "dune"}, names)
 }

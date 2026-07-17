@@ -120,29 +120,6 @@ func TestListMaps(t *testing.T) {
 	assert.Equal(t, "maps/abc.jpg", maps[0].ImagePath)
 }
 
-func TestGetMapByImagePathRequiresExactUnambiguousMatch(t *testing.T) {
-	d := newTestDB(t)
-	campID := setupCampaign(t, d)
-
-	mapID, err := d.CreateMap(campID, "World Map", "maps/world.png")
-	require.NoError(t, err)
-
-	m, err := d.GetMapByImagePath("maps/world.png")
-	require.NoError(t, err)
-	require.NotNil(t, m)
-	assert.Equal(t, mapID, m.ID)
-
-	m, err = d.GetMapByImagePath("world.png")
-	require.NoError(t, err)
-	assert.Nil(t, m)
-
-	_, err = d.CreateMap(campID, "Duplicate", "maps/world.png")
-	require.NoError(t, err)
-	m, err = d.GetMapByImagePath("maps/world.png")
-	require.NoError(t, err)
-	assert.Nil(t, m)
-}
-
 func TestFindWorldNoteByTitle(t *testing.T) {
 	d := newTestDB(t)
 	campID := setupCampaign(t, d)

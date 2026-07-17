@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 )
@@ -235,26 +234,4 @@ func serveOpenedAsset(w http.ResponseWriter, r *http.Request, f *os.File, filena
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", disposition)
 	http.ServeContent(w, r, filepath.Base(filename), info.ModTime(), f)
-}
-
-func (s *Server) handleLegacyMapAsset(w http.ResponseWriter, r *http.Request) {
-	filename := r.PathValue("filename")
-	if filename == "" || filename != filepath.Base(filename) || strings.ContainsAny(filename, `/\\`) {
-		http.NotFound(w, r)
-		return
-	}
-	if _, ok := mapAssetTypes[strings.ToLower(filepath.Ext(filename))]; !ok {
-		http.NotFound(w, r)
-		return
-	}
-	m, err := s.db.GetMapByImagePath("maps/" + filename)
-	if err != nil {
-		http.Error(w, "failed to load map", http.StatusInternalServerError)
-		return
-	}
-	if m == nil {
-		http.NotFound(w, r)
-		return
-	}
-	http.Redirect(w, r, "/api/assets/maps/"+strconv.FormatInt(m.ID, 10), http.StatusTemporaryRedirect)
 }

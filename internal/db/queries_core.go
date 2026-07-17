@@ -76,16 +76,16 @@ func (d *DB) ListRulesets() ([]Ruleset, error) {
 // --- Campaigns ---
 
 type Campaign struct {
-	ID                    int64  `json:"id"`
-	RulesetID             int64  `json:"ruleset_id"`
-	Name                  string `json:"name"`
-	Description           string `json:"description"`
-	Active                bool   `json:"active"`
-	ChronicleNight        int    `json:"chronicle_night"`
-	ChronicleNightStartDOW int   `json:"chronicle_night_start_dow"`
-	GmNotes               string `json:"gm_notes"`
-	SystemPromptOverride  string `json:"system_prompt_override"`
-	CreatedAt             string `json:"created_at"`
+	ID                     int64  `json:"id"`
+	RulesetID              int64  `json:"ruleset_id"`
+	Name                   string `json:"name"`
+	Description            string `json:"description"`
+	Active                 bool   `json:"active"`
+	ChronicleNight         int    `json:"chronicle_night"`
+	ChronicleNightStartDOW int    `json:"chronicle_night_start_dow"`
+	GmNotes                string `json:"gm_notes"`
+	SystemPromptOverride   string `json:"system_prompt_override"`
+	CreatedAt              string `json:"created_at"`
 }
 
 func (d *DB) CreateCampaign(rulesetID int64, name, description string) (int64, error) {
@@ -122,7 +122,7 @@ func (d *DB) ListCampaigns() ([]Campaign, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer 	rows.Close()
+	defer rows.Close()
 	var out []Campaign
 	for rows.Next() {
 		var c Campaign
@@ -312,16 +312,14 @@ func (d *DB) ListCharacters(campaignID int64) ([]Character, error) {
 	return out, rows.Err()
 }
 
-// DeleteCharacter removes a character and all its items.
+// DeleteCharacter removes a character. Declared foreign-key actions cascade
+// owned rows and clear optional references atomically with the parent delete.
 func (d *DB) DeleteCharacter(id int64) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec("DELETE FROM items WHERE character_id = ?", id); err != nil {
-		return err
-	}
 	if _, err := tx.Exec("DELETE FROM characters WHERE id = ?", id); err != nil {
 		return err
 	}
@@ -402,22 +400,8 @@ func (d *DB) DeleteCampaign(id int64) error {
 	}
 	defer tx.Rollback()
 
-	stmts := []string{
-		`DELETE FROM dice_rolls WHERE session_id IN (SELECT id FROM sessions WHERE campaign_id = ?)`,
-		`DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE campaign_id = ?)`,
-		`DELETE FROM combatants WHERE encounter_id IN (SELECT id FROM combat_encounters WHERE session_id IN (SELECT id FROM sessions WHERE campaign_id = ?))`,
-		`DELETE FROM combat_encounters WHERE session_id IN (SELECT id FROM sessions WHERE campaign_id = ?)`,
-		`DELETE FROM sessions WHERE campaign_id = ?`,
-		`DELETE FROM world_notes WHERE campaign_id = ?`,
-		`DELETE FROM map_pins WHERE map_id IN (SELECT id FROM maps WHERE campaign_id = ?)`,
-		`DELETE FROM maps WHERE campaign_id = ?`,
-		`DELETE FROM characters WHERE campaign_id = ?`,
-		`DELETE FROM campaigns WHERE id = ?`,
-	}
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(stmt, id); err != nil {
-			return fmt.Errorf("delete campaign %d: %w", id, err)
-		}
+	if _, err := tx.Exec(`DELETE FROM campaigns WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete campaign %d: %w", id, err)
 	}
 	return tx.Commit()
 }

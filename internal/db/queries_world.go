@@ -197,35 +197,6 @@ func (d *DB) GetMap(id int64) (*Map, error) {
 	return m, err
 }
 
-// GetMapByImagePath returns a map only when imagePath has exactly one matching
-// database record. Legacy path compatibility must fail closed on ambiguous rows.
-func (d *DB) GetMapByImagePath(imagePath string) (*Map, error) {
-	rows, err := d.db.Query(
-		"SELECT id, campaign_id, name, image_path, created_at FROM maps WHERE image_path = ? ORDER BY id LIMIT 2",
-		imagePath,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var matches []Map
-	for rows.Next() {
-		var m Map
-		if err := rows.Scan(&m.ID, &m.CampaignID, &m.Name, &m.ImagePath, &m.CreatedAt); err != nil {
-			return nil, err
-		}
-		matches = append(matches, m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(matches) != 1 {
-		return nil, nil
-	}
-	return &matches[0], nil
-}
-
 func (d *DB) ListMaps(campaignID int64) ([]Map, error) {
 	rows, err := d.db.Query(
 		"SELECT id, campaign_id, name, image_path, created_at FROM maps WHERE campaign_id = ? ORDER BY created_at",

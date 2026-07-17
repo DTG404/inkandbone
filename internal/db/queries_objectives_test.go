@@ -52,3 +52,24 @@ func TestDeleteObjectiveCascadesSubTasks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, all, "sub-tasks should be deleted with parent")
 }
+
+func TestDeleteObjectiveCascadesNestedDescendants(t *testing.T) {
+	d := newTestDB(t)
+	rulesetID, err := d.CreateRuleset("nested_objectives", `{}`, "1")
+	require.NoError(t, err)
+	campaignID, err := d.CreateCampaign(rulesetID, "Camp", "")
+	require.NoError(t, err)
+
+	root, err := d.CreateObjective(campaignID, "Root", "", nil)
+	require.NoError(t, err)
+	child, err := d.CreateObjective(campaignID, "Child", "", &root.ID)
+	require.NoError(t, err)
+	_, err = d.CreateObjective(campaignID, "Grandchild", "", &child.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, d.DeleteObjective(root.ID))
+	objectives, err := d.ListObjectives(campaignID)
+	require.NoError(t, err)
+	assert.Empty(t, objectives)
+	require.NoError(t, foreignKeyCheck(d.db))
+}

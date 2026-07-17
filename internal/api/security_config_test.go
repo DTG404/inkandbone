@@ -36,6 +36,12 @@ func TestValidateListenSecurity(t *testing.T) {
 		{name: "IPv4 loopback needs no auth", addr: "127.0.0.1:7432"},
 		{name: "IPv6 loopback needs no auth", addr: "[::1]:7432"},
 		{name: "localhost needs no auth", addr: "localhost:7432"},
+		{
+			name:    "loopback rejects a blank allowed origin",
+			addr:    "127.0.0.1:7432",
+			cfg:     ListenSecurityConfig{AllowedOrigins: []string{" "}},
+			wantErr: "allowed origin",
+		},
 		{name: "public IPv4 needs secret", addr: "0.0.0.0:7432", wantErr: "TTRPG_AUTH_SECRET"},
 		{name: "public IPv6 needs secret", addr: "[::]:7432", wantErr: "TTRPG_AUTH_SECRET"},
 		{name: "hostname needs secret", addr: "table.example:7432", wantErr: "TTRPG_AUTH_SECRET"},
@@ -95,6 +101,39 @@ func TestValidateListenSecurity(t *testing.T) {
 				AllowedOrigins: []string{"https://table.example"},
 			},
 			wantErr: "valid TLS certificate and key",
+		},
+		{
+			name: "public rejects an empty allowed origin",
+			addr: "0.0.0.0:7432",
+			cfg: ListenSecurityConfig{
+				AuthSecret:     secret,
+				TLSCertFile:    certFile,
+				TLSKeyFile:     keyFile,
+				AllowedOrigins: []string{""},
+			},
+			wantErr: "allowed origin",
+		},
+		{
+			name: "public rejects a whitespace allowed origin",
+			addr: "0.0.0.0:7432",
+			cfg: ListenSecurityConfig{
+				AuthSecret:     secret,
+				TLSCertFile:    certFile,
+				TLSKeyFile:     keyFile,
+				AllowedOrigins: []string{"  \t"},
+			},
+			wantErr: "allowed origin",
+		},
+		{
+			name: "public rejects a blank among allowed origins",
+			addr: "0.0.0.0:7432",
+			cfg: ListenSecurityConfig{
+				AuthSecret:     secret,
+				TLSCertFile:    certFile,
+				TLSKeyFile:     keyFile,
+				AllowedOrigins: []string{"https://table.example", " "},
+			},
+			wantErr: "allowed origin",
 		},
 		{name: "public complete", addr: "0.0.0.0:7432", cfg: publicConfig},
 	}

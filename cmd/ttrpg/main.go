@@ -86,6 +86,7 @@ func main() {
 	}
 
 	httpServer := api.NewServer(database, dataDir, aiClient)
+	httpServer.SetAllowedOrigins(securityConfig.AllowedOrigins)
 
 	distFS, err := fs.Sub(ttrpgweb.Static, "dist")
 	if err != nil {

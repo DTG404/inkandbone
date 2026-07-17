@@ -14,16 +14,16 @@ import (
 
 // Server holds dependencies and registers routes.
 type Server struct {
-	db               *db.DB
-	hub              *Hub
-	bus              *Bus
-	mux              *http.ServeMux
-	dataDir          string
-	aiClient         ai.Completer // nil when ANTHROPIC_API_KEY is unset
-	xpSuggestCounts  sync.Map     // sessionID int64 → int
-	settingCache     sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
-	embCache         sync.Map     // rulesetID int64 → []db.RulebookChunk
-	autoFailCount    int32        // incremented on automation failure, reset on success; circuit breaker at 3
+	db              *db.DB
+	hub             *Hub
+	bus             *Bus
+	mux             *http.ServeMux
+	dataDir         string
+	aiClient        ai.Completer // nil when ANTHROPIC_API_KEY is unset
+	xpSuggestCounts sync.Map     // sessionID int64 → int
+	settingCache    sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
+	embCache        sync.Map     // rulesetID int64 → []db.RulebookChunk
+	autoFailCount   int32        // incremented on automation failure, reset on success; circuit breaker at 3
 }
 
 // NewServer creates the HTTP server. dataDir is the base path for uploaded files
@@ -50,6 +50,12 @@ func NewServer(database *db.DB, dataDir string, aiClient ai.Completer) *Server {
 
 // Bus returns the event bus so the MCP server can publish events.
 func (s *Server) Bus() *Bus { return s.bus }
+
+// SetAllowedOrigins configures explicit WebSocket origins in addition to the
+// request's own origin.
+func (s *Server) SetAllowedOrigins(origins []string) {
+	s.hub.SetAllowedOrigins(origins)
+}
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Block path traversal attempts on file-serving routes before the mux

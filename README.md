@@ -895,7 +895,7 @@ Run the browser smoke and security suite with:
 make e2e
 ```
 
-The E2E suite requires Playwright Chromium and the `openssl` executable. `make e2e` builds the current embedded frontend/server binary first. Each run uses a unique temporary directory for its SQLite database, sidecars, backups, uploaded assets, and generated one-day TLS key pair; the directory is recursively removed after the test server shuts down.
+The E2E suite requires Playwright Chromium and the `openssl` executable. `make e2e` builds the current embedded frontend/server binary first. Its lifecycle runner creates a unique temporary directory for the SQLite database, sidecars, backups, uploaded assets, and generated one-day TLS key pair; starts the exact test server; runs Playwright; terminates and reaps the test and server processes; and only then recursively removes that directory.
 
 ---
 

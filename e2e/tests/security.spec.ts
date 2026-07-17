@@ -9,12 +9,10 @@ import os from 'os'
 import path from 'path'
 import {
   createE2ERunDirectory,
-  E2E_RUN_DIRECTORY_ENV,
-  getOrCreateE2ERunDirectory,
   removeE2ERunDirectory,
   sanitizedE2EEnvironment,
   TTRPG_SERVER_ENVIRONMENT_KEYS,
-} from '../environment'
+} from '../environment.mjs'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -303,17 +301,6 @@ function expectIsolatedRecursiveCleanup(): void {
     removeE2ERunDirectory(second)
   }
 
-  const previousRunDirectory = process.env[E2E_RUN_DIRECTORY_ENV]
-  let shared: string | undefined
-  try {
-    delete process.env[E2E_RUN_DIRECTORY_ENV]
-    shared = getOrCreateE2ERunDirectory()
-    expect(getOrCreateE2ERunDirectory()).toBe(shared)
-  } finally {
-    if (shared) removeE2ERunDirectory(shared)
-    if (previousRunDirectory === undefined) delete process.env[E2E_RUN_DIRECTORY_ENV]
-    else process.env[E2E_RUN_DIRECTORY_ENV] = previousRunDirectory
-  }
 }
 
 test.describe('phase one security boundaries', () => {

@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "playwright test",
-    "test:ui": "playwright test --ui",
-    "test:headed": "playwright test --headed"
+    "test": "npm run test:lifecycle && node lifecycle.mjs",
+    "test:lifecycle": "node --test lifecycle.test.mjs",
+    "test:ui": "node lifecycle.mjs --ui",
+    "test:headed": "node lifecycle.mjs --headed"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1"

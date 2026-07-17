@@ -1,7 +1,9 @@
 package db
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,8 +13,8 @@ import (
 // integrityCheck verifies the physical and structural consistency of a SQLite
 // database. It intentionally does not perform a foreign-key check: a backup
 // taken immediately before a repair migration must preserve logical orphans.
-func integrityCheck(db *sql.DB) error {
-	rows, err := db.Query("PRAGMA integrity_check")
+func integrityCheck(db sqlQueryer) error {
+	rows, err := db.QueryContext(context.Background(), "PRAGMA integrity_check")
 	if err != nil {
 		return fmt.Errorf("run integrity_check: %w", err)
 	}
@@ -40,8 +42,8 @@ func integrityCheck(db *sql.DB) error {
 // foreignKeyCheck verifies that no committed row violates a declared foreign
 // key. It is run after migrations, so a registered repair gets an opportunity
 // to quarantine or repair pre-existing orphans first.
-func foreignKeyCheck(db *sql.DB) error {
-	rows, err := db.Query("PRAGMA foreign_key_check")
+func foreignKeyCheck(db sqlQueryer) error {
+	rows, err := db.QueryContext(context.Background(), "PRAGMA foreign_key_check")
 	if err != nil {
 		return fmt.Errorf("run foreign_key_check: %w", err)
 	}
@@ -70,40 +72,64 @@ func foreignKeyCheck(db *sql.DB) error {
 	return nil
 }
 
+type sqlExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+type sqlQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type backupHooks struct {
+	afterStageReady func(stageDirectory, stagedDatabase string) error
+	beforePublish   func(backupPath string) error
+}
+
 // backupDatabase creates a consistent, independently validated SQLite copy
-// next to databasePath. The temporary output is never published as a backup;
-// only a chmod'd and validated file is atomically renamed into place.
-func backupDatabase(db *sql.DB, databasePath string) (backupPath string, err error) {
+// next to databasePath.
+func backupDatabase(db sqlExecer, databasePath string) (string, error) {
+	return backupDatabaseWithHooks(db, databasePath, backupHooks{})
+}
+
+// backupDatabaseWithHooks stages the SQLite output in a private adjacent
+// directory. Only a protected, validated file is atomically hard-linked to its
+// final name, so a raced destination is never replaced.
+func backupDatabaseWithHooks(db sqlExecer, databasePath string, hooks backupHooks) (backupPath string, err error) {
 	if databasePath == ":memory:" {
 		return "", nil
 	}
 
-	temporary, err := os.CreateTemp(filepath.Dir(databasePath), filepath.Base(databasePath)+".backup-*.tmp")
+	stagePrefix := "." + filepath.Base(databasePath) + ".backup-stage-"
+	stageDirectory, err := os.MkdirTemp(filepath.Dir(databasePath), stagePrefix+"*")
 	if err != nil {
-		return "", fmt.Errorf("reserve backup path: %w", err)
+		return "", fmt.Errorf("create private backup stage: %w", err)
 	}
-	temporaryPath := temporary.Name()
-	if err := temporary.Close(); err != nil {
-		_ = os.Remove(temporaryPath)
-		return "", fmt.Errorf("close backup reservation: %w", err)
-	}
-	if err := os.Remove(temporaryPath); err != nil {
-		return "", fmt.Errorf("prepare backup path: %w", err)
+	if err := os.Chmod(stageDirectory, 0700); err != nil {
+		_ = os.RemoveAll(stageDirectory)
+		return "", fmt.Errorf("protect backup stage: %w", err)
 	}
 	defer func() {
-		if err != nil {
-			_ = os.Remove(temporaryPath)
+		if cleanupErr := os.RemoveAll(stageDirectory); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("clean backup stage: %w", cleanupErr))
 		}
 	}()
+	stagedDatabase := filepath.Join(stageDirectory, "database.sqlite")
+	suffix := strings.TrimPrefix(filepath.Base(stageDirectory), stagePrefix)
+	backupPath = databasePath + ".backup-" + suffix
 
-	if _, err = db.Exec("VACUUM INTO ?", temporaryPath); err != nil {
+	if _, err = db.ExecContext(context.Background(), "VACUUM INTO ?", stagedDatabase); err != nil {
 		return "", fmt.Errorf("vacuum backup: %w", err)
 	}
-	if err = os.Chmod(temporaryPath, 0600); err != nil {
+	if err = os.Chmod(stagedDatabase, 0600); err != nil {
 		return "", fmt.Errorf("protect backup: %w", err)
 	}
+	if hooks.afterStageReady != nil {
+		if err = hooks.afterStageReady(stageDirectory, stagedDatabase); err != nil {
+			return "", fmt.Errorf("inspect backup stage: %w", err)
+		}
+	}
 
-	backup, openErr := sql.Open("sqlite", sqliteDSN(temporaryPath))
+	backup, openErr := sql.Open("sqlite", sqliteDSN(stagedDatabase))
 	if openErr != nil {
 		return "", fmt.Errorf("open backup for validation: %w", openErr)
 	}
@@ -117,8 +143,12 @@ func backupDatabase(db *sql.DB, databasePath string) (backupPath string, err err
 		return "", fmt.Errorf("close validated backup: %w", closeErr)
 	}
 
-	backupPath = strings.TrimSuffix(temporaryPath, ".tmp")
-	if err = os.Rename(temporaryPath, backupPath); err != nil {
+	if hooks.beforePublish != nil {
+		if err = hooks.beforePublish(backupPath); err != nil {
+			return "", fmt.Errorf("before publishing backup: %w", err)
+		}
+	}
+	if err = os.Link(stagedDatabase, backupPath); err != nil {
 		return "", fmt.Errorf("publish validated backup: %w", err)
 	}
 	return backupPath, nil

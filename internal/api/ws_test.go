@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,6 +60,145 @@ func TestWebSocketRejectsDisallowedOrigin(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, response)
 	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+}
+
+func TestAuthenticatedWebSocketRevokedAfterLogout(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	cookie, csrf := loginTestSession(t, s, secret, "192.0.2.4:1234")
+	srv, conn := openServerWebSocket(t, s, cookie, "")
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/auth/logout", nil)
+	require.NoError(t, err)
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrf)
+	response, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Equal(t, http.StatusNoContent, response.StatusCode)
+
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 18}})
+	assertWebSocketRevokedWithoutEvent(t, s.hub, conn)
+}
+
+func TestAuthenticatedWebSocketIdleRevalidationDoesNotRefreshSession(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	s.sessions.now = func() time.Time { return now }
+	cookie, _ := loginTestSession(t, s, secret, "192.0.2.4:1234")
+	_, conn := openServerWebSocket(t, s, cookie, "")
+	lastSeenAfterUpgrade := s.sessions.sessions[cookie.Value].lastSeen
+
+	now = now.Add(29 * time.Minute)
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 18}})
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var received Event
+	require.NoError(t, conn.ReadJSON(&received))
+	assert.Equal(t, EventDiceRolled, received.Type)
+	assert.Equal(t, lastSeenAfterUpgrade, s.sessions.sessions[cookie.Value].lastSeen)
+
+	now = now.Add(2 * time.Minute)
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 19}})
+	assertWebSocketRevokedWithoutEvent(t, s.hub, conn)
+}
+
+func TestAuthenticatedWebSocketRevokedAfterAbsoluteExpiry(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	s.sessions.now = func() time.Time { return now }
+	cookie, _ := loginTestSession(t, s, secret, "192.0.2.4:1234")
+	srv, conn := openServerWebSocket(t, s, cookie, "")
+
+	for range 24 {
+		now = now.Add(29 * time.Minute)
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/auth/session", nil)
+		require.NoError(t, err)
+		req.AddCookie(cookie)
+		response, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		var info SessionInfo
+		require.NoError(t, json.NewDecoder(response.Body).Decode(&info))
+		response.Body.Close()
+		require.True(t, info.Authenticated)
+	}
+	now = now.Add(25 * time.Minute)
+
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 18}})
+	assertWebSocketRevokedWithoutEvent(t, s.hub, conn)
+}
+
+func TestBearerAuthenticatedWebSocketRemainsAuthorized(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	_, conn := openServerWebSocket(t, s, nil, secret)
+
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{"result": 18}})
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var received Event
+	require.NoError(t, conn.ReadJSON(&received))
+	assert.Equal(t, EventDiceRolled, received.Type)
+}
+
+func openServerWebSocket(t *testing.T, s *Server, cookie *http.Cookie, bearer string) (*httptest.Server, *websocket.Conn) {
+	t.Helper()
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+	header := http.Header{"Origin": []string{srv.URL}}
+	if cookie != nil {
+		header.Set("Cookie", cookie.String())
+	}
+	if bearer != "" {
+		header.Set("Authorization", "Bearer "+bearer)
+	}
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	conn, response, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if response != nil {
+		response.Body.Close()
+	}
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	waitForHubClientCount(t, s.hub, 1)
+	waitForBusSubscriber(t, s.bus)
+	return srv, conn
+}
+
+func waitForHubClientCount(t *testing.T, hub *Hub, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for hub.ClientCount() != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d WebSocket clients; got %d", want, hub.ClientCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func waitForBusSubscriber(t *testing.T, bus *Bus) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		bus.mu.Lock()
+		count := len(bus.subscribers)
+		bus.mu.Unlock()
+		if count > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for WebSocket hub bus subscription")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func assertWebSocketRevokedWithoutEvent(t *testing.T, hub *Hub, conn *websocket.Conn) {
+	t.Helper()
+	waitForHubClientCount(t, hub, 0)
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	var received Event
+	err := conn.ReadJSON(&received)
+	require.Error(t, err, "revoked WebSocket received protected event: %#v", received)
 }
 
 func TestWebSocketOrigin(t *testing.T) {

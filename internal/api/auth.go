@@ -38,19 +38,22 @@ type loginFailures struct {
 }
 
 type sessionManager struct {
-	mu       sync.Mutex
-	secret   string
-	sessions map[string]sessionRecord
-	failures map[string]loginFailures
-	now      func() time.Time
+	mu               sync.Mutex
+	secret           string
+	sessions         map[string]sessionRecord
+	failures         map[string]loginFailures
+	now              func() time.Time
+	compareSecret    func(got, want string) bool
+	lastFailurePrune time.Time
 }
 
 func newSessionManager(secret string) *sessionManager {
 	return &sessionManager{
-		secret:   secret,
-		sessions: make(map[string]sessionRecord),
-		failures: make(map[string]loginFailures),
-		now:      time.Now,
+		secret:        secret,
+		sessions:      make(map[string]sessionRecord),
+		failures:      make(map[string]loginFailures),
+		now:           time.Now,
+		compareSecret: secretMatches,
 	}
 }
 
@@ -86,7 +89,7 @@ func (m *sessionManager) create() (string, sessionRecord, error) {
 	return sessionToken, record, nil
 }
 
-func (m *sessionManager) get(token string) (sessionRecord, bool) {
+func (m *sessionManager) get(token string, refreshIdle bool) (sessionRecord, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	record, ok := m.sessions[token]
@@ -98,8 +101,10 @@ func (m *sessionManager) get(token string) (sessionRecord, bool) {
 		delete(m.sessions, token)
 		return sessionRecord{}, false
 	}
-	record.lastSeen = now
-	m.sessions[token] = record
+	if refreshIdle {
+		record.lastSeen = now
+		m.sessions[token] = record
+	}
 	return record, true
 }
 
@@ -109,30 +114,28 @@ func (m *sessionManager) delete(token string) {
 	m.mu.Unlock()
 }
 
-func (m *sessionManager) rateLimited(address string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	failure, ok := m.failures[address]
-	if !ok {
-		return false
-	}
-	if m.now().Sub(failure.windowStarted) >= loginAttemptWindow {
-		delete(m.failures, address)
-		return false
-	}
-	return failure.count >= maxLoginFailures
-}
-
-func (m *sessionManager) recordFailure(address string) {
+func (m *sessionManager) reserveLoginAttempt(address string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := m.now()
+	if m.lastFailurePrune.IsZero() || now.Sub(m.lastFailurePrune) >= loginAttemptWindow {
+		for failedAddress, failure := range m.failures {
+			if now.Sub(failure.windowStarted) >= loginAttemptWindow {
+				delete(m.failures, failedAddress)
+			}
+		}
+		m.lastFailurePrune = now
+	}
 	failure := m.failures[address]
 	if failure.windowStarted.IsZero() || now.Sub(failure.windowStarted) >= loginAttemptWindow {
 		failure = loginFailures{windowStarted: now}
 	}
+	if failure.count >= maxLoginFailures {
+		return false
+	}
 	failure.count++
 	m.failures[address] = failure
+	return true
 }
 
 func (m *sessionManager) clearFailures(address string) {
@@ -159,7 +162,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	address := remoteAddress(r)
-	if s.sessions.rateLimited(address) {
+	if !s.sessions.reserveLoginAttempt(address) {
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 		return
 	}
@@ -168,8 +171,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		Secret string `json:"secret"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
-	if err := decoder.Decode(&input); err != nil || !secretMatches(input.Secret, s.sessions.secret) {
-		s.sessions.recordFailure(address)
+	if err := decoder.Decode(&input); err != nil || !s.sessions.compareSecret(input.Secret, s.sessions.secret) {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -190,7 +192,7 @@ func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
 		if bearerAuthenticated(r, s.sessions.secret) {
 			info.Authenticated = true
 		} else if cookie, err := r.Cookie(authCookieName); err == nil {
-			if record, ok := s.sessions.get(cookie.Value); ok {
+			if record, ok := s.sessions.get(cookie.Value, true); ok {
 				info.Authenticated = true
 				info.CSRFToken = record.csrf
 			}
@@ -255,14 +257,38 @@ func (s *Server) requireAuthentication(w http.ResponseWriter, r *http.Request) b
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
-	record, ok := s.sessions.get(cookie.Value)
+	safeMethod := isSafeMethod(r.Method)
+	record, ok := s.sessions.get(cookie.Value, safeMethod)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
-	if !isSafeMethod(r.Method) && !secretMatches(r.Header.Get("X-CSRF-Token"), record.csrf) {
+	if !safeMethod && !secretMatches(r.Header.Get("X-CSRF-Token"), record.csrf) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return false
 	}
+	if !safeMethod {
+		if _, ok := s.sessions.get(cookie.Value, true); !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return false
+		}
+	}
 	return true
+}
+
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	if s.sessions == nil || bearerAuthenticated(r, s.sessions.secret) {
+		s.hub.ServeWSAuthorized(w, r, nil)
+		return
+	}
+	cookie, err := r.Cookie(authCookieName)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	sessionToken := cookie.Value
+	s.hub.ServeWSAuthorized(w, r, func() bool {
+		_, ok := s.sessions.get(sessionToken, false)
+		return ok
+	})
 }

@@ -17,14 +17,19 @@ import (
 // per-connection read goroutine in ServeWS.
 type Hub struct {
 	mu      sync.Mutex
-	clients map[*websocket.Conn]chan Event
+	clients map[*websocket.Conn]hubClient
 	bus     *Bus
 	origins map[string]struct{}
 }
 
+type hubClient struct {
+	send       chan Event
+	authorized func() bool
+}
+
 func NewHub(bus *Bus) *Hub {
 	return &Hub{
-		clients: make(map[*websocket.Conn]chan Event),
+		clients: make(map[*websocket.Conn]hubClient),
 		bus:     bus,
 		origins: make(map[string]struct{}),
 	}
@@ -56,9 +61,14 @@ func (h *Hub) Run() {
 func (h *Hub) broadcast(event Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for _, send := range h.clients {
+	for conn, client := range h.clients {
+		if client.authorized != nil && !client.authorized() {
+			delete(h.clients, conn)
+			close(client.send)
+			continue
+		}
 		select {
-		case send <- event:
+		case client.send <- event:
 		default:
 			// slow client; drop rather than block the broadcast goroutine
 		}
@@ -74,6 +84,13 @@ func (h *Hub) ClientCount() int {
 
 // ServeWS upgrades an HTTP connection to WebSocket and registers it with the hub.
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
+	h.ServeWSAuthorized(w, r, nil)
+}
+
+// ServeWSAuthorized upgrades and registers a connection whose authorization
+// is revalidated before each protected event is broadcast. A nil validator
+// preserves unsecured and bearer-authenticated connection behavior.
+func (h *Hub) ServeWSAuthorized(w http.ResponseWriter, r *http.Request, authorized func() bool) {
 	upgrader := websocket.Upgrader{CheckOrigin: h.originAllowed}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -84,7 +101,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	send := make(chan Event, 64)
 
 	h.mu.Lock()
-	h.clients[conn] = send
+	h.clients[conn] = hubClient{send: send, authorized: authorized}
 	h.mu.Unlock()
 
 	// Write goroutine — the only goroutine that calls WriteJSON on this conn.
@@ -100,9 +117,9 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		h.mu.Lock()
-		if ch, ok := h.clients[conn]; ok {
+		if client, ok := h.clients[conn]; ok {
 			delete(h.clients, conn)
-			close(ch)
+			close(client.send)
 		}
 		h.mu.Unlock()
 	}()

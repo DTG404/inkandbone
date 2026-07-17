@@ -145,7 +145,7 @@ func (s *Server) RegisterStatic(fsys http.FileSystem) {
 }
 
 func (s *Server) registerRoutes() {
-	s.mux.HandleFunc("/ws", s.hub.ServeWS)
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)

@@ -29,4 +29,13 @@ describe('request', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0]
     expect(new Headers(init?.headers).has('X-CSRF-Token')).toBe(false)
   })
+
+  for (const credentials of ['omit', 'include'] as const) {
+    it(`preserves an explicit ${credentials} credentials policy`, async () => {
+      await request('/api/example', { method: 'POST', credentials })
+
+      const [, init] = vi.mocked(fetch).mock.calls[0]
+      expect(init?.credentials).toBe(credentials)
+    })
+  }
 })

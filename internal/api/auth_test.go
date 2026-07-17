@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -136,6 +138,102 @@ func TestAuthLoginRateLimitsFailedAttemptsPerAddress(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestAuthLoginConcurrentFailuresAreAtomicallyLimited(t *testing.T) {
+	s := newSecureTestServer(t, strings.Repeat("s", 32), "https://table.example")
+	const attempts = 20
+	var comparisons atomic.Int32
+	enteredComparison := make(chan struct{}, attempts)
+	releaseComparisons := make(chan struct{})
+	s.sessions.compareSecret = func(_, _ string) bool {
+		comparisons.Add(1)
+		enteredComparison <- struct{}{}
+		<-releaseComparisons
+		return false
+	}
+
+	start := make(chan struct{})
+	statuses := make(chan int, attempts)
+	for range attempts {
+		go func() {
+			<-start
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+			req.RemoteAddr = "192.0.2.4:1234"
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+			statuses <- w.Code
+		}()
+	}
+	close(start)
+
+	for range maxLoginFailures {
+		select {
+		case <-enteredComparison:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for reserved credential comparisons")
+		}
+	}
+	for range attempts - maxLoginFailures {
+		select {
+		case status := <-statuses:
+			assert.Equal(t, http.StatusTooManyRequests, status)
+		case <-time.After(time.Second):
+			t.Fatal("rate-limited attempts did not complete while comparisons were blocked")
+		}
+	}
+	select {
+	case <-enteredComparison:
+		t.Fatal("more than five concurrent attempts reached credential comparison")
+	default:
+	}
+
+	close(releaseComparisons)
+	for range maxLoginFailures {
+		assert.Equal(t, http.StatusUnauthorized, <-statuses)
+	}
+	assert.EqualValues(t, maxLoginFailures, comparisons.Load())
+}
+
+func TestAuthLoginPrunesExpiredFailureAddresses(t *testing.T) {
+	s := newSecureTestServer(t, strings.Repeat("s", 32), "https://table.example")
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	s.sessions.now = func() time.Time { return now }
+
+	failedLogin(t, s, "192.0.2.1:1234")
+	failedLogin(t, s, "192.0.2.2:1234")
+	require.Len(t, s.sessions.failures, 2)
+
+	now = now.Add(loginAttemptWindow + time.Second)
+	failedLogin(t, s, "192.0.2.3:1234")
+
+	require.Len(t, s.sessions.failures, 1)
+	_, retained := s.sessions.failures["192.0.2.3"]
+	assert.True(t, retained)
+}
+
+func TestAuthLoginFailurePruningIsThrottled(t *testing.T) {
+	s := newSecureTestServer(t, strings.Repeat("s", 32), "https://table.example")
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	s.sessions.now = func() time.Time { return now }
+
+	failedLogin(t, s, "192.0.2.1:1234")
+	firstPrune := s.sessions.lastFailurePrune
+	for address := 2; address <= 50; address++ {
+		failedLogin(t, s, fmt.Sprintf("192.0.2.%d:1234", address))
+	}
+
+	assert.Equal(t, now, firstPrune)
+	assert.Equal(t, firstPrune, s.sessions.lastFailurePrune)
+}
+
+func failedLogin(t *testing.T, s *Server, remoteAddr string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"secret":"wrong"}`))
+	req.RemoteAddr = remoteAddr
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 func TestAuthCookieRequiresCSRFForUnsafeRequests(t *testing.T) {
 	secret := strings.Repeat("s", 32)
 	s := newSecureTestServer(t, secret, "https://table.example")
@@ -161,6 +259,31 @@ func TestAuthCookieRequiresCSRFForUnsafeRequests(t *testing.T) {
 			assert.Equal(t, tt.status, w.Code)
 		})
 	}
+}
+
+func TestAuthFailedCSRFDoesNotRefreshIdleLifetime(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	s := newSecureTestServer(t, secret, "https://table.example")
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	s.sessions.now = func() time.Time { return now }
+	cookie, _ := loginTestSession(t, s, secret, "192.0.2.4:1234")
+	initialLastSeen := s.sessions.sessions[cookie.Value].lastSeen
+
+	now = now.Add(29 * time.Minute)
+	req := httptest.NewRequest(http.MethodPost, "/api/test-mutation", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", "wrong")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, initialLastSeen, s.sessions.sessions[cookie.Value].lastSeen)
+
+	now = now.Add(2 * time.Minute)
+	req = httptest.NewRequest(http.MethodGet, "/api/context", nil)
+	req.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestAuthBearerMasterSecretDoesNotRequireCSRF(t *testing.T) {

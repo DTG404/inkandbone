@@ -20,7 +20,7 @@ export function request(input: RequestInfo | URL, init: RequestInit = {}): Promi
   return fetch(input, {
     ...init,
     headers,
-    credentials: 'same-origin',
+    credentials: init.credentials ?? 'same-origin',
   })
 }
 

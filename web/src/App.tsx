@@ -118,8 +118,10 @@ function GameApp() {
     return stored ? Number(stored) : null
   })
   const [charactersList, setCharactersList] = useState<{ id: number; name: string }[]>([])
-  const loadGenRef = useRef(0)
-  const messageSessionRef = useRef<number | null>(null)
+  const contextGenRef = useRef(0)
+  const transcriptGenRef = useRef(0)
+  const transcriptRefreshPendingRef = useRef(false)
+  const activeSessionRef = useRef<number | null>(null)
 
   // Derived: character's current XP (or Karma) balance, parsed from data_json.
   const charXPBalance = (() => {
@@ -184,39 +186,56 @@ function GameApp() {
       .catch(() => setCharactersList([]))
   }, [ctx?.campaign?.id])
 
-  const loadContext = useCallback(() => {
-    const gen = ++loadGenRef.current
-    fetchContext()
-      .then(async (data) => {
-        if (loadGenRef.current !== gen) return // stale — a newer fetch already resolved
-        setCtx(data)
-        const sessionId = data.session?.id ?? null
-        if (sessionId === null) {
-          messageSessionRef.current = null
-          setMessages([])
-          return
-        }
-        if (messageSessionRef.current !== sessionId) {
-          setMessages([])
-        }
-        const sessionMessages = await fetchMessages(sessionId)
-        if (loadGenRef.current !== gen) return
-        messageSessionRef.current = sessionId
-        setMessages(sessionMessages)
-      })
-      .catch(() => {
-        if (loadGenRef.current !== gen) return
+  const loadContext = useCallback((refreshTranscript = false) => {
+    if (refreshTranscript) transcriptRefreshPendingRef.current = true
+    const contextGen = ++contextGenRef.current
+    void (async () => {
+      let data: GameContext
+      try {
+        data = await fetchContext()
+      } catch {
+        if (contextGenRef.current !== contextGen) return
         setError('Could not load game state')
-      })
+        return
+      }
+      if (contextGenRef.current !== contextGen) return // stale — a newer context fetch already resolved
+      setCtx(data)
+      setError(null)
+      const sessionId = data.session?.id ?? null
+      if (sessionId === null) {
+        activeSessionRef.current = null
+        transcriptRefreshPendingRef.current = false
+        transcriptGenRef.current++
+        setMessages([])
+        return
+      }
+      const sessionChanged = activeSessionRef.current !== sessionId
+      if (sessionChanged) {
+        activeSessionRef.current = sessionId
+        transcriptGenRef.current++
+        setMessages([])
+      }
+      if (!sessionChanged && !transcriptRefreshPendingRef.current) return
+      transcriptRefreshPendingRef.current = false
+      const transcriptGen = ++transcriptGenRef.current
+      try {
+        const sessionMessages = await fetchMessages(sessionId)
+        if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return
+        setMessages(sessionMessages)
+      } catch (err) {
+        if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return
+        console.error(err)
+      }
+    })()
   }, [])
 
   useEffect(() => {
-    loadContext()
+    loadContext(true)
   }, [loadContext])
 
   const handleEvent = useCallback((data: unknown) => {
-    loadContext()
     const event = data as { type?: string }
+    loadContext(event?.type === 'message_created')
     if (!getAudioMuted()) {
       if (event?.type === 'dice_rolled') playDiceRoll()
       else if (event?.type === 'message_created') playNotification()
@@ -263,14 +282,14 @@ function GameApp() {
     setSending(true)
     try {
       await sendMessage(ctx.session.id, text, false, selectedCharacterId)
-      loadContext()
+      loadContext(true)
       setGmResponding(true)
       setStreamingText('')
       await gmRespondStream(ctx.session.id, (chunk) => {
         setStreamingText((prev) => prev + chunk)
       })
       setStreamingText('')
-      loadContext()
+      loadContext(true)
     } catch (err) {
       console.error(err)
     } finally {
@@ -289,7 +308,7 @@ function GameApp() {
       setSending(true)
       try {
         await sendMessage(ctx.session.id, text, true, selectedCharacterId)
-        loadContext()
+        loadContext(true)
       } catch {
         setInput(text)
       } finally {
@@ -469,8 +488,8 @@ function GameApp() {
           initialTab={manageTab}
           onTabChange={setManageTab}
           onClose={() => setManageOpen(false)}
-          onContextChanged={() => { loadContext(); setManageOpen(false); setXPSuggestionsEvent(null) }}
-          onCampaignActivated={() => { setMessages([]); loadContext(); setManageOpen(false); setXPSuggestionsEvent(null) }}
+          onContextChanged={() => { loadContext(true); setManageOpen(false); setXPSuggestionsEvent(null) }}
+          onCampaignActivated={() => { setMessages([]); loadContext(true); setManageOpen(false); setXPSuggestionsEvent(null) }}
         />
       )}
 

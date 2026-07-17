@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, act } from '@testing-library/react'
+import { render, screen, cleanup, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import type { GameContext } from './types'
@@ -243,6 +243,181 @@ describe('App', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/api/sessions/1/messages')
   })
 
+  it('keeps a same-session transcript usable after a transient refresh failure and recovers on the next message event', async () => {
+    const originalMessage = {
+      id: 1, session_id: 1, role: 'user', content: 'ORIGINAL_PUBLIC', whisper: false, created_at: '',
+    }
+    const recoveredWhisper = {
+      id: 2, session_id: 1, role: 'user', content: 'RECOVERED_PRIVATE', whisper: true, created_at: '',
+    }
+    let messageCalls = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...mockCtx, recent_messages: [originalMessage] }) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        messageCalls++
+        if (messageCalls === 2) return Promise.resolve({ ok: false, status: 500 })
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(messageCalls === 1 ? [originalMessage] : [originalMessage, recoveredWhisper]),
+        })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByText('ORIGINAL_PUBLIC')).toBeInTheDocument()
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+    })
+    await waitFor(() => expect(messageCalls).toBe(2))
+    expect(screen.getByText('ORIGINAL_PUBLIC')).toBeInTheDocument()
+    expect(screen.queryByText('Could not load game state')).not.toBeInTheDocument()
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+    })
+    const privateMessage = await screen.findByText('RECOVERED_PRIVATE')
+    expect(privateMessage.closest('.prose-player')).toHaveClass('prose-player--whisper')
+    expect(messageCalls).toBe(3)
+  })
+
+  it('clears a fatal context error after a later successful realtime refresh', async () => {
+    const recoveredMessage = {
+      id: 1, session_id: 1, role: 'user', content: 'RECOVERED_PUBLIC', whisper: false, created_at: '',
+    }
+    let contextCalls = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        contextCalls++
+        if (contextCalls === 1) return Promise.resolve({ ok: false, status: 500 })
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([recoveredMessage]) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByText('Could not load game state')).toBeInTheDocument()
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'future_event' }) })
+    })
+
+    expect(await screen.findByText('RECOVERED_PUBLIC')).toBeInTheDocument()
+    expect(screen.queryByText('Could not load game state')).not.toBeInTheDocument()
+  })
+
+  it('refreshes the transcript only for message-relevant same-session events', async () => {
+    let contextCalls = 0
+    let messageCalls = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        contextCalls++
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        messageCalls++
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByText('You enter the tavern.')).toBeInTheDocument()
+    expect(messageCalls).toBe(1)
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
+    })
+    await waitFor(() => expect(contextCalls).toBe(2))
+    expect(messageCalls).toBe(1)
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'dice_rolled' }) })
+    })
+    await waitFor(() => expect(contextCalls).toBe(3))
+    expect(messageCalls).toBe(1)
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+    })
+    await waitFor(() => expect(messageCalls).toBe(2))
+    expect(contextCalls).toBe(4)
+  })
+
+  it('does not let a same-session non-message refresh cancel an in-flight transcript refresh', async () => {
+    const originalMessage = {
+      id: 1, session_id: 1, role: 'user', content: 'ORIGINAL_PUBLIC', whisper: false, created_at: '',
+    }
+    const realtimeMessage = {
+      id: 2, session_id: 1, role: 'user', content: 'REALTIME_PUBLIC', whisper: false, created_at: '',
+    }
+    let contextCalls = 0
+    let messageCalls = 0
+    let resolveRealtimeMessages: ((value: { ok: boolean; json: () => Promise<unknown> }) => void) | null = null
+    const realtimeMessages = new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
+      resolveRealtimeMessages = resolve
+    })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        contextCalls++
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        messageCalls++
+        if (messageCalls === 2) return realtimeMessages
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([originalMessage]) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByText('ORIGINAL_PUBLIC')).toBeInTheDocument()
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+    })
+    await waitFor(() => expect(messageCalls).toBe(2))
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
+    })
+    await waitFor(() => expect(contextCalls).toBe(3))
+    expect(messageCalls).toBe(2)
+
+    await act(async () => {
+      resolveRealtimeMessages?.({
+        ok: true,
+        json: () => Promise.resolve([originalMessage, realtimeMessage]),
+      })
+    })
+    expect(await screen.findByText('REALTIME_PUBLIC')).toBeInTheDocument()
+  })
+
   it('ignores a stale transcript response after the active session changes', async () => {
     let resolveFirstMessages: ((value: { ok: boolean; json: () => Promise<unknown> }) => void) | null = null
     const firstMessages = new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolve) => {
@@ -277,7 +452,7 @@ describe('App', () => {
     const socket = MockWebSocket.instances.at(-1)
     requireSocket(socket)
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'future_event' }) })
     })
     expect(await screen.findByText('Session 2')).toBeInTheDocument()
     expect(await screen.findByText('SECOND_SESSION')).toBeInTheDocument()

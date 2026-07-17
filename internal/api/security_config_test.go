@@ -42,6 +42,18 @@ func TestValidateListenSecurity(t *testing.T) {
 			cfg:     ListenSecurityConfig{AllowedOrigins: []string{" "}},
 			wantErr: "allowed origin",
 		},
+		{
+			name:    "loopback rejects a malformed allowed origin",
+			addr:    "127.0.0.1:7432",
+			cfg:     ListenSecurityConfig{AllowedOrigins: []string{"https://table.example/path"}},
+			wantErr: "valid HTTP or HTTPS origin",
+		},
+		{
+			name:    "loopback rejects a non-HTTP allowed origin",
+			addr:    "127.0.0.1:7432",
+			cfg:     ListenSecurityConfig{AllowedOrigins: []string{"file://table.example"}},
+			wantErr: "valid HTTP or HTTPS origin",
+		},
 		{name: "public IPv4 needs secret", addr: "0.0.0.0:7432", wantErr: "TTRPG_AUTH_SECRET"},
 		{name: "public IPv6 needs secret", addr: "[::]:7432", wantErr: "TTRPG_AUTH_SECRET"},
 		{name: "hostname needs secret", addr: "table.example:7432", wantErr: "TTRPG_AUTH_SECRET"},

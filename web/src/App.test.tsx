@@ -23,6 +23,9 @@ describe('App', () => {
   beforeEach(() => {
     vi.stubGlobal('WebSocket', MockWebSocket)
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
       if (url === '/api/context') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
       }
@@ -39,6 +42,25 @@ describe('App', () => {
   it('renders campaign name in state bar', async () => {
     render(<App />)
     expect(await screen.findByText('Greyhawk')).toBeInTheDocument()
+  })
+
+  it('shows login without opening the API or WebSocket before authentication', async () => {
+    const webSocket = vi.fn().mockImplementation(() => new MockWebSocket())
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: false }) })
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal('WebSocket', webSocket)
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: 'Unlock' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/session')
+    expect(webSocket).not.toHaveBeenCalled()
   })
 
   it('renders character name in state bar', async () => {
@@ -76,6 +98,9 @@ describe('App', () => {
       character: { ...mockCtx.character!, portrait_path: 'portraits/zara.jpg' },
     }
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
       if (url === '/api/context') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(ctxWithPortrait) })
       }
@@ -90,6 +115,9 @@ describe('App', () => {
 
   it('does not render portrait img when portrait_path is empty', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
       if (url === '/api/context') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
       }
@@ -111,6 +139,9 @@ describe('App', () => {
       },
     }
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
       if (url === '/api/context') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(ctxWithCombat) })
       }
@@ -131,6 +162,9 @@ describe('App', () => {
 
   it('passes aiEnabled to WorldNotesPanel', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
       if (url === '/api/context') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
       }
@@ -147,6 +181,9 @@ describe('App', () => {
 
   it('renders character sheet panel when character is present', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
       if (url === '/api/context') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
       }

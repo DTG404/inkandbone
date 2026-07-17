@@ -25,9 +25,12 @@ func ValidateListenSecurity(addr string, cfg ListenSecurityConfig) error {
 	}
 
 	ip := net.ParseIP(host)
-	for _, origin := range cfg.AllowedOrigins {
+	for index, origin := range cfg.AllowedOrigins {
 		if strings.TrimSpace(origin) == "" {
 			return errors.New("listen allowed origin entries must not be empty")
+		}
+		if _, ok := normalizeOrigin(origin); !ok {
+			return fmt.Errorf("listen allowed origin entry %d must be a valid HTTP or HTTPS origin", index+1)
 		}
 	}
 	if strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback()) {

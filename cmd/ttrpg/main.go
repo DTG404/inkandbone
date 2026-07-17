@@ -85,8 +85,7 @@ func main() {
 		log.Println("AI: disabled (set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OLLAMA_MODEL)")
 	}
 
-	httpServer := api.NewServer(database, dataDir, aiClient)
-	httpServer.SetAllowedOrigins(securityConfig.AllowedOrigins)
+	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{Security: securityConfig})
 
 	distFS, err := fs.Sub(ttrpgweb.Static, "dist")
 	if err != nil {
@@ -106,8 +105,16 @@ func main() {
 		}()
 	}
 
-	log.Printf("HTTP server listening on %s", *listenFlag)
-	if err := httpServer.ListenAndServe(*listenFlag); err != nil {
+	serve := func() error { return httpServer.ListenAndServe(*listenFlag) }
+	protocol := "HTTP"
+	if securityConfig.TLSCertFile != "" && securityConfig.TLSKeyFile != "" {
+		protocol = "HTTPS"
+		serve = func() error {
+			return httpServer.ListenAndServeTLS(*listenFlag, securityConfig.TLSCertFile, securityConfig.TLSKeyFile)
+		}
+	}
+	log.Printf("%s server listening on %s", protocol, *listenFlag)
+	if err := serve(); err != nil {
 		log.Printf("HTTP server stopped: %v", err)
 	}
 }

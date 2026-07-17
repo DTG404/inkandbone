@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useWebSocket } from './useWebSocket'
+import { useWebSocket, webSocketURL } from './useWebSocket'
 
 // Minimal WebSocket mock
 class MockWebSocket {
@@ -49,6 +49,16 @@ afterEach(() => {
 })
 
 describe('useWebSocket', () => {
+  it('uses secure WebSockets for HTTPS pages', () => {
+    expect(webSocketURL({ protocol: 'https:', host: 'table.example' })).toBe('wss://table.example/ws')
+    expect(webSocketURL({ protocol: 'http:', host: '127.0.0.1:7432' })).toBe('ws://127.0.0.1:7432/ws')
+  })
+
+  it('does not connect while disabled', () => {
+    renderHook(() => useWebSocket('/ws', vi.fn(), false))
+    expect(instances).toHaveLength(0)
+  })
+
   it('calls onMessage with parsed JSON when a message arrives', () => {
     const onMessage = vi.fn()
     renderHook(() => useWebSocket('/ws', onMessage))

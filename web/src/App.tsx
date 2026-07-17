@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useWebSocket } from './useWebSocket'
+import { useWebSocket, webSocketURL } from './useWebSocket'
 import { fetchContext, sendMessage, gmRespondStream, generateMap, fetchRuleset, suggestAdvances } from './api'
 import type { GameContext, Message, XPSpendSuggestionsEvent } from './types'
 import { ManagePanel } from './ManagePanel'
@@ -9,9 +9,9 @@ import { playDiceRoll, playNotification, playCombatStart } from './audio/sounds'
 import { setAmbientTrack } from './audio/ambient'
 import { SessionView } from './SessionView'
 import { CharacterSelector } from './CharacterSelector'
+import { LoginScreen } from './LoginScreen'
+import { fetchSessionInfo, request, setCSRFToken, type SessionInfo } from './transport'
 import './App.css'
-
-const WS_URL = `ws://${window.location.host}/ws`
 
 // Minimum XP required to afford any advancement per ruleset.
 // Derived from XPCostFor minimums in internal/ruleset/advancement.go.
@@ -57,6 +57,34 @@ function ChronicleNightTracker({ campaign }: ChronicleNightTrackerProps) {
 // ── App ────────────────────────────────────────────────────
 
 export default function App() {
+  const [session, setSession] = useState<SessionInfo | null>(null)
+
+  useEffect(() => {
+    let active = true
+    fetchSessionInfo()
+      .then((info) => {
+        if (!active) return
+        setCSRFToken(info.csrf_token ?? null)
+        setSession(info)
+      })
+      .catch(() => {
+        if (!active) return
+        setCSRFToken(null)
+        setSession({ authenticated: false })
+      })
+    return () => { active = false }
+  }, [])
+
+  if (session === null) {
+    return <main className="login-screen" aria-label="Checking session" />
+  }
+  if (!session.authenticated) {
+    return <LoginScreen onAuthenticated={setSession} />
+  }
+  return <GameApp />
+}
+
+function GameApp() {
   const [ctx, setCtx] = useState<GameContext | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -215,7 +243,7 @@ export default function App() {
       }
     }
   }, [loadContext])
-  const { lastEvent } = useWebSocket(WS_URL, handleEvent)
+  const { lastEvent } = useWebSocket(webSocketURL(window.location), handleEvent)
 
   const handleSendText = useCallback(async (text: string) => {
     if (!text || !ctx?.session || sending) return
@@ -274,7 +302,7 @@ export default function App() {
   }, [ctx, aiEnabled, generatingMap, messages])
 
   const handleSpendXP = useCallback(async (characterId: number, field: string, newValue: number) => {
-    const res = await fetch(`/api/characters/${characterId}/advance`, {
+    const res = await request(`/api/characters/${characterId}/advance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ field, new_value: newValue }),

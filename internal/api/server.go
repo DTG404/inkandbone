@@ -24,21 +24,40 @@ type Server struct {
 	settingCache    sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
 	embCache        sync.Map     // rulesetID int64 → []db.RulebookChunk
 	autoFailCount   int32        // incremented on automation failure, reset on success; circuit breaker at 3
+	sessions        *sessionManager
+	secureCookies   bool
+	httpServerMu    sync.Mutex
+	httpServer      *http.Server
+}
+
+// ServerOptions configures optional security behavior for the HTTP server.
+type ServerOptions struct {
+	Security ListenSecurityConfig
 }
 
 // NewServer creates the HTTP server. dataDir is the base path for uploaded files
 // (e.g. ~/.ttrpg). aiClient may be nil if AI features are disabled.
 func NewServer(database *db.DB, dataDir string, aiClient ai.Completer) *Server {
+	return NewServerWithOptions(database, dataDir, aiClient, ServerOptions{})
+}
+
+// NewServerWithOptions creates an HTTP server with explicit security options.
+func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer, options ServerOptions) *Server {
 	bus := NewBus()
 	hub := NewHub(bus)
 	s := &Server{
-		db:       database,
-		hub:      hub,
-		bus:      bus,
-		mux:      http.NewServeMux(),
-		dataDir:  dataDir,
-		aiClient: aiClient,
+		db:            database,
+		hub:           hub,
+		bus:           bus,
+		mux:           http.NewServeMux(),
+		dataDir:       dataDir,
+		aiClient:      aiClient,
+		secureCookies: options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
 	}
+	if options.Security.AuthSecret != "" {
+		s.sessions = newSessionManager(options.Security.AuthSecret)
+	}
+	hub.SetAllowedOrigins(options.Security.AllowedOrigins)
 	s.registerRoutes()
 	go hub.Run()
 	// Capture the ruleset list before launching the goroutine so that rulesets
@@ -64,16 +83,50 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	if s.sessions != nil && s.isProtectedPath(r) && !s.requireAuthentication(w, r) {
+		return
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+func (s *Server) isProtectedPath(r *http.Request) bool {
+	if r.URL.Path == "/api/health" || r.URL.Path == "/api/auth/login" ||
+		(r.URL.Path == "/api/auth/session" && r.Method == http.MethodGet) {
+		return false
+	}
+	return r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, "/api/")
 }
 
 // ListenAndServe starts the HTTP server on addr (e.g. ":7432").
 func (s *Server) ListenAndServe(addr string) error {
-	return http.ListenAndServe(addr, s)
+	server := &http.Server{Addr: addr, Handler: s}
+	s.setHTTPServer(server)
+	return server.ListenAndServe()
 }
 
-// Shutdown is a no-op placeholder.
-func (s *Server) Shutdown(_ context.Context) error { return nil }
+// ListenAndServeTLS starts the HTTPS server on addr.
+func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
+	server := &http.Server{Addr: addr, Handler: s}
+	s.setHTTPServer(server)
+	return server.ListenAndServeTLS(certFile, keyFile)
+}
+
+func (s *Server) setHTTPServer(server *http.Server) {
+	s.httpServerMu.Lock()
+	s.httpServer = server
+	s.httpServerMu.Unlock()
+}
+
+// Shutdown gracefully stops a server started by ListenAndServe or ListenAndServeTLS.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.httpServerMu.Lock()
+	server := s.httpServer
+	s.httpServerMu.Unlock()
+	if server == nil {
+		return nil
+	}
+	return server.Shutdown(ctx)
+}
 
 // RegisterStatic serves the embedded React SPA for all routes not matched by /api/ or /ws.
 // index.html is served with Cache-Control: no-cache so browsers always re-validate it
@@ -94,6 +147,9 @@ func (s *Server) RegisterStatic(fsys http.FileSystem) {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/ws", s.hub.ServeWS)
 	s.mux.HandleFunc("/api/health", s.handleHealth)
+	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)
 	// Existing read routes
 	s.mux.HandleFunc("GET /api/campaigns", s.handleListCampaigns)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/characters", s.handleListCharacters)

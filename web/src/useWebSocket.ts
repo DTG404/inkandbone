@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function useWebSocket(url: string, onMessage: (data: unknown) => void): { lastEvent: unknown } {
+export function webSocketURL(page: Pick<Location, 'protocol' | 'host'>): string {
+  const protocol = page.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${page.host}/ws`
+}
+
+export function useWebSocket(url: string, onMessage: (data: unknown) => void, enabled = true): { lastEvent: unknown } {
   const [lastEvent, setLastEvent] = useState<unknown>(null)
   const onMessageRef = useRef(onMessage)
   useEffect(() => { onMessageRef.current = onMessage })
 
   useEffect(() => {
+    if (!enabled) return
+
     let ws: WebSocket
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let cancelled = false
@@ -37,7 +44,7 @@ export function useWebSocket(url: string, onMessage: (data: unknown) => void): {
       if (reconnectTimer !== null) clearTimeout(reconnectTimer)
       ws.close()
     }
-  }, [url])
+  }, [url, enabled])
 
   return { lastEvent }
 }

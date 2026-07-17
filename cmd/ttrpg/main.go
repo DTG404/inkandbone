@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -23,21 +25,32 @@ import (
 )
 
 func main() {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
+		log.Printf("fatal: %v", err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string, stdin *os.File, stdout io.Writer) error {
 	rootCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("home dir: %v", err)
+		return fmt.Errorf("home dir: %w", err)
 	}
 	defaultDBPath := filepath.Join(home, ".ttrpg", "ttrpg.db")
-	dbFlag := flag.String("db", defaultDBPath, "path to SQLite database file")
-	listenFlag := flag.String("listen", "127.0.0.1:7432", "HTTP listen address")
-	tlsCertFlag := flag.String("tls-cert", "", "path to TLS certificate file")
-	tlsKeyFlag := flag.String("tls-key", "", "path to TLS private key file")
+	flags := flag.NewFlagSet("ttrpg", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	dbFlag := flags.String("db", defaultDBPath, "path to SQLite database file")
+	listenFlag := flags.String("listen", "127.0.0.1:7432", "HTTP listen address")
+	tlsCertFlag := flags.String("tls-cert", "", "path to TLS certificate file")
+	tlsKeyFlag := flags.String("tls-key", "", "path to TLS private key file")
 	var allowedOrigins originListFlag
-	flag.Var(&allowedOrigins, "allowed-origin", "allowed browser origin (repeatable or comma-separated)")
-	flag.Parse()
+	flags.Var(&allowedOrigins, "allowed-origin", "allowed browser origin (repeatable or comma-separated)")
+	if err := flags.Parse(args); err != nil {
+		return fmt.Errorf("parse flags: %w", err)
+	}
 	securityConfig := api.ListenSecurityConfig{
 		AuthSecret:     os.Getenv("TTRPG_AUTH_SECRET"),
 		TLSCertFile:    *tlsCertFlag,
@@ -45,7 +58,7 @@ func main() {
 		AllowedOrigins: allowedOrigins,
 	}
 	if err := api.ValidateListenSecurity(*listenFlag, securityConfig); err != nil {
-		log.Fatalf("listen security: %v", err)
+		return fmt.Errorf("listen security: %w", err)
 	}
 
 	dbPath := *dbFlag
@@ -53,9 +66,8 @@ func main() {
 
 	database, err := db.Open(dbPath)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		return fmt.Errorf("open db: %w", err)
 	}
-	defer database.Close()
 
 	var aiClient ai.Completer
 	switch {
@@ -93,61 +105,151 @@ func main() {
 		log.Println("AI: disabled (set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OLLAMA_MODEL)")
 	}
 
+	distFS, err := fs.Sub(ttrpgweb.Static, "dist")
+	if err != nil {
+		_ = database.Close()
+		return fmt.Errorf("embed sub: %w", err)
+	}
+
 	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{
 		Security:    securityConfig,
 		RootContext: rootCtx,
 	})
-
-	distFS, err := fs.Sub(ttrpgweb.Static, "dist")
-	if err != nil {
-		log.Fatalf("embed sub: %v", err)
-	}
 	httpServer.RegisterStatic(http.FS(distFS))
 
 	// When stdin is a pipe (MCP client connected), run the MCP stdio transport
 	// in a goroutine and block on HTTP. When stdin is a terminal (interactive /
 	// smoke-test mode), skip MCP stdio entirely and just block on HTTP.
 	mcpSrv := mcpserver.New(database, httpServer.Bus(), aiClient)
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		go func() {
-			if err := mcpSrv.Start(); err != nil {
-				log.Printf("MCP server stopped: %v", err)
-			}
-		}()
-	}
+	mcpEnabled := !term.IsTerminal(int(stdin.Fd()))
 
 	protocol := "HTTP"
 	if securityConfig.TLSCertFile != "" && securityConfig.TLSKeyFile != "" {
 		protocol = "HTTPS"
 	}
 	log.Printf("%s server listening on %s", protocol, *listenFlag)
-	serveErr := make(chan error, 1)
-	go func() {
-		serveErr <- httpServer.Start(
-			*listenFlag,
-			securityConfig.TLSCertFile,
-			securityConfig.TLSKeyFile,
-		)
-	}()
+	return runServices(rootCtx, stopSignals, httpServer, mcpSrv, mcpEnabled, stdin, stdout,
+		database.Close, runtimeConfig{
+			address:         *listenFlag,
+			certFile:        securityConfig.TLSCertFile,
+			keyFile:         securityConfig.TLSKeyFile,
+			shutdownTimeout: 15 * time.Second,
+		})
+}
 
-	select {
-	case err := <-serveErr:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server stopped: %v", err)
+type httpLifecycle interface {
+	Start(addr, certFile, keyFile string) error
+	Shutdown(context.Context) error
+	Close() error
+}
+
+type mcpLifecycle interface {
+	Start(context.Context, io.ReadCloser, io.Writer) error
+}
+
+type runtimeConfig struct {
+	address         string
+	certFile        string
+	keyFile         string
+	shutdownTimeout time.Duration
+}
+
+func runServices(
+	rootCtx context.Context,
+	cancelRoot context.CancelFunc,
+	web httpLifecycle,
+	mcpServer mcpLifecycle,
+	mcpEnabled bool,
+	stdin io.ReadCloser,
+	stdout io.Writer,
+	closeDatabase func() error,
+	config runtimeConfig,
+) error {
+	if config.shutdownTimeout <= 0 {
+		config.shutdownTimeout = 15 * time.Second
+	}
+
+	httpDone := make(chan error, 1)
+	go func() { httpDone <- web.Start(config.address, config.certFile, config.keyFile) }()
+	var mcpDone chan error
+	if mcpEnabled {
+		mcpDone = make(chan error, 1)
+		go func() { mcpDone <- mcpServer.Start(rootCtx, stdin, stdout) }()
+	}
+
+	var (
+		primaryErr   error
+		httpFinished bool
+		mcpFinished  = !mcpEnabled
+	)
+waitForStop:
+	for {
+		select {
+		case <-rootCtx.Done():
+			break waitForStop
+		case err := <-httpDone:
+			httpFinished = true
+			if rootCtx.Err() != nil && errors.Is(err, http.ErrServerClosed) {
+				// Expected result of lifecycle cancellation.
+			} else if err == nil || errors.Is(err, http.ErrServerClosed) {
+				primaryErr = errors.New("HTTP server stopped unexpectedly")
+			} else {
+				primaryErr = fmt.Errorf("HTTP server: %w", err)
+			}
+			break waitForStop
+		case err := <-mcpDone:
+			mcpFinished = true
+			mcpDone = nil
+			if err != nil {
+				primaryErr = fmt.Errorf("MCP server: %w", err)
+				break waitForStop
+			}
 		}
-		return
-	case <-rootCtx.Done():
 	}
 
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancelShutdown()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("HTTP server shutdown: %v", err)
-		return
+	cancelRoot()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), config.shutdownTimeout)
+	shutdownErr := web.Shutdown(shutdownCtx)
+	cancelShutdown()
+	var forceCloseErr, forceJoinErr error
+	if shutdownErr != nil {
+		forceCloseErr = web.Close()
+		forceCtx, cancelForce := context.WithTimeout(context.Background(), config.shutdownTimeout)
+		forceJoinErr = web.Shutdown(forceCtx)
+		cancelForce()
 	}
-	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("HTTP server stopped: %v", err)
+
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), config.shutdownTimeout)
+	defer cancelWait()
+	var httpJoinErr, mcpJoinErr error
+	if !httpFinished {
+		select {
+		case err := <-httpDone:
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				httpJoinErr = fmt.Errorf("join HTTP server: %w", err)
+			}
+		case <-waitCtx.Done():
+			httpJoinErr = fmt.Errorf("join HTTP server: %w", waitCtx.Err())
+		}
 	}
+	if !mcpFinished {
+		select {
+		case err := <-mcpDone:
+			if err != nil {
+				mcpJoinErr = fmt.Errorf("join MCP server: %w", err)
+			}
+		case <-waitCtx.Done():
+			mcpJoinErr = fmt.Errorf("join MCP server: %w", waitCtx.Err())
+		}
+	}
+
+	var databaseErr error
+	if forceJoinErr == nil && httpJoinErr == nil && mcpJoinErr == nil {
+		databaseErr = closeDatabase()
+	} else {
+		databaseErr = errors.New("database close skipped because lifecycle services did not join")
+	}
+	return errors.Join(primaryErr, shutdownErr, forceCloseErr, forceJoinErr, httpJoinErr, mcpJoinErr, databaseErr)
 }
 
 type originListFlag []string

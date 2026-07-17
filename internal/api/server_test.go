@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -16,7 +17,9 @@ func newTestServer(t *testing.T) *Server {
 	d, err := db.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
-	return NewServer(d, t.TempDir(), nil)
+	s := NewServer(d, t.TempDir(), nil)
+	cleanupTestServer(t, s)
+	return s
 }
 
 func newTestServerWithOptions(t *testing.T, options ServerOptions) *Server {
@@ -24,7 +27,9 @@ func newTestServerWithOptions(t *testing.T, options ServerOptions) *Server {
 	d, err := db.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
-	return NewServerWithOptions(d, t.TempDir(), nil, options)
+	s := NewServerWithOptions(d, t.TempDir(), nil, options)
+	cleanupTestServer(t, s)
+	return s
 }
 
 func newTestServerWithDir(t *testing.T, dir string) *Server {
@@ -32,7 +37,9 @@ func newTestServerWithDir(t *testing.T, dir string) *Server {
 	d, err := db.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
-	return NewServer(d, dir, nil)
+	s := NewServer(d, dir, nil)
+	cleanupTestServer(t, s)
+	return s
 }
 
 type stubCompleter struct {
@@ -65,5 +72,16 @@ func newTestServerWithAI(t *testing.T, c ai.Completer) *Server {
 	d, err := db.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
-	return NewServer(d, t.TempDir(), c)
+	s := NewServer(d, t.TempDir(), c)
+	cleanupTestServer(t, s)
+	return s
+}
+
+func cleanupTestServer(t *testing.T, s *Server) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, s.Shutdown(ctx))
+	})
 }

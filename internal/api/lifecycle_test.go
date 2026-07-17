@@ -2,10 +2,8 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -13,48 +11,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func reserveAddress(t *testing.T) string {
+var lifecycleHTTPClient = &http.Client{Timeout: time.Second}
+
+func startLifecycleServer(t *testing.T, s *Server) (string, <-chan error) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	address := listener.Addr().String()
-	require.NoError(t, listener.Close())
-	return address
-}
-
-func waitForServer(t *testing.T, address string) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", address, 20*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("server did not listen on %s", address)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- s.startOnListener(listener, "", "") }()
+	return "http://" + listener.Addr().String(), serveErr
 }
 
 func TestLifecycleShutdownWaitsForInflightHandler(t *testing.T) {
 	s := newTestServer(t)
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	var once sync.Once
 	s.mux.HandleFunc("GET /lifecycle-block", func(w http.ResponseWriter, _ *http.Request) {
-		once.Do(func() { close(entered) })
+		close(entered)
 		<-release
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	address := reserveAddress(t)
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- s.Start(address, "", "") }()
-	waitForServer(t, address)
+	baseURL, serveErr := startLifecycleServer(t, s)
 
 	requestDone := make(chan error, 1)
 	go func() {
-		response, err := http.Get("http://" + address + "/lifecycle-block") //nolint:gosec
+		response, err := lifecycleHTTPClient.Get(baseURL + "/lifecycle-block") //nolint:gosec
 		if response != nil {
 			_ = response.Body.Close()
 		}
@@ -78,10 +60,12 @@ func TestLifecycleShutdownWaitsForInflightHandler(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	close(release)
-	require.NoError(t, <-shutdownDone)
-	require.NoError(t, <-requestDone)
-	assert.True(t, errors.Is(<-serveErr, http.ErrServerClosed))
-	require.NoError(t, s.Shutdown(context.Background()), "Shutdown must be idempotent")
+	require.NoError(t, receiveWithin(t, shutdownDone, time.Second, "shutdown completion"))
+	require.NoError(t, receiveWithin(t, requestDone, time.Second, "request completion"))
+	assert.ErrorIs(t, receiveWithin(t, serveErr, time.Second, "server stop"), http.ErrServerClosed)
+	retryCtx, cancelRetry := context.WithTimeout(context.Background(), time.Second)
+	defer cancelRetry()
+	require.NoError(t, s.Shutdown(retryCtx), "Shutdown must be idempotent")
 }
 
 func TestLifecycleRootCancellationReachesHandlers(t *testing.T) {
@@ -95,14 +79,11 @@ func TestLifecycleRootCancellationReachesHandlers(t *testing.T) {
 		close(canceled)
 	})
 
-	address := reserveAddress(t)
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- s.Start(address, "", "") }()
-	waitForServer(t, address)
+	baseURL, serveErr := startLifecycleServer(t, s)
 	requestDone := make(chan struct{})
 	go func() {
 		defer close(requestDone)
-		response, _ := http.Get("http://" + address + "/lifecycle-context") //nolint:gosec
+		response, _ := lifecycleHTTPClient.Get(baseURL + "/lifecycle-context") //nolint:gosec
 		if response != nil {
 			_ = response.Body.Close()
 		}
@@ -121,7 +102,7 @@ func TestLifecycleRootCancellationReachesHandlers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, s.Shutdown(ctx))
-	assert.True(t, errors.Is(<-serveErr, http.ErrServerClosed))
+	assert.ErrorIs(t, receiveWithin(t, serveErr, time.Second, "server stop"), http.ErrServerClosed)
 	select {
 	case <-requestDone:
 	case <-time.After(time.Second):
@@ -131,10 +112,7 @@ func TestLifecycleRootCancellationReachesHandlers(t *testing.T) {
 
 func TestLifecycleStartOwnsHardenedHTTPServerAndRejectsDoubleStart(t *testing.T) {
 	s := newTestServer(t)
-	address := reserveAddress(t)
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- s.Start(address, "", "") }()
-	waitForServer(t, address)
+	_, serveErr := startLifecycleServer(t, s)
 
 	s.httpServerMu.Lock()
 	owned := s.httpServer
@@ -144,9 +122,10 @@ func TestLifecycleStartOwnsHardenedHTTPServerAndRejectsDoubleStart(t *testing.T)
 	assert.Equal(t, 120*time.Second, owned.IdleTimeout)
 	assert.Equal(t, 1<<20, owned.MaxHeaderBytes)
 
-	secondAddress := reserveAddress(t)
+	secondListener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
 	doubleStart := make(chan error, 1)
-	go func() { doubleStart <- s.Start(secondAddress, "", "") }()
+	go func() { doubleStart <- s.startOnListener(secondListener, "", "") }()
 	select {
 	case err := <-doubleStart:
 		require.Error(t, err)
@@ -157,7 +136,7 @@ func TestLifecycleStartOwnsHardenedHTTPServerAndRejectsDoubleStart(t *testing.T)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, s.Shutdown(ctx))
-	assert.True(t, errors.Is(<-serveErr, http.ErrServerClosed))
+	assert.ErrorIs(t, receiveWithin(t, serveErr, time.Second, "server stop"), http.ErrServerClosed)
 }
 
 func TestLifecycleShutdownDeadlineCanBeRetried(t *testing.T) {
@@ -170,13 +149,10 @@ func TestLifecycleShutdownDeadlineCanBeRetried(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	address := reserveAddress(t)
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- s.Start(address, "", "") }()
-	waitForServer(t, address)
+	baseURL, serveErr := startLifecycleServer(t, s)
 	requestDone := make(chan error, 1)
 	go func() {
-		response, err := http.Get("http://" + address + "/lifecycle-retry") //nolint:gosec
+		response, err := lifecycleHTTPClient.Get(baseURL + "/lifecycle-retry") //nolint:gosec
 		if response != nil {
 			_ = response.Body.Close()
 		}
@@ -197,6 +173,6 @@ func TestLifecycleShutdownDeadlineCanBeRetried(t *testing.T) {
 	retryCtx, cancelRetry := context.WithTimeout(context.Background(), time.Second)
 	defer cancelRetry()
 	require.NoError(t, s.Shutdown(retryCtx))
-	require.NoError(t, <-requestDone)
-	assert.True(t, errors.Is(<-serveErr, http.ErrServerClosed))
+	require.NoError(t, receiveWithin(t, requestDone, time.Second, "retried request completion"))
+	assert.ErrorIs(t, receiveWithin(t, serveErr, time.Second, "server stop"), http.ErrServerClosed)
 }

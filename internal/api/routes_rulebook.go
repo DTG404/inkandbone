@@ -1,10 +1,10 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -119,24 +119,10 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 
 	// Embed new chunks asynchronously; invalidate cache for this ruleset.
 	s.embCache.Delete(rulesetID)
-	go func() {
-		ctx := s.rootCtx
-		pending, err := s.db.ListChunksForEmbedding(rulesetID)
-		if err != nil {
-			return
-		}
-		for _, c := range pending {
-			emb, err := ai.EmbedText(ctx, c.Content)
-			if err != nil {
-				log.Printf("ingest embed chunk %d: %v", c.ID, err)
-				continue
-			}
-			if err := s.db.UpsertChunkEmbedding(c.ID, emb); err != nil {
-				log.Printf("ingest store embedding %d: %v", c.ID, err)
-			}
-		}
+	s.startLifecycleJob(func(ctx context.Context) {
+		_ = s.embedPendingChunks(ctx, rulesetID, "ingest")
 		s.embCache.Delete(rulesetID)
-	}()
+	})
 
 	writeJSON(w, map[string]interface{}{"chunks_created": len(chunks), "source": source})
 }

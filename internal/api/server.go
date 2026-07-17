@@ -32,6 +32,12 @@ type Server struct {
 	secureCookies   bool
 	rootCtx         context.Context
 	cancel          context.CancelFunc
+	embedText       func(context.Context, string) ([]float32, error)
+	lifecycleMu     sync.Mutex
+	lifecycleWG     sync.WaitGroup
+	lifecycleStop   bool
+	shutdownOnce    sync.Once
+	lifecycleDone   chan struct{}
 	httpServerMu    sync.Mutex
 	httpServer      *http.Server
 	started         bool
@@ -43,6 +49,7 @@ type ServerOptions struct {
 	// RootContext owns request and startup-background lifetimes. A nil context
 	// defaults to context.Background.
 	RootContext context.Context
+	embedText   func(context.Context, string) ([]float32, error)
 }
 
 // NewServer creates the HTTP server. dataDir is the base path for uploaded files
@@ -58,6 +65,10 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		parentCtx = context.Background()
 	}
 	rootCtx, cancel := context.WithCancel(parentCtx)
+	embedText := options.embedText
+	if embedText == nil {
+		embedText = ai.EmbedText
+	}
 	bus := NewBus()
 	hub := NewHub(bus)
 	s := &Server{
@@ -70,6 +81,8 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		secureCookies: options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
 		rootCtx:       rootCtx,
 		cancel:        cancel,
+		embedText:     embedText,
+		lifecycleDone: make(chan struct{}),
 	}
 	if options.Security.AuthSecret != "" {
 		s.sessions = newSessionManager(options.Security.AuthSecret)
@@ -80,7 +93,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 	// Capture the ruleset list before launching the goroutine so that rulesets
 	// created after NewServer returns are not included in the startup backfill.
 	existingRulesets, _ := database.ListRulesets()
-	go s.backfillEmbeddings(rootCtx, existingRulesets)
+	s.startLifecycleJob(func(ctx context.Context) { s.backfillEmbeddings(ctx, existingRulesets) })
 	return s
 }
 
@@ -122,8 +135,20 @@ func (s *Server) Start(addr, certFile, keyFile string) error {
 	if (certFile == "") != (keyFile == "") {
 		return errors.New("both TLS certificate and key are required")
 	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.startOnListener(listener, certFile, keyFile)
+}
+
+func (s *Server) startOnListener(listener net.Listener, certFile, keyFile string) error {
+	if (certFile == "") != (keyFile == "") {
+		_ = listener.Close()
+		return errors.New("both TLS certificate and key are required")
+	}
 	server := &http.Server{
-		Addr:              addr,
+		Addr:              listener.Addr().String(),
 		Handler:           s,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -135,10 +160,12 @@ func (s *Server) Start(addr, certFile, keyFile string) error {
 	s.httpServerMu.Lock()
 	if s.started {
 		s.httpServerMu.Unlock()
+		_ = listener.Close()
 		return errors.New("server already started")
 	}
 	if err := s.rootCtx.Err(); err != nil {
 		s.httpServerMu.Unlock()
+		_ = listener.Close()
 		return fmt.Errorf("server context: %w", err)
 	}
 	s.started = true
@@ -146,9 +173,9 @@ func (s *Server) Start(addr, certFile, keyFile string) error {
 	s.httpServerMu.Unlock()
 
 	if certFile != "" {
-		return server.ListenAndServeTLS(certFile, keyFile)
+		return server.ServeTLS(listener, certFile, keyFile)
 	}
-	return server.ListenAndServe()
+	return server.Serve(listener)
 }
 
 // ListenAndServe is retained for callers that do not use TLS.
@@ -163,14 +190,62 @@ func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
 
 // Shutdown gracefully stops a server started by ListenAndServe or ListenAndServeTLS.
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.cancel()
+	s.beginShutdown()
+	s.httpServerMu.Lock()
+	server := s.httpServer
+	s.httpServerMu.Unlock()
+	var httpErr error
+	if server != nil {
+		httpErr = server.Shutdown(ctx)
+	}
+	var lifecycleErr error
+	select {
+	case <-s.lifecycleDone:
+	case <-ctx.Done():
+		lifecycleErr = ctx.Err()
+	}
+	return errors.Join(httpErr, lifecycleErr)
+}
+
+// Close force-closes active HTTP connections after beginning lifecycle
+// cancellation. Callers should first attempt Shutdown with a bounded context.
+func (s *Server) Close() error {
+	s.beginShutdown()
 	s.httpServerMu.Lock()
 	server := s.httpServer
 	s.httpServerMu.Unlock()
 	if server == nil {
 		return nil
 	}
-	return server.Shutdown(ctx)
+	return server.Close()
+}
+
+func (s *Server) startLifecycleJob(job func(context.Context)) bool {
+	s.lifecycleMu.Lock()
+	if s.lifecycleStop || s.rootCtx.Err() != nil {
+		s.lifecycleMu.Unlock()
+		return false
+	}
+	s.lifecycleWG.Add(1)
+	s.lifecycleMu.Unlock()
+	go func() {
+		defer s.lifecycleWG.Done()
+		job(s.rootCtx)
+	}()
+	return true
+}
+
+func (s *Server) beginShutdown() {
+	s.shutdownOnce.Do(func() {
+		s.lifecycleMu.Lock()
+		s.lifecycleStop = true
+		s.lifecycleMu.Unlock()
+		s.cancel()
+		go func() {
+			s.lifecycleWG.Wait()
+			close(s.lifecycleDone)
+		}()
+	})
 }
 
 // RegisterStatic serves the embedded React SPA for all routes not matched by /api/ or /ws.
@@ -371,20 +446,39 @@ func (s *Server) backfillEmbeddings(ctx context.Context, rulesets []db.Ruleset) 
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		chunks, err := s.db.ListChunksForEmbedding(rs.ID)
-		if err != nil {
-			continue
-		}
-		for _, c := range chunks {
-			emb, err := ai.EmbedText(ctx, c.Content)
-			if err != nil {
-				log.Printf("backfillEmbeddings: embed chunk %d: %v", c.ID, err)
-				continue
-			}
-			if err := s.db.UpsertChunkEmbedding(c.ID, emb); err != nil {
-				log.Printf("backfillEmbeddings: store chunk %d: %v", c.ID, err)
-			}
+		if err := s.embedPendingChunks(ctx, rs.ID, "backfillEmbeddings"); errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
 		}
 		s.embCache.Delete(rs.ID)
 	}
+}
+
+func (s *Server) embedPendingChunks(ctx context.Context, rulesetID int64, operation string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	chunks, err := s.db.ListChunksForEmbedding(rulesetID)
+	if err != nil {
+		return err
+	}
+	for _, chunk := range chunks {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		embedding, err := s.embedText(ctx, chunk.Content)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			log.Printf("%s: embed chunk %d: %v", operation, chunk.ID, err)
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.db.UpsertChunkEmbedding(chunk.ID, embedding); err != nil {
+			log.Printf("%s: store chunk %d: %v", operation, chunk.ID, err)
+		}
+	}
+	return nil
 }

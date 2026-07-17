@@ -1,6 +1,10 @@
 package mcp
 
 import (
+	"context"
+	"errors"
+	"io"
+
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/api"
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -28,9 +32,31 @@ func New(database *db.DB, bus *api.Bus, aiClient ai.Completer) *Server {
 	return s
 }
 
-// Start runs the MCP stdio transport. Blocks until stdin closes.
-func (s *Server) Start() error {
-	return server.ServeStdio(s.srv)
+// Start runs the MCP stdio transport until input closes or ctx is canceled.
+// Cancellation closes the owned input so the SDK's blocking reader also exits.
+func (s *Server) Start(ctx context.Context, stdin io.ReadCloser, stdout io.Writer) error {
+	stdio := server.NewStdioServer(s.srv)
+	stopCloser := make(chan struct{})
+	closerDone := make(chan struct{})
+	go func() {
+		defer close(closerDone)
+		select {
+		case <-ctx.Done():
+			_ = stdin.Close()
+		case <-stopCloser:
+		}
+	}()
+
+	err := stdio.Listen(ctx, stdin, stdout)
+	if ctx.Err() != nil {
+		_ = stdin.Close()
+	}
+	close(stopCloser)
+	<-closerDone
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	return err
 }
 
 func (s *Server) registerTools() {
@@ -202,4 +228,3 @@ func (s *Server) registerTools() {
 		mcplib.WithNumber("ruleset_id", mcplib.Description("Ruleset ID (defaults to active campaign's ruleset)")),
 	), s.handleSearchRulebook)
 }
-

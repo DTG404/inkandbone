@@ -7,10 +7,56 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSessionAIUtilitiesExcludeWhispers(t *testing.T) {
+	for _, endpoint := range []string{"improvise", "detect-threads"} {
+		t.Run(endpoint, func(t *testing.T) {
+			stub := &stubCompleter{response: "safe response"}
+			s := newTestServerWithAI(t, stub)
+			_, sessID := seedCampaign(t, s.db)
+			_, err := s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+			require.NoError(t, err)
+			_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost,
+				"/api/sessions/"+strconv.FormatInt(sessID, 10)+"/"+endpoint,
+				nil)
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Contains(t, stub.capturedPrompts(), "PUBLIC_SENTINEL")
+			assert.NotContains(t, stub.capturedPrompts(), "PRIVATE_SENTINEL")
+		})
+	}
+}
+
+func TestReanalyzeSessionExcludesWhispersFromAutomationPrompts(t *testing.T) {
+	stub := &stubCompleter{response: `[]`}
+	s := newTestServerWithAI(t, stub)
+	_, sessID := seedCampaign(t, s.db)
+	_, err := s.db.CreateMessage(sessID, "assistant", "PUBLIC_SENTINEL: you must recover the relic", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "assistant", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/sessions/"+strconv.FormatInt(sessID, 10)+"/reanalyze",
+		nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	require.Eventually(t, func() bool { return stub.promptCount() >= 2 }, time.Second, 10*time.Millisecond)
+	assert.Contains(t, stub.capturedPrompts(), "PUBLIC_SENTINEL")
+	assert.NotContains(t, stub.capturedPrompts(), "PRIVATE_SENTINEL")
+}
 
 // TestHandleImprovise_ok verifies 200 + {"result": "..."} when AI is available.
 func TestHandleImprovise_ok(t *testing.T) {

@@ -12,9 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mcpStubCompleter struct{ response string }
+type mcpStubCompleter struct {
+	response string
+	prompt   string
+}
 
-func (s *mcpStubCompleter) Generate(_ context.Context, _ string, _ int) (string, error) {
+func (s *mcpStubCompleter) Generate(_ context.Context, prompt string, _ int) (string, error) {
+	s.prompt = prompt
 	return s.response, nil
 }
 
@@ -31,6 +35,10 @@ func TestGenerateSessionRecap(t *testing.T) {
 	sessID, err := s.db.CreateSession(campID, "S1", "2026-04-03")
 	require.NoError(t, err)
 	require.NoError(t, s.db.SetSetting("active_session_id", strconv.FormatInt(sessID, 10)))
+	_, err = s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
 
 	// Collect WS events
 	ch := s.bus.Subscribe()
@@ -59,6 +67,8 @@ func TestGenerateSessionRecap(t *testing.T) {
 	sess, err := s.db.GetSession(sessID)
 	require.NoError(t, err)
 	assert.Equal(t, "The heroes fought valiantly.", sess.Summary)
+	assert.Contains(t, stub.prompt, "PUBLIC_SENTINEL")
+	assert.NotContains(t, stub.prompt, "PRIVATE_SENTINEL")
 }
 
 func TestGenerateSessionRecap_noAI(t *testing.T) {

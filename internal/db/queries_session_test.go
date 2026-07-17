@@ -95,3 +95,26 @@ func TestMessages(t *testing.T) {
 	assert.Len(t, recent, 1)
 	assert.Equal(t, "user", recent[0].Role)
 }
+
+func TestListAIVisibleMessagesExcludesWhispers(t *testing.T) {
+	d := newTestDB(t)
+	campID := setupCampaign(t, d)
+	sessID, err := d.CreateSession(campID, "S1", "2026-04-03")
+	require.NoError(t, err)
+
+	_, err = d.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = d.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	messages, err := d.ListAIVisibleMessages(sessID)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Equal(t, "PUBLIC_SENTINEL", messages[0].Content)
+
+	allMessages, err := d.ListMessages(sessID)
+	require.NoError(t, err)
+	require.Len(t, allMessages, 2)
+	assert.Equal(t, "PRIVATE_SENTINEL", allMessages[1].Content)
+	assert.True(t, allMessages[1].Whisper)
+}

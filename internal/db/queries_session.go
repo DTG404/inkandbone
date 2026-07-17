@@ -174,6 +174,35 @@ func (d *DB) ListMessages(sessionID int64) ([]Message, error) {
 	return out, rows.Err()
 }
 
+// ListAIVisibleMessages returns the session transcript that may be shared with
+// an AI provider. Whispers are excluded by the database query so callers
+// cannot accidentally include private content while building context.
+func (d *DB) ListAIVisibleMessages(sessionID int64) ([]Message, error) {
+	rows, err := d.db.Query(
+		"SELECT id, session_id, role, content, whisper, character_id, created_at FROM messages WHERE session_id = ? AND whisper = 0 ORDER BY created_at, id",
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Message
+	for rows.Next() {
+		var m Message
+		var whisper int
+		var charID sql.NullInt64
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &whisper, &charID, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Whisper = whisper == 1
+		if charID.Valid {
+			m.CharacterID = &charID.Int64
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (d *DB) RecentMessages(sessionID int64, limit int) ([]Message, error) {
 	rows, err := d.db.Query(
 		`SELECT id, session_id, role, content, whisper, character_id, created_at FROM messages

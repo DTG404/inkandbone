@@ -24,7 +24,7 @@ func (s *Server) handleImprovise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := s.db.ListMessages(sessionID)
+	messages, err := s.db.ListAIVisibleMessages(sessionID)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -106,7 +106,7 @@ func (s *Server) handleDetectThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := s.db.ListMessages(sessionID)
+	messages, err := s.db.ListAIVisibleMessages(sessionID)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -185,7 +185,7 @@ func (s *Server) handleReanalyzeSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	messages, err := s.db.ListMessages(id)
+	messages, err := s.db.ListAIVisibleMessages(id)
 	if err != nil {
 		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
 		return

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
@@ -107,6 +108,24 @@ func TestListMessages_empty(t *testing.T) {
 	var msgs []db.Message
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &msgs))
 	assert.Empty(t, msgs)
+}
+
+func TestListMessagesIncludesWhispersForAuthorizedDisplay(t *testing.T) {
+	s := newTestServer(t)
+	_, sessID := seedCampaign(t, s.db)
+	_, err := s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+strconv.FormatInt(sessID, 10)+"/messages", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var messages []db.Message
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &messages))
+	require.Len(t, messages, 1)
+	assert.Equal(t, "PRIVATE_SENTINEL", messages[0].Content)
+	assert.True(t, messages[0].Whisper)
 }
 
 func TestListDiceRolls_empty(t *testing.T) {
@@ -234,6 +253,26 @@ func TestGetContext_withActiveState(t *testing.T) {
 	require.NotNil(t, resp.Session)
 	assert.Equal(t, "S1", resp.Session.Title)
 	assert.Nil(t, resp.ActiveCombat)
+}
+
+func TestGetContextExcludesWhispers(t *testing.T) {
+	s := newTestServer(t)
+	_, sessID := seedCampaign(t, s.db)
+	require.NoError(t, s.db.SetSetting("active_session_id", strconv.FormatInt(sessID, 10)))
+	_, err := s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/context", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp contextResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.RecentMessages, 1)
+	assert.Equal(t, "PUBLIC_SENTINEL", resp.RecentMessages[0].Content)
 }
 
 func TestListWorldNotes_tagFilter(t *testing.T) {
@@ -463,6 +502,10 @@ func TestGenerateRecap_ok(t *testing.T) {
 	stub := &stubCompleter{response: "The party defeated the goblin horde."}
 	s := newTestServerWithAI(t, stub)
 	_, sessID := seedCampaign(t, s.db)
+	_, err := s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/sessions/"+strconv.FormatInt(sessID, 10)+"/recap",
@@ -479,6 +522,26 @@ func TestGenerateRecap_ok(t *testing.T) {
 	sess, err := s.db.GetSession(sessID)
 	require.NoError(t, err)
 	assert.Equal(t, "The party defeated the goblin horde.", sess.Summary)
+	assert.Contains(t, stub.capturedPrompts(), "PUBLIC_SENTINEL")
+	assert.NotContains(t, stub.capturedPrompts(), "PRIVATE_SENTINEL")
+}
+
+func TestAutoUpdateRecapExcludesWhispers(t *testing.T) {
+	stub := &stubCompleter{response: "A safe automatic recap."}
+	s := newTestServerWithAI(t, stub)
+	_, sessID := seedCampaign(t, s.db)
+
+	for _, content := range []string{"PUBLIC_SENTINEL", "Second public turn", "Third public turn", "Fourth public turn"} {
+		_, err := s.db.CreateMessage(sessID, "assistant", content, false, nil)
+		require.NoError(t, err)
+	}
+	_, err := s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	s.autoUpdateRecap(t.Context(), sessID)
+
+	assert.Contains(t, stub.capturedPrompts(), "PUBLIC_SENTINEL")
+	assert.NotContains(t, stub.capturedPrompts(), "PRIVATE_SENTINEL")
 }
 
 func TestGenerateRecap_noAI(t *testing.T) {
@@ -582,19 +645,72 @@ func TestPatchWorldNotePersonality(t *testing.T) {
 // handleGMRespondStream. Generate returns a fixed response; StreamRespond
 // captures the system prompt and writes a minimal SSE response.
 type stubCompleterStreamer struct {
-	generateResp string
-	capturedSys  string
-	streamResp   string
+	mu               sync.Mutex
+	generateResp     string
+	capturedGenerate string
+	capturedSys      string
+	capturedHistory  []ai.ChatMessage
+	streamResp       string
 }
 
-func (s *stubCompleterStreamer) Generate(_ context.Context, _ string, _ int) (string, error) {
+func (s *stubCompleterStreamer) Generate(_ context.Context, prompt string, _ int) (string, error) {
+	s.mu.Lock()
+	s.capturedGenerate = prompt
+	s.mu.Unlock()
 	return s.generateResp, nil
 }
 
-func (s *stubCompleterStreamer) StreamRespond(_ context.Context, system string, _ []ai.ChatMessage, _ int, w http.ResponseWriter) (string, error) {
+func (s *stubCompleterStreamer) StreamRespond(_ context.Context, system string, history []ai.ChatMessage, _ int, w http.ResponseWriter) (string, error) {
+	s.mu.Lock()
 	s.capturedSys = system
+	s.capturedHistory = append([]ai.ChatMessage(nil), history...)
+	s.mu.Unlock()
 	fmt.Fprintf(w, "data: %s\n\n", s.streamResp)
 	return s.streamResp, nil
+}
+
+func (s *stubCompleterStreamer) providerInput() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	input := s.capturedGenerate + "\n" + s.capturedSys
+	for _, message := range s.capturedHistory {
+		input += "\n" + message.Content
+	}
+	return input
+}
+
+func (s *stubCompleterStreamer) systemPrompt() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.capturedSys
+}
+
+func TestHandleGMRespondStreamExcludesWhispersFromProviderContext(t *testing.T) {
+	stub := &stubCompleterStreamer{
+		generateResp: `{"required":false}`,
+		streamResp:   "The public action continues.",
+	}
+	s := newTestServerWithAI(t, stub)
+	_, sessID := seedCampaign(t, s.db)
+	for _, setting := range AllAutomationSettings() {
+		require.NoError(t, s.db.SetSetting(setting.Key, "0"))
+	}
+	require.NoError(t, s.db.SetSetting(settingAutoCheckRoll, "1"))
+	_, err := s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/sessions/"+strconv.FormatInt(sessID, 10)+"/gm-respond-stream",
+		nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	providerInput := stub.providerInput()
+	assert.Contains(t, providerInput, "PUBLIC_SENTINEL")
+	assert.NotContains(t, providerInput, "PRIVATE_SENTINEL")
 }
 
 func TestHandleGMRespondStream_FailureDirection(t *testing.T) {
@@ -618,8 +734,8 @@ func TestHandleGMRespondStream_FailureDirection(t *testing.T) {
 	s.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, stub.capturedSys, "[GM DIRECTION]")
-	assert.Contains(t, stub.capturedSys, "FAILED")
+	assert.Contains(t, stub.systemPrompt(), "[GM DIRECTION]")
+	assert.Contains(t, stub.systemPrompt(), "FAILED")
 }
 
 func uploadMapRequest(t *testing.T, s *Server, campID int64, filename string, content []byte) *httptest.ResponseRecorder {

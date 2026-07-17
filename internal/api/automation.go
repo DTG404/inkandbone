@@ -147,7 +147,7 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 	if !s.isAutomationEnabled(settingAutoUpdateRecap) {
 		return
 	}
-	msgs, err := s.db.ListMessages(sessionID)
+	msgs, err := s.db.ListAIVisibleMessages(sessionID)
 	if err != nil {
 		return
 	}
@@ -183,7 +183,7 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 
 // buildRecap reads messages and dice rolls, builds a prompt, and calls the AI.
 func (s *Server) buildRecap(ctx context.Context, sessionID int64) (string, error) {
-	msgs, err := s.db.ListMessages(sessionID)
+	msgs, err := s.db.ListAIVisibleMessages(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("list messages: %w", err)
 	}

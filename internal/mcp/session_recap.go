@@ -24,7 +24,7 @@ func (s *Server) handleGenerateSessionRecap(ctx context.Context, req mcplib.Call
 		}
 	}
 
-	msgs, err := s.db.ListMessages(sessID)
+	msgs, err := s.db.ListAIVisibleMessages(sessID)
 	if err != nil {
 		return mcplib.NewToolResultError("list messages: " + err.Error()), nil
 	}

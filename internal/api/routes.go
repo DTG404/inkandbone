@@ -721,7 +721,7 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgs, err := s.db.ListMessages(id)
+	msgs, err := s.db.ListAIVisibleMessages(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -867,7 +867,10 @@ func (s *Server) handleGetContext(w http.ResponseWriter, _ *http.Request) {
 	if sessIDStr, err := s.db.GetSetting("active_session_id"); err == nil && sessIDStr != "" {
 		if sessID, err := strconv.ParseInt(sessIDStr, 10, 64); err == nil {
 			resp.Session, _ = s.db.GetSession(sessID)
-			if msgs, err := s.db.RecentMessages(sessID, 20); err == nil {
+			if msgs, err := s.db.ListAIVisibleMessages(sessID); err == nil {
+				if len(msgs) > 20 {
+					msgs = msgs[len(msgs)-20:]
+				}
 				resp.RecentMessages = msgs
 			}
 			if enc, err := s.db.GetActiveEncounter(sessID); err == nil && enc != nil {
@@ -902,7 +905,7 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgs, err := s.db.ListMessages(id)
+	msgs, err := s.db.ListAIVisibleMessages(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -2663,7 +2666,7 @@ func (s *Server) autoDetectObjectives(ctx context.Context, sessionID int64, gmTe
 	// Include the last ~6000 chars of prior GM messages so the AI can detect
 	// objectives that were resolved in earlier turns, not just the current one.
 	recentContext := ""
-	if msgs, merr := s.db.ListMessages(sessionID); merr == nil {
+	if msgs, merr := s.db.ListAIVisibleMessages(sessionID); merr == nil {
 		var sb strings.Builder
 		for _, m := range msgs {
 			if m.Role == "assistant" {

@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
@@ -25,10 +27,29 @@ func newTestServerWithDir(t *testing.T, dir string) *Server {
 	return NewServer(d, dir, nil)
 }
 
-type stubCompleter struct{ response string }
+type stubCompleter struct {
+	response string
+	mu       sync.Mutex
+	prompts  []string
+}
 
-func (s *stubCompleter) Generate(_ context.Context, _ string, _ int) (string, error) {
+func (s *stubCompleter) Generate(_ context.Context, prompt string, _ int) (string, error) {
+	s.mu.Lock()
+	s.prompts = append(s.prompts, prompt)
+	s.mu.Unlock()
 	return s.response, nil
+}
+
+func (s *stubCompleter) capturedPrompts() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.Join(s.prompts, "\n")
+}
+
+func (s *stubCompleter) promptCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.prompts)
 }
 
 func newTestServerWithAI(t *testing.T, c ai.Completer) *Server {

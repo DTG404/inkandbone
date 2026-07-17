@@ -48,6 +48,48 @@ func TestHubBroadcastsEvents(t *testing.T) {
 	assert.Equal(t, EventDiceRolled, received.Type)
 }
 
+func TestWebSocketHandshakeIncludesRequestID(t *testing.T) {
+	s := newTestServer(t)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	header := http.Header{"Origin": []string{srv.URL}}
+	conn, response, err := websocket.DefaultDialer.Dial(wsURL, header)
+	require.NoError(t, err)
+	defer conn.Close()
+	require.NotNil(t, response)
+	defer response.Body.Close()
+
+	assert.NotEmpty(t, response.Header.Get("X-Request-ID"))
+}
+
+func TestWebSocketInternalUpgradeErrorIsOpaque(t *testing.T) {
+	s := &Server{hub: NewHub(NewBus()), mux: http.NewServeMux()}
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
+	req := httptest.NewRequest(http.MethodGet, "http://table.example/ws", nil)
+	req.Host = "table.example"
+	req.Header.Set("Origin", "http://table.example")
+	req.Header.Set("Connection", "upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "MDEyMzQ1Njc4OWFiY2RlZg==")
+	w := httptest.NewRecorder() // deliberately does not implement http.Hijacker
+
+	s.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	requestIDHeader := w.Header().Get("X-Request-ID")
+	require.NotEmpty(t, requestIDHeader)
+	var response map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&response))
+	assert.Equal(t, map[string]string{
+		"error":      "internal server error",
+		"request_id": requestIDHeader,
+	}, response)
+	assert.NotContains(t, w.Body.String(), "Hijacker")
+}
+
 func TestWebSocketRejectsDisallowedOrigin(t *testing.T) {
 	hub := NewHub(NewBus())
 	srv := httptest.NewServer(http.HandlerFunc(hub.ServeWS))

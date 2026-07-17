@@ -76,6 +76,10 @@ func parseMultipartForm(w http.ResponseWriter, r *http.Request, maxBytes int64) 
 	if err != nil || contentType != "multipart/form-data" {
 		return errUnsupportedMediaType
 	}
+	return parseMultipartBody(w, r, maxBytes)
+}
+
+func parseMultipartBody(w http.ResponseWriter, r *http.Request, maxBytes int64) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	return r.ParseMultipartForm(maxBytes)
 }
@@ -100,7 +104,7 @@ func withRequestID(r *http.Request, id string) *http.Request {
 }
 
 func setSecurityHeaders(w http.ResponseWriter) {
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

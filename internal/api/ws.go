@@ -97,8 +97,22 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 // is configured before registration. A nil configurator preserves unsecured
 // and bearer-authenticated connection behavior.
 func (h *Hub) ServeWSAuthorized(w http.ResponseWriter, r *http.Request, configure func(*hubClient) bool) {
-	upgrader := websocket.Upgrader{CheckOrigin: h.originAllowed}
-	conn, err := upgrader.Upgrade(w, r, nil)
+	upgrader := websocket.Upgrader{
+		CheckOrigin: h.originAllowed,
+		Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+			if status >= http.StatusInternalServerError {
+				serverError(w, r, reason)
+				return
+			}
+			w.Header().Set("Sec-WebSocket-Version", "13")
+			http.Error(w, http.StatusText(status), status)
+		},
+	}
+	responseHeader := make(http.Header)
+	if id := requestID(r); id != "" {
+		responseHeader.Set("X-Request-ID", id)
+	}
+	conn, err := upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		log.Printf("ws upgrade: %v", err)
 		return

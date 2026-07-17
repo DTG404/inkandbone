@@ -135,6 +135,8 @@ func TestMiddlewareSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
 	assert.Equal(t, "camera=(), microphone=(), geolocation=()", w.Header().Get("Permissions-Policy"))
-	assert.Contains(t, w.Header().Get("Content-Security-Policy"), "default-src 'self'")
-	assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
+	assert.Equal(t,
+		"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-src https://www.youtube.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+		w.Header().Get("Content-Security-Policy"),
+	)
 }

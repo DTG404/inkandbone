@@ -38,6 +38,37 @@ func TestIngestRulebook_textPlain(t *testing.T) {
 	assert.Equal(t, 2, resp.ChunksCreated)
 }
 
+func TestIngestRulebookContentType(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		wantStatus  int
+	}{
+		{name: "normalized case variant", contentType: "TEXT/PLAIN; charset=utf-8", wantStatus: http.StatusOK},
+		{name: "malformed text prefix", contentType: "text/plain-malformed", wantStatus: http.StatusUnsupportedMediaType},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestServer(t)
+			rulesets, err := s.db.ListRulesets()
+			require.NoError(t, err)
+			require.NotEmpty(t, rulesets)
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/rulesets/"+strconv.FormatInt(rulesets[0].ID, 10)+"/rulebook",
+				strings.NewReader("# Exact media type\nRulebook content."),
+			)
+			req.Header.Set("Content-Type", tt.contentType)
+			w := httptest.NewRecorder()
+
+			s.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+		})
+	}
+}
+
 func TestIngestRulebook_noHeadings(t *testing.T) {
 	s := newTestServer(t)
 	rulesets, err := s.db.ListRulesets()

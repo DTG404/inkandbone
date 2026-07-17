@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -44,13 +45,17 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ct := r.Header.Get("Content-Type")
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		http.Error(w, "unsupported Content-Type; use text/plain or multipart/form-data", http.StatusUnsupportedMediaType)
+		return
+	}
 
 	var text string
 	var source string
 
-	switch {
-	case strings.HasPrefix(ct, "text/plain"):
+	switch contentType {
+	case "text/plain":
 		source = r.URL.Query().Get("source")
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -59,8 +64,8 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 		}
 		text = string(b)
 
-	case strings.HasPrefix(ct, "multipart/form-data"):
-		if err := parseMultipartForm(w, r, rulebookLimit); err != nil {
+	case "multipart/form-data":
+		if err := parseMultipartBody(w, r, rulebookLimit); err != nil {
 			respondBodyError(w, err)
 			return
 		}

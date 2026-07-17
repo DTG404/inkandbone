@@ -110,3 +110,25 @@ Reviewer-fix verification:
 - Focused race: `go test -race ./internal/db -run 'PreservesAutoincrement|RewritesLegacyMapURLsWithinCampaign|IntegrityMigrationQuarantinesOrphans|IntegrityIndexes' -v -count=1 -timeout=60s` — PASS, 0 failures, 6.984s.
 - Affected API: legacy asset and campaign/character/session deletion focus — PASS, 0 failures, 0.463s.
 - Frontend: 16 files and 144 tests PASS; ESLint PASS; TypeScript/Vite production build PASS.
+
+## Final URL-boundary re-review fix
+
+The final re-review identified one remaining Important issue: when only the shorter path `maps/overlap` was registered, an unknown longer token `/api/files/maps/overlap.svg` was treated as a substring match and became the malformed `/api/assets/maps/<id>.svg`.
+
+RED:
+
+- `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` failed with expected unchanged `D /api/files/maps/overlap.svg` versus actual malformed `D /api/assets/maps/9.svg`.
+
+Fix:
+
+- Migration 056 now tokenizes legacy URLs instead of applying substring replacement. It enumerates complete tokens, ending only at EOS or a non-URL-continuation delimiter; alphanumerics, path separators, dot, hyphen, underscore, percent, query/fragment, and other reserved URL characters remain part of the token.
+- Each complete token is joined exactly to a unique map path in the message session's campaign. Unknown longer tokens, same-campaign ambiguity, and unsafe nested tokens remain unchanged.
+- Messages are reconstructed from ordered, non-overlapping token edits, preserving multiple distinct map URLs, cross-campaign duplicate filenames, and registered prefix-overlap cases.
+
+GREEN:
+
+- Focused URL test — PASS, 0 failures, 0.069s.
+- Repeated focused URL test (`-count=10`) — PASS, 10/10, 0.647s.
+- Full DB suite — PASS, 0 failures, 5.069s.
+- Focused race for URL migration and orphan repair — PASS, 0 failures, 4.173s.
+- API/frontend suites were not rerun because this final fix changes only embedded migration SQL and its DB regression fixture; their prior Task 6 verification remains applicable.

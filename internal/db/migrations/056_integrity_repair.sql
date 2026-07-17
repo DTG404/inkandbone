@@ -422,39 +422,86 @@ unambiguous_maps AS (
     GROUP BY campaign_id, image_path
     HAVING count(*) = 1
 ),
-message_rewrites AS (
-    SELECT message_id, map_id, image_path,
-           row_number() OVER (
-               PARTITION BY message_id
-               ORDER BY length(image_path) DESC, map_id
-           ) AS step
-    FROM (
-        SELECT msg.id AS message_id, candidate.map_id, candidate.image_path
-        FROM messages msg
-        JOIN sessions session ON session.id = msg.session_id
-        JOIN unambiguous_maps candidate ON candidate.campaign_id = session.campaign_id
-        WHERE instr(msg.content, '/api/files/' || candidate.image_path) > 0
+legacy_messages AS (
+    SELECT msg.id AS message_id, session.campaign_id, msg.content
+    FROM messages msg JOIN sessions session ON session.id = msg.session_id
+    WHERE instr(msg.content, '/api/files/') > 0
+),
+message_characters(message_id, campaign_id, content, position, character) AS (
+    SELECT message_id, campaign_id, content, 1, substr(content, 1, 1)
+    FROM legacy_messages
+    UNION ALL
+    SELECT message_id, campaign_id, content, position + 1,
+           substr(content, position + 1, 1)
+    FROM message_characters
+    WHERE position < length(content)
+),
+raw_legacy_tokens AS (
+    SELECT start.message_id, start.campaign_id, start.content,
+           start.position AS start_position,
+           COALESCE(
+               (
+                   SELECT min(boundary.position)
+                   FROM message_characters boundary
+                   WHERE boundary.message_id = start.message_id
+                     AND boundary.position >= start.position + length('/api/files/')
+                     AND instr(
+                         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/\._-%?#&=+:~@!$*(),;''[]',
+                         boundary.character
+                     ) = 0
+               ),
+               length(start.content) + 1
+           ) AS end_position
+    FROM message_characters start
+    WHERE substr(start.content, start.position, length('/api/files/')) = '/api/files/'
+),
+legacy_tokens AS (
+    SELECT token.*
+    FROM raw_legacy_tokens token
+    WHERE NOT EXISTS (
+        SELECT 1 FROM raw_legacy_tokens earlier
+        WHERE earlier.message_id = token.message_id
+          AND earlier.start_position < token.start_position
+          AND earlier.end_position > token.start_position
     )
 ),
-rewritten(message_id, step, content) AS (
-    SELECT msg.id, 0, msg.content
-    FROM messages msg
-    WHERE EXISTS (SELECT 1 FROM message_rewrites candidate WHERE candidate.message_id = msg.id)
+token_edits AS (
+    SELECT token.message_id, token.content, token.start_position, token.end_position,
+           row_number() OVER (
+               PARTITION BY token.message_id ORDER BY token.start_position
+           ) AS step,
+           COALESCE(
+               '/api/assets/maps/' || matched.map_id,
+               substr(token.content, token.start_position, token.end_position - token.start_position)
+           ) AS replacement
+    FROM legacy_tokens token
+    LEFT JOIN unambiguous_maps matched
+      ON matched.campaign_id = token.campaign_id
+     AND '/api/files/' || matched.image_path =
+         substr(token.content, token.start_position, token.end_position - token.start_position)
+),
+rewritten(message_id, step, cursor_position, original_content, rewritten_content) AS (
+    SELECT message_id, 0, 1, content, ''
+    FROM legacy_messages
     UNION ALL
-    SELECT r.message_id, r.step + 1,
-           replace(r.content, '/api/files/' || candidate.image_path,
-                   '/api/assets/maps/' || candidate.map_id)
-    FROM rewritten r
-    JOIN message_rewrites candidate
-      ON candidate.message_id = r.message_id AND candidate.step = r.step + 1
+    SELECT current.message_id, current.step + 1, edit.end_position,
+           current.original_content,
+           current.rewritten_content ||
+           substr(current.original_content, current.cursor_position,
+                  edit.start_position - current.cursor_position) ||
+           edit.replacement
+    FROM rewritten current
+    JOIN token_edits edit
+      ON edit.message_id = current.message_id AND edit.step = current.step + 1
 )
 UPDATE messages
 SET content = (
-    SELECT content FROM rewritten r
-    WHERE r.message_id = messages.id
-    ORDER BY r.step DESC LIMIT 1
+    SELECT rewritten_content || substr(original_content, cursor_position)
+    FROM rewritten result
+    WHERE result.message_id = messages.id
+    ORDER BY result.step DESC LIMIT 1
 )
-WHERE EXISTS (SELECT 1 FROM message_rewrites candidate WHERE candidate.message_id = messages.id);
+WHERE EXISTS (SELECT 1 FROM token_edits edit WHERE edit.message_id = messages.id);
 
 -- Rebuild only tables whose historical action is absent or incorrect.
 CREATE TABLE campaigns_new (

@@ -40,6 +40,7 @@ type Server struct {
 	lifecycleDone   chan struct{}
 	httpServerMu    sync.Mutex
 	httpServer      *http.Server
+	httpServerReady chan struct{}
 	started         bool
 }
 
@@ -72,17 +73,18 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 	bus := NewBus()
 	hub := NewHub(bus)
 	s := &Server{
-		db:            database,
-		hub:           hub,
-		bus:           bus,
-		mux:           http.NewServeMux(),
-		dataDir:       dataDir,
-		aiClient:      aiClient,
-		secureCookies: options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
-		rootCtx:       rootCtx,
-		cancel:        cancel,
-		embedText:     embedText,
-		lifecycleDone: make(chan struct{}),
+		db:              database,
+		hub:             hub,
+		bus:             bus,
+		mux:             http.NewServeMux(),
+		dataDir:         dataDir,
+		aiClient:        aiClient,
+		secureCookies:   options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
+		rootCtx:         rootCtx,
+		cancel:          cancel,
+		embedText:       embedText,
+		lifecycleDone:   make(chan struct{}),
+		httpServerReady: make(chan struct{}),
 	}
 	if options.Security.AuthSecret != "" {
 		s.sessions = newSessionManager(options.Security.AuthSecret)
@@ -143,8 +145,8 @@ func (s *Server) Start(addr, certFile, keyFile string) error {
 }
 
 func (s *Server) startOnListener(listener net.Listener, certFile, keyFile string) error {
+	defer listener.Close() //nolint:errcheck // Serve also closes; this covers pre-Serve TLS failures.
 	if (certFile == "") != (keyFile == "") {
-		_ = listener.Close()
 		return errors.New("both TLS certificate and key are required")
 	}
 	server := &http.Server{
@@ -160,16 +162,15 @@ func (s *Server) startOnListener(listener net.Listener, certFile, keyFile string
 	s.httpServerMu.Lock()
 	if s.started {
 		s.httpServerMu.Unlock()
-		_ = listener.Close()
 		return errors.New("server already started")
 	}
 	if err := s.rootCtx.Err(); err != nil {
 		s.httpServerMu.Unlock()
-		_ = listener.Close()
 		return fmt.Errorf("server context: %w", err)
 	}
 	s.started = true
 	s.httpServer = server
+	close(s.httpServerReady)
 	s.httpServerMu.Unlock()
 
 	if certFile != "" {

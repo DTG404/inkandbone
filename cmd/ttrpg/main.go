@@ -41,7 +41,7 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 	}
 	defaultDBPath := filepath.Join(home, ".ttrpg", "ttrpg.db")
 	flags := flag.NewFlagSet("ttrpg", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
+	flags.SetOutput(stdout)
 	dbFlag := flags.String("db", defaultDBPath, "path to SQLite database file")
 	listenFlag := flags.String("listen", "127.0.0.1:7432", "HTTP listen address")
 	tlsCertFlag := flags.String("tls-cert", "", "path to TLS certificate file")
@@ -49,6 +49,9 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 	var allowedOrigins originListFlag
 	flags.Var(&allowedOrigins, "allowed-origin", "allowed browser origin (repeatable or comma-separated)")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("parse flags: %w", err)
 	}
 	securityConfig := api.ListenSecurityConfig{
@@ -107,8 +110,7 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 
 	distFS, err := fs.Sub(ttrpgweb.Static, "dist")
 	if err != nil {
-		_ = database.Close()
-		return fmt.Errorf("embed sub: %w", err)
+		return setupFailure(err, database.Close)
 	}
 
 	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{
@@ -189,7 +191,7 @@ waitForStop:
 			break waitForStop
 		case err := <-httpDone:
 			httpFinished = true
-			if rootCtx.Err() != nil && errors.Is(err, http.ErrServerClosed) {
+			if expectedHTTPStop(rootCtx, err) {
 				// Expected result of lifecycle cancellation.
 			} else if err == nil || errors.Is(err, http.ErrServerClosed) {
 				primaryErr = errors.New("HTTP server stopped unexpectedly")
@@ -225,7 +227,7 @@ waitForStop:
 	if !httpFinished {
 		select {
 		case err := <-httpDone:
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err != nil && !expectedHTTPStop(rootCtx, err) {
 				httpJoinErr = fmt.Errorf("join HTTP server: %w", err)
 			}
 		case <-waitCtx.Done():
@@ -250,6 +252,15 @@ waitForStop:
 		databaseErr = errors.New("database close skipped because lifecycle services did not join")
 	}
 	return errors.Join(primaryErr, shutdownErr, forceCloseErr, forceJoinErr, httpJoinErr, mcpJoinErr, databaseErr)
+}
+
+func expectedHTTPStop(rootCtx context.Context, err error) bool {
+	return rootCtx.Err() != nil &&
+		(errors.Is(err, http.ErrServerClosed) || errors.Is(err, context.Canceled))
+}
+
+func setupFailure(setupErr error, closeDatabase func() error) error {
+	return errors.Join(fmt.Errorf("embed sub: %w", setupErr), closeDatabase())
 }
 
 type originListFlag []string

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -44,6 +45,7 @@ type fakeHTTPService struct {
 	started       chan struct{}
 	stopped       chan struct{}
 	stopOnce      sync.Once
+	stopErr       error
 }
 
 func newFakeHTTPService(log *eventLog) *fakeHTTPService {
@@ -57,6 +59,9 @@ func (s *fakeHTTPService) Start(string, string, string) error {
 		return s.startErr
 	}
 	<-s.stopped
+	if s.stopErr != nil {
+		return s.stopErr
+	}
 	return http.ErrServerClosed
 }
 
@@ -163,4 +168,48 @@ func TestRunServicesReturnsMCPFailureAfterStoppingHTTPAndClosingDB(t *testing.T)
 	require.NotEqual(t, -1, log.index("http_shutdown"))
 	assert.Greater(t, log.index("db_close"), log.index("http_start"))
 	assert.Greater(t, log.index("db_close"), log.index("http_shutdown"))
+}
+
+func TestRunServicesTreatsWrappedCancellationAsNormalJoinedStop(t *testing.T) {
+	log := &eventLog{}
+	web := newFakeHTTPService(log)
+	web.stopErr = fmt.Errorf("listener stopped: %w", context.Canceled)
+	root, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runServices(root, cancel, web, nil, false,
+			nopReadCloser{Reader: bytes.NewReader(nil)}, &bytes.Buffer{},
+			func() error { log.add("db_close"); return nil },
+			runtimeConfig{shutdownTimeout: time.Second})
+	}()
+
+	select {
+	case <-web.started:
+	case <-time.After(time.Second):
+		t.Fatal("HTTP service did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("runtime did not join wrapped cancellation")
+	}
+	assert.Greater(t, log.index("db_close"), log.index("http_shutdown"))
+}
+
+func TestRunHelpWritesUsageAndReturnsSuccess(t *testing.T) {
+	var output bytes.Buffer
+	err := run([]string{"-h"}, nil, &output)
+	require.NoError(t, err)
+	assert.Contains(t, output.String(), "Usage of ttrpg:")
+	assert.Contains(t, output.String(), "-listen")
+}
+
+func TestSetupFailureJoinsDatabaseCloseError(t *testing.T) {
+	setupErr := errors.New("embedded filesystem failed")
+	closeErr := errors.New("database close failed")
+	err := setupFailure(setupErr, func() error { return closeErr })
+	require.ErrorIs(t, err, setupErr)
+	require.ErrorIs(t, err, closeErr)
 }

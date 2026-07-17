@@ -19,7 +19,28 @@ func startLifecycleServer(t *testing.T, s *Server) (string, <-chan error) {
 	require.NoError(t, err)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- s.startOnListener(listener, "", "") }()
+	select {
+	case <-s.httpServerReady:
+	case err := <-serveErr:
+		t.Fatalf("server stopped before installing owned http.Server: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for owned http.Server installation")
+	}
 	return "http://" + listener.Addr().String(), serveErr
+}
+
+func TestLifecycleInvalidTLSClosesOwnedListener(t *testing.T) {
+	s := newTestServer(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	address := listener.Addr().String()
+
+	err = s.startOnListener(listener, t.TempDir()+"/missing-cert.pem", t.TempDir()+"/missing-key.pem")
+	require.Error(t, err)
+
+	rebound, err := net.Listen("tcp", address)
+	require.NoError(t, err, "Start must close its listener when TLS setup fails")
+	require.NoError(t, rebound.Close())
 }
 
 func TestLifecycleShutdownWaitsForInflightHandler(t *testing.T) {

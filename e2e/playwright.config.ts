@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test'
 import path from 'path'
 import { DB_PATH } from './global-setup'
 
-const BINARY = path.resolve(__dirname, '..', 'ttrpg-e2e')
+const BINARY = path.resolve(__dirname, '..', 'ttrpg')
 
 export default defineConfig({
   testDir: './tests',

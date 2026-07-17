@@ -10,7 +10,7 @@ You type in your browser. The AI GM narrates. Your dashboard updates live. That'
 
 Every other AI GM tool is a SaaS product: cloud servers, token limits, monthly subscriptions, and a UI wrapper that constrains the AI so tightly it stops feeling intelligent. ink & bone is the opposite.
 
-**It runs on your machine.** Your campaigns, characters, and session logs live in a SQLite database on your computer. Nothing leaves unless you push it. No account required. No waiting room when your tokens run out at a critical moment in the story.
+**It runs on your machine.** Your campaigns, characters, rulebooks, and session logs live in a SQLite database on your computer. With Ollama, the complete gameplay data flow stays local. When you choose a cloud AI provider, only the context needed for that AI request is sent to that provider; whispers are excluded at the database boundary. No ink & bone account is required.
 
 **It uses capable AI models directly.** ink & bone calls the AI API (DeepSeek, Anthropic, or a local Ollama model) to narrate, make GM judgment calls, and track the story. The AI is grounded in a structured database — character sheets, world notes, NPCs, maps, and rulebook text — so it remembers everything without hallucinating your game state.
 
@@ -73,6 +73,32 @@ Here's how they work:
 **Step 4: The response streams to your browser.** The AI's narration appears character-by-character in your browser. All dice rolls, stat changes, NPCs, and items are automatically tracked and displayed in real time via WebSocket.
 
 Repeat. That's it. The browser is your interface. No coding assistant needed.
+
+### Security and Data Flow
+
+The default listener is `127.0.0.1:7432`, so a normal `ttrpg` launch is reachable only from the same machine and does not show a login screen. This loopback mode is intended for a single local user.
+
+Exposing the server beyond loopback is an explicit security mode. A non-loopback `-listen` value is rejected at startup unless all three controls are present:
+
+- `TTRPG_AUTH_SECRET` containing at least 32 bytes;
+- a valid certificate and private key supplied with `-tls-cert` and `-tls-key`; and
+- one or more exact browser origins supplied with `-allowed-origin`.
+
+For example:
+
+```bash
+TTRPG_AUTH_SECRET='replace-with-at-least-32-random-bytes' \
+  ttrpg -listen 0.0.0.0:7432 \
+  -tls-cert /path/to/server-cert.pem \
+  -tls-key /path/to/server-key.pem \
+  -allowed-origin https://table.example:7432
+```
+
+In that mode, the browser unlock screen exchanges the master secret for an `HttpOnly`, `Secure`, `SameSite=Strict` session cookie. State-changing cookie requests also require the session's CSRF token, and WebSocket upgrades accept only the request's own origin or an explicitly configured origin. API clients may instead send the master secret as a Bearer token over TLS; the secret is not placed in a cookie or stored in the database.
+
+Maps and portraits are served only through typed, database-backed URLs such as `/api/assets/maps/{id}` and `/api/assets/portraits/{id}`. The server does not expose a general file-download route: `/api/files/...` returns 404, including requests for the SQLite database. Keep filesystem permissions and backups protected because the database and uploaded assets still contain the complete campaign record.
+
+Whispers remain in the authorized browser transcript, but every AI-visible message query filters them in SQLite before prompt construction. Session export also omits them. With a cloud AI backend, non-whisper story context, character and campaign state, relevant world notes, and selected rulebook excerpts may be sent to that provider. With Ollama, those model requests remain on the configured local Ollama service.
 
 ---
 

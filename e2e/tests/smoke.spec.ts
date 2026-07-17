@@ -291,7 +291,7 @@ test('creates an NPC via the right-panel', async ({ page }) => {
     const res = await fetch(`/api/sessions/${sid}/npcs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Gareth the Barkeep', description: 'A gruff but fair innkeeper.' }),
+      body: JSON.stringify({ name: 'Gareth the Barkeep', note: 'A gruff but fair innkeeper.' }),
     })
     return res.ok
   }, { sid: sessionId })

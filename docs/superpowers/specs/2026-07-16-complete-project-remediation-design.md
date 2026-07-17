@@ -97,7 +97,9 @@ The migration records orphaned rows in a recovery table containing source table,
 
 After migration, startup runs `PRAGMA foreign_key_check` and stops on any violation. Campaign, session, character, and adventure deletion receive integration tests covering every dependent table.
 
-The executable migration placeholder is removed through a new migration. The reusable ruleset template moves outside the embedded `.sql` directory and cannot be executed by the migration runner.
+The accidental placeholder row is removed through a new migration. Historical migration `038_` remains immutable, while the canonical reusable ruleset template is copied outside the embedded `.sql` directory and cannot be executed by the migration runner.
+
+Migration files execute transactionally as complete SQL scripts rather than being split on semicolons. High-frequency relationship queries receive measured composite indexes, verified through query-plan tests rather than added speculatively.
 
 ### API boundary
 
@@ -153,6 +155,8 @@ The browser chooses `ws://` or `wss://` from `location.protocol`. Event-channel 
 ### Prompt override
 
 Campaign-specific GM guidance is inserted in a delimited, size-limited section after ruleset guidance and before per-turn reminders. It customizes narration but cannot replace mandatory privacy, protocol, or system-integrity instructions. The UI copy reflects this precedence accurately.
+
+The blanket assumption of adult consent and instruction to generate unrestricted non-consensual sexual content is removed from the default prompt. Campaign configuration gains explicit content-boundary guidance and a narrative-locale setting. Safe defaults avoid explicit sexual violence and make no unsupported claims about participant age or consent; campaign preferences remain subordinate to provider and system constraints.
 
 ### Generated SVG
 
@@ -260,6 +264,10 @@ A small canonical JSON contract defines WebSocket and SSE event names and payloa
 
 This contract covers realtime protocols only. A full OpenAPI conversion is outside scope.
 
+### Domain source of truth
+
+Advancement eligibility and minimum XP/Karma costs are served from the Go ruleset package. The frontend no longer maintains a duplicated ruleset-cost table.
+
 ### Documentation
 
 Documentation is updated to match the supported Go and React versions, actual migration and ruleset counts, test commands, provider data flows, network/authentication behavior, database backup and recovery, accessibility expectations, and new module boundaries.
@@ -288,10 +296,12 @@ The remediation is complete only when:
 - SSE preserves exact streamed text across newline, UTF-8, and chunk-boundary tests.
 - WebSocket reconnects reconcile authoritative state and display connection status.
 - Generated SVG rejects active content.
+- Default prompts use safe content assumptions, and configured content boundaries and narrative locale are applied without weakening mandatory instructions.
 - All UI functionality is reachable by keyboard and at the specified viewport widths.
 - Automated accessibility scans and the manual accessibility checklist pass.
 - Go tests, race tests, frontend tests, lint, vulnerability policy, builds, and maintained E2E tests pass in CI.
 - Documentation accurately describes current behavior and supported tooling.
+- Migration scripts preserve quoted semicolons/trigger bodies, high-frequency queries use verified indexes, and frontend advancement eligibility comes from backend rules.
 
 ## Explicit non-goals
 

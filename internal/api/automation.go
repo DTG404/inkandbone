@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -34,19 +33,6 @@ func retryWithBackoff(ctx context.Context, maxRetries int, fn func(context.Conte
 		log.Printf("retryWithBackoff: attempt %d/%d failed: %v", attempt+1, maxRetries, err)
 	}
 	return err
-}
-
-// canRunAutomation returns false when the circuit breaker is open (3+ consecutive failures).
-func (s *Server) canRunAutomation() bool {
-	return atomic.LoadInt32(&s.autoFailCount) < 3
-}
-
-func (s *Server) recordAutoSuccess() {
-	atomic.StoreInt32(&s.autoFailCount, 0)
-}
-
-func (s *Server) recordAutoFailure() {
-	atomic.AddInt32(&s.autoFailCount, 1)
 }
 
 const mapSystemPrompt = `You are a cartographer creating SVG tactical maps for tabletop roleplaying games. Generate a complete, valid SVG map based on the story context provided.
@@ -141,9 +127,6 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 	if s.aiClient == nil {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
 	if !s.isAutomationEnabled(settingAutoUpdateRecap) {
 		return
 	}
@@ -161,6 +144,9 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 	if gmCount == 0 || gmCount%4 != 0 {
 		return
 	}
+	if !s.canRunAutomation(settingAutoUpdateRecap) {
+		return
+	}
 	var summary string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -168,10 +154,10 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 		return e
 	})
 	if err != nil {
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoUpdateRecap, err)
 		return
 	}
-	s.recordAutoSuccess()
+	s.recordAutoSuccess(settingAutoUpdateRecap)
 	if err := s.db.UpdateSessionSummary(sessionID, summary); err != nil {
 		return
 	}

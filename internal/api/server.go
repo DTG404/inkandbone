@@ -27,7 +27,7 @@ type Server struct {
 	xpSuggestCounts sync.Map     // sessionID int64 → int
 	settingCache    sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
 	embCache        sync.Map     // rulesetID int64 → []db.RulebookChunk
-	autoFailCount   int32        // incremented on automation failure, reset on success; circuit breaker at 3
+	breakers        *BreakerRegistry
 	sessions        *sessionManager
 	secureCookies   bool
 	rootCtx         context.Context
@@ -79,6 +79,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		mux:             http.NewServeMux(),
 		dataDir:         dataDir,
 		aiClient:        aiClient,
+		breakers:        NewBreakerRegistry(time.Now, defaultAutomationFailureThreshold, defaultAutomationCooldown),
 		secureCookies:   options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
 		rootCtx:         rootCtx,
 		cancel:          cancel,

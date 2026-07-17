@@ -25,6 +25,8 @@ type DeepSeekClient struct {
 	think  bool // strip <think>...</think> blocks from responses
 }
 
+func (*DeepSeekClient) ProviderName() string { return "deepseek" }
+
 // NewDeepSeekClient returns a GM client for DeepSeek V4 Flash.
 // DeepSeek defaults to thinking mode (reasoning tokens before output), but this
 // client explicitly disables it via "thinking":{"type":"disabled"} on every request.
@@ -250,6 +252,8 @@ type DualDeepSeekClient struct {
 	gm   *DeepSeekClient
 	auto *DeepSeekClient
 }
+
+func (*DualDeepSeekClient) ProviderName() string { return "deepseek" }
 
 // NewDualDeepSeekClient creates a client that sends GM calls to the default
 // DeepSeek V4 Flash model and automation calls to a faster model.

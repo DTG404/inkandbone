@@ -327,10 +327,6 @@ func (s *Server) autoVtMDisciplineRouseChecks(ctx context.Context, sessionID int
 	if !ok {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
-
 	// Confirm VtM campaign.
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil || sess == nil {
@@ -386,6 +382,9 @@ GM narration: %s
 
 Reply with ONLY a single integer: the number of Rouse Checks owed (0 if none). No explanation.`, playerAction, gmText)
 
+	if !s.canRunAutomation(settingAutoCheckRoll) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -393,10 +392,10 @@ Reply with ONLY a single integer: the number of Rouse Checks owed (0 if none). N
 		return e
 	})
 	if err != nil {
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoCheckRoll, err)
 		return
 	}
-	s.recordAutoSuccess()
+	s.recordAutoSuccess(settingAutoCheckRoll)
 	raw = strings.TrimSpace(raw)
 	count := 0
 	if _, err := fmt.Sscanf(raw, "%d", &count); err != nil || count <= 0 {
@@ -518,10 +517,6 @@ func (s *Server) autoDetectVtMEmbrace(ctx context.Context, sessionID int64, gmTe
 	if !ok {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
-
 	// Resolve session → campaign → ruleset.
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil || sess == nil {
@@ -574,6 +569,9 @@ Only set "embraced" to true if the narration clearly describes the player charac
 
 Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 
+	if !s.canRunAutomation(settingAutoUpdateStats) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -582,10 +580,10 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 	})
 	if err != nil {
 		log.Printf("autoDetectVtMEmbrace: AI call failed: %v", err)
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoUpdateStats, err)
 		return
 	}
-	s.recordAutoSuccess()
+	s.recordAutoSuccess(settingAutoUpdateStats)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")

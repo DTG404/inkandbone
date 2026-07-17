@@ -23,6 +23,8 @@ type OllamaClient struct {
 	think   bool           // prepend /think to system prompt for Qwen3 reasoning mode
 }
 
+func (*OllamaClient) ProviderName() string { return "ollama" }
+
 // NewOllamaClient creates an OllamaClient for the given model using the default
 // localhost:11434 base URL. Override with OLLAMA_HOST env var via NewOllamaClientWithURL.
 func NewOllamaClient(model string) *OllamaClient {
@@ -306,6 +308,8 @@ type DualOllamaClient struct {
 	auto *OllamaClient // handles Generate
 }
 
+func (*DualOllamaClient) ProviderName() string { return "ollama" }
+
 // NewDualOllamaClient creates a split-model Ollama client.
 func NewDualOllamaClient(gmModel, autoModel string) *DualOllamaClient {
 	return &DualOllamaClient{
@@ -334,6 +338,8 @@ type HybridClient struct {
 	gm   *OllamaClient // handles Respond + StreamRespond
 	auto *Client       // handles Generate
 }
+
+func (*HybridClient) ProviderName() string { return "anthropic" }
 
 // NewHybridClient creates a client that sends GM calls to Ollama and automation
 // calls to Anthropic. The GM client is tuned for roleplay quality (see NewOllamaGMClient).

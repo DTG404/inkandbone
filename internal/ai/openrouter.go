@@ -27,6 +27,8 @@ type OpenRouterClient struct {
 	options           map[string]any
 }
 
+func (*OpenRouterClient) ProviderName() string { return "openrouter" }
+
 // NewOpenRouterClient returns a GM client for DeepSeek V4 Flash:
 // reasoning suppressed server-side and tuned for prose quality.
 func NewOpenRouterClient(apiKey string) *OpenRouterClient {
@@ -274,6 +276,8 @@ type DualOpenRouterClient struct {
 	gm   *OpenRouterClient // NVIDIA nemotron — GM narration
 	auto *OpenRouterClient // small/fast model — structured automation tasks
 }
+
+func (*DualOpenRouterClient) ProviderName() string { return "openrouter" }
 
 // NewDualOpenRouterClient creates a client that sends GM calls to OpenRouter (NVIDIA)
 // and automation calls to a fast OpenRouter model specified by autoModel.

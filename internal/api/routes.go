@@ -1156,10 +1156,6 @@ func (s *Server) autoGenerateMap(ctx context.Context, sessionID int64, gmText st
 	if !ok {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
-
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil || sess == nil {
 		log.Printf("autoGenerateMap: session %d not found: %v", sessionID, err)
@@ -1183,6 +1179,9 @@ Return ONLY JSON (no explanation, no markdown):
 Story passage:
 %s`, gmText)
 
+	if !s.canRunAutomation(settingAutoGenerateMap) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -1191,9 +1190,10 @@ Story passage:
 	})
 	if err != nil {
 		log.Printf("autoGenerateMap: location detection failed (session %d): %v", sessionID, err)
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoGenerateMap, err)
 		return
 	}
+	s.recordAutoSuccess(settingAutoGenerateMap)
 
 	raw = strings.TrimSpace(raw)
 	// Strip markdown code fences that some models emit despite instructions.
@@ -1235,6 +1235,9 @@ Story passage:
 	// Map generation requires precise SVG output — use the structured AI client,
 	// not the narrative GM model.
 	mapPrompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + loc.Context
+	if !s.canRunAutomation(settingAutoGenerateMap) {
+		return
+	}
 	var svgRaw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -1243,9 +1246,10 @@ Story passage:
 	})
 	if err != nil {
 		log.Printf("autoGenerateMap: SVG generation failed for %q (session %d): %v", loc.Name, sessionID, err)
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoGenerateMap, err)
 		return
 	}
+	s.recordAutoSuccess(settingAutoGenerateMap)
 
 	svgContent := extractSVG(svgRaw)
 	if svgContent == "" {
@@ -1273,7 +1277,6 @@ Story passage:
 		log.Printf("autoGenerateMap: failed to save map record for %q: %v", loc.Name, err)
 		return
 	}
-	s.recordAutoSuccess()
 	s.bus.Publish(Event{Type: EventMapCreated, Payload: map[string]any{
 		"campaign_id": sess.CampaignID,
 		"map_id":      mapID,
@@ -1307,9 +1310,6 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 	}
 	completer, ok := s.aiClient.(ai.Completer)
 	if !ok {
-		return
-	}
-	if !s.canRunAutomation() {
 		return
 	}
 	// Resolve active character.
@@ -1460,6 +1460,9 @@ Return ONLY a JSON object with the fields that must change and their new values.
 - If nothing needs to change, return {}.
 - No explanation, no markdown — just the JSON object.`, ruleset.Name, schema, systemNote, char.DataJSON, playerAction, gmText)
 
+	if !s.canRunAutomation(settingAutoUpdateStats) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -1467,9 +1470,10 @@ Return ONLY a JSON object with the fields that must change and their new values.
 		return e
 	})
 	if err != nil {
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoUpdateStats, err)
 		return
 	}
+	s.recordAutoSuccess(settingAutoUpdateStats)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")
@@ -1626,7 +1630,6 @@ Return ONLY a JSON object with the fields that must change and their new values.
 	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
 		return
 	}
-	s.recordAutoSuccess()
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
 		"id":           charID,
 		"character_id": charID,
@@ -1692,9 +1695,6 @@ func (s *Server) autoSuggestXPSpend(
 	completer, ok := s.aiClient.(ai.Completer)
 	if !ok {
 		log.Printf("autoSuggestXPSpend: AI client not available (no Completer interface)")
-		return
-	}
-	if !s.canRunAutomation() {
 		return
 	}
 
@@ -1801,6 +1801,9 @@ If there are no good suggestions, return an empty JSON array: []
 	ctx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
 	defer cancel()
 
+	if !s.canRunAutomation(settingAutoSuggestXP) {
+		return
+	}
 	var raw string
 	err := retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -1809,9 +1812,10 @@ If there are no good suggestions, return an empty JSON array: []
 	})
 	if err != nil {
 		log.Printf("autoSuggestXPSpend: AI error: %v", err)
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoSuggestXP, err)
 		return
 	}
+	s.recordAutoSuccess(settingAutoSuggestXP)
 
 	// Extract JSON array from response using balanced bracket matching.
 	// The AI sometimes wraps output in markdown fences or adds trailing commentary
@@ -1895,7 +1899,6 @@ If there are no good suggestions, return an empty JSON array: []
 		"session_id":     sessionID,
 	}
 	s.bus.Publish(Event{Type: EventXPSpendSuggestions, Payload: payload})
-	s.recordAutoSuccess()
 }
 
 type rollCheckResult struct {
@@ -2047,10 +2050,6 @@ func (s *Server) extractNPCs(ctx context.Context, sessionID int64, gmText string
 	if !ok {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
-
 	existing, err := s.db.ListSessionNPCs(sessionID)
 	if err != nil {
 		return
@@ -2098,6 +2097,9 @@ Example: {"add":[{"name":"Torvan","note":"A scarred mercenary guarding the gate"
 If nothing changed: {"add":[],"remove":[]}
 No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 
+	if !s.canRunAutomation(settingAutoExtractNPCs) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -2105,10 +2107,10 @@ No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 		return e
 	})
 	if err != nil {
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoExtractNPCs, err)
 		return
 	}
-	s.recordAutoSuccess()
+	s.recordAutoSuccess(settingAutoExtractNPCs)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")
@@ -2611,10 +2613,6 @@ func (s *Server) autoDetectObjectives(ctx context.Context, sessionID int64, gmTe
 	if !ok {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
-
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil || sess == nil {
 		return
@@ -2728,6 +2726,9 @@ Output ONLY: {"new":[{"title":"...","description":"..."}],"resolved":[{"id":3,"s
 No changes: {"new":[],"resolved":[]}
 No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentContext)
 
+	if !s.canRunAutomation(settingAutoDetectObj) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -2735,10 +2736,10 @@ No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentC
 		return e
 	})
 	if err != nil {
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoDetectObj, err)
 		return
 	}
-	s.recordAutoSuccess()
+	s.recordAutoSuccess(settingAutoDetectObj)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")
@@ -2926,10 +2927,6 @@ func (s *Server) autoExtractItems(ctx context.Context, sessionID int64, gmText s
 	if !ok {
 		return
 	}
-	if !s.canRunAutomation() {
-		return
-	}
-
 	// Resolve active character.
 	charIDStr, err := s.db.GetSetting("active_character_id")
 	if err != nil || charIDStr == "" {
@@ -2960,6 +2957,9 @@ If nothing changed: {"gained":[],"lost":[]}
 Story passage:
 %s`, gmText)
 
+	if !s.canRunAutomation(settingAutoExtractItems) {
+		return
+	}
 	var raw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -2967,10 +2967,10 @@ Story passage:
 		return e
 	})
 	if err != nil {
-		s.recordAutoFailure()
+		s.recordAutoFailure(settingAutoExtractItems, err)
 		return
 	}
-	s.recordAutoSuccess()
+	s.recordAutoSuccess(settingAutoExtractItems)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")

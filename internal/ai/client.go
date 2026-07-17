@@ -47,6 +47,8 @@ type Client struct {
 	http   *http.Client
 }
 
+func (*Client) ProviderName() string { return "anthropic" }
+
 // NewClient returns a Client using the production Anthropic API URL.
 func NewClient(apiKey string) *Client {
 	return &Client{apiKey: apiKey, url: defaultURL, http: NewHTTPClient()}

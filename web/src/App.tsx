@@ -558,8 +558,9 @@ function GameApp() {
               try {
                 await suggestAdvances(ctx.character!.id, charXPBalance)
                 setXpPanelDismissed(false)
-              } catch {
-                // silently ignore — panel will appear when WS event arrives
+              } catch (cause) {
+                console.error(cause)
+                toast.error('Advancement suggestions could not be requested. Try again.')
               } finally {
                 setSuggestingXP(false)
               }

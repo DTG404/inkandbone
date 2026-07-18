@@ -27,12 +27,14 @@ describe('keyboard accessibility source gates', () => {
     const files = [
       'App.css', 'CharacterSheetPanel.tsx', 'CombatPanel.tsx', 'SessionView.tsx',
       'FactionsPanel.tsx', 'CalendarPanel.tsx', 'NPCStatBlockPanel.tsx', 'SecretsPanel.tsx',
+      'MapPanel.tsx',
     ]
     const violations: string[] = []
     for (const file of files) {
       source(file).split('\n').forEach((line, index) => {
-        if (/font-size:\s*(?:[0-9](?:\.[0-9]+)?px|0\.(?:6|65)rem)\b/.test(line) || /fontSize:\s*['"](?:[0-9]|10|11)px['"]/.test(line)) {
-          violations.push(`${file}:${index + 1}`)
+        for (const match of line.matchAll(/font(?:-size|Size)\s*:\s*['"]?(\d+(?:\.\d+)?)(px|rem)['"]?/g)) {
+          const pixels = match[2] === 'rem' ? Number(match[1]) * 16 : Number(match[1])
+          if (pixels < 12) violations.push(`${file}:${index + 1}`)
         }
       })
     }

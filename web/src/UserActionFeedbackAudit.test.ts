@@ -8,7 +8,7 @@ const ACTION_FILES = [
   'CalendarPanel.tsx', 'FactionsPanel.tsx', 'SecretsPanel.tsx', 'NPCRosterPanel.tsx',
   'NPCStatBlockPanel.tsx', 'MapPanel.tsx', 'AdventuresPanel.tsx', 'WorldNotesPanel.tsx',
   'DiceRoller.tsx', 'MacroBar.tsx', 'XPLogPanel.tsx', 'DecksPanel.tsx', 'CompendiumPanel.tsx',
-  'JournalPanel.tsx', 'SessionView.tsx', 'ManagePanel.tsx', 'HandoutsPanel.tsx',
+  'JournalPanel.tsx', 'SessionView.tsx', 'ManagePanel.tsx', 'HandoutsPanel.tsx', 'App.tsx',
 ]
 
 const source = (name: string) => readFileSync(join(process.cwd(), 'src', name), 'utf8')
@@ -24,5 +24,12 @@ describe('user action failure feedback source audit', () => {
       /catch\s*(?:\([^)]*\))?\s*\{\s*console\.error\([^\n]*\)\s*\}/s.test(source(name))
     ))
     expect(violations, `console-only catch blocks remain in: ${violations.join(', ')}`).toEqual([])
+  })
+
+  it('does not silently swallow direct-action failures in empty or comment-only catch blocks', () => {
+    const violations = ACTION_FILES.filter((name) => (
+      /catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\/[^\n]*\s*)?\}/s.test(source(name))
+    ))
+    expect(violations, `silent catch blocks remain in: ${violations.join(', ')}`).toEqual([])
   })
 })

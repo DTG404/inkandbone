@@ -121,6 +121,37 @@ describe('App', () => {
     expect(screen.queryByText(/provider-secret|502|Reanalyze failed/)).not.toBeInTheDocument()
   })
 
+  it('reports a safe advancement-suggestion failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/auth/session') return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      if (url === '/api/context') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            ...mockCtx,
+            character: { ...mockCtx.character!, data_json: JSON.stringify({ xp: 300 }) },
+          }),
+        })
+      }
+      if (url === '/api/rulesets/1') return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 1, name: 'dnd5e', schema_json: '[]' }) })
+      if (url === '/api/health') return Promise.resolve({ ok: true, json: () => Promise.resolve({ ai_enabled: true }) })
+      if (url === '/api/characters/1/suggest-advances' && init?.method === 'POST') {
+        return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({ detail: 'provider-secret' }) })
+      }
+      if (url === '/api/sessions/1/messages') return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /advance/i }))
+
+    const safeMessage = await screen.findByText('Advancement suggestions could not be requested. Try again.')
+    const alert = safeMessage.closest('[role="alert"]')
+    expect(alert).not.toBeNull()
+    expect(alert).not.toHaveTextContent(/provider-secret|502/)
+  })
+
   it('shows login without opening the API or WebSocket before authentication', async () => {
     const webSocket = vi.fn().mockImplementation(() => new MockWebSocket())
     const fetchMock = vi.fn().mockImplementation((url: string) => {

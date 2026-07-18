@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { LAYOUT_LIMITS, useWorkspaceLayout } from './useWorkspaceLayout'
 import type { MobileDestination } from '../navigation/panelRegistry'
 import { Drawer } from '../ui/Drawer'
@@ -15,26 +15,27 @@ interface WorkspaceShellProps {
 type ResizeSide = 'left' | 'right'
 type TabletDrawer = 'character' | 'tools' | null
 
-function useTabletWorkspace(): boolean {
-  const query = '(min-width: 600px) and (max-width: 899px)'
-  const [tablet, setTablet] = useState(() => (
+function useWorkspaceMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => (
     typeof window.matchMedia === 'function' && window.matchMedia(query).matches
   ))
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const media = window.matchMedia(query)
-    const update = () => setTablet(media.matches)
+    const update = () => setMatches(media.matches)
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
-  }, [])
+  }, [query])
 
-  return tablet
+  return matches
 }
 
 export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDestination = 'story' }: WorkspaceShellProps) {
-  const tablet = useTabletWorkspace()
+  const tablet = useWorkspaceMedia('(min-width: 600px) and (max-width: 899px)')
+  const mobile = useWorkspaceMedia('(max-width: 599px)')
   const [tabletDrawer, setTabletDrawer] = useState<TabletDrawer>(null)
+  const activeResizeCleanup = useRef<(() => void) | null>(null)
   const {
     layout,
     setLeftWidth,
@@ -48,8 +49,11 @@ export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDe
     if (!tablet) setTabletDrawer(null)
   }, [tablet])
 
+  useEffect(() => () => activeResizeCleanup.current?.(), [])
+
   const startPointerResize = useCallback((side: ResizeSide, event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
+    activeResizeCleanup.current?.()
     const startX = event.clientX
     const startWidth = side === 'left' ? layout.leftWidth : layout.rightWidth
     const move = (moveEvent: PointerEvent) => {
@@ -60,9 +64,13 @@ export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDe
     const stop = () => {
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', stop)
+      document.removeEventListener('pointercancel', stop)
+      if (activeResizeCleanup.current === stop) activeResizeCleanup.current = null
     }
+    activeResizeCleanup.current = stop
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', stop)
+    document.addEventListener('pointercancel', stop)
   }, [layout.leftWidth, layout.rightWidth, setLeftWidth, setRightWidth])
 
   const resizeByKeyboard = (side: ResizeSide, event: KeyboardEvent<HTMLDivElement>) => {
@@ -76,13 +84,22 @@ export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDe
     }
   }
 
+  const desktop = !mobile && !tablet
   const style = {
-    '--left-panel-width': `${layout.leftWidth}px`,
-    '--right-panel-width': `${layout.rightWidth}px`,
+    '--left-panel-width': `${desktop && layout.leftCollapsed ? 0 : layout.leftWidth}px`,
+    '--right-panel-width': `${desktop && layout.rightCollapsed ? 0 : layout.rightWidth}px`,
+    '--left-resizer-width': desktop && !layout.leftCollapsed ? '0.5rem' : '0px',
+    '--right-resizer-width': desktop && !layout.rightCollapsed ? '0.5rem' : '0px',
   } as CSSProperties
 
   return (
-    <div className="workspace-shell" style={style} data-mobile-destination={mobileDestination}>
+    <div
+      className="workspace-shell"
+      style={style}
+      data-mobile-destination={mobileDestination}
+      data-left-collapsed={desktop ? String(layout.leftCollapsed) : undefined}
+      data-right-collapsed={desktop ? String(layout.rightCollapsed) : undefined}
+    >
       {header && <div className="workspace-header">{header}</div>}
       <div className="workspace-command-bar">
         <button type="button" onClick={resetLayout}>Reset workspace layout</button>
@@ -106,17 +123,18 @@ export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDe
         </button>
       </nav>
       <div className="workspace-body">
-        {!tablet && (layout.leftCollapsed ? (
+        {desktop && layout.leftCollapsed && (
           <button type="button" className="workspace-restore workspace-restore-left" onClick={() => setLeftCollapsed(false)}>
             Show character panel
           </button>
-        ) : (
+        )}
+        {(mobile || (desktop && !layout.leftCollapsed)) && (
           <div className="workspace-panel workspace-left">
-            <button type="button" className="workspace-collapse" onClick={() => setLeftCollapsed(true)} aria-label="Collapse character panel">‹</button>
+            {desktop && <button type="button" className="workspace-collapse" onClick={() => setLeftCollapsed(true)} aria-label="Collapse character panel">‹</button>}
             {left}
           </div>
-        ))}
-        {!tablet && !layout.leftCollapsed && (
+        )}
+        {desktop && !layout.leftCollapsed && (
           <div
             className="workspace-resizer workspace-resizer-left"
             role="separator"
@@ -131,7 +149,7 @@ export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDe
           />
         )}
         <div className="workspace-story">{story}</div>
-        {!tablet && !layout.rightCollapsed && (
+        {desktop && !layout.rightCollapsed && (
           <div
             className="workspace-resizer workspace-resizer-right"
             role="separator"
@@ -145,16 +163,17 @@ export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDe
             onKeyDown={(event) => resizeByKeyboard('right', event)}
           />
         )}
-        {!tablet && (layout.rightCollapsed ? (
+        {desktop && layout.rightCollapsed && (
           <button type="button" className="workspace-restore workspace-restore-right" onClick={() => setRightCollapsed(false)}>
             Show tools panel
           </button>
-        ) : (
+        )}
+        {(mobile || (desktop && !layout.rightCollapsed)) && (
           <div className="workspace-panel workspace-right">
-            <button type="button" className="workspace-collapse" onClick={() => setRightCollapsed(true)} aria-label="Collapse tools panel">›</button>
+            {desktop && <button type="button" className="workspace-collapse" onClick={() => setRightCollapsed(true)} aria-label="Collapse tools panel">›</button>}
             {right}
           </div>
-        ))}
+        )}
       </div>
       {tablet && (
         <>

@@ -22,4 +22,20 @@ describe('keyboard accessibility source gates', () => {
     expect(source('App.css')).not.toMatch(/outline:\s*none/)
     expect(source('App.css')).toContain(':focus-visible')
   })
+
+  it('does not declare ordinary labels or actionable text below 12px', () => {
+    const files = [
+      'App.css', 'CharacterSheetPanel.tsx', 'CombatPanel.tsx', 'SessionView.tsx',
+      'FactionsPanel.tsx', 'CalendarPanel.tsx', 'NPCStatBlockPanel.tsx', 'SecretsPanel.tsx',
+    ]
+    const violations: string[] = []
+    for (const file of files) {
+      source(file).split('\n').forEach((line, index) => {
+        if (/font-size:\s*(?:[0-9](?:\.[0-9]+)?px|0\.(?:6|65)rem)\b/.test(line) || /fontSize:\s*['"](?:[0-9]|10|11)px['"]/.test(line)) {
+          violations.push(`${file}:${index + 1}`)
+        }
+      })
+    }
+    expect(violations, `Text smaller than 12px:\n${violations.join('\n')}`).toEqual([])
+  })
 })

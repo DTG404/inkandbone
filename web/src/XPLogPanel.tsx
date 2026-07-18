@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { fetchXP, createXP, deleteXP } from './api'
 import type { XPEntry } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface XPLogPanelProps {
   sessionId: number | null
@@ -9,6 +10,7 @@ interface XPLogPanelProps {
 }
 
 export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
+  const toast = useToast()
   const [entries, setEntries] = useState<XPEntry[]>([])
   const [note, setNote] = useState('')
   const [amount, setAmount] = useState('')
@@ -16,12 +18,12 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
 
   useEffect(() => {
     if (sessionId === null) return
-    fetchXP(sessionId).then(setEntries).catch(console.error)
+    fetchXP(sessionId).then(setEntries).catch(() => setEntries([])) // Background load retries when the session changes.
   }, [sessionId])
 
   useEffect(() => {
     if (sessionId !== null && isScopedEvent(lastEvent, 'xp_added', 'session_id', sessionId)) {
-      fetchXP(sessionId).then(setEntries).catch(console.error)
+      fetchXP(sessionId).then(setEntries).catch(() => {}) // WebSocket refresh is best-effort; a later event retries it.
     }
   }, [lastEvent, sessionId])
 
@@ -37,6 +39,7 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
       setEntries(updated)
     } catch (e) {
       console.error(e)
+      toast.error('Could not add XP entry.')
     } finally {
       setAdding(false)
     }
@@ -51,6 +54,7 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
       }
     } catch (e) {
       console.error(e)
+      toast.error('Could not delete XP entry.')
     }
   }
 

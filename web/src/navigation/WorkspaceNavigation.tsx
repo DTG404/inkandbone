@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Tab, TabList } from '../ui/Tabs'
 import { PANEL_DEFINITIONS, type MobileDestination, type PanelGroup, type PanelID } from './panelRegistry'
 
 const GROUPS: readonly PanelGroup[] = ['Play', 'World', 'GM']
@@ -50,25 +49,24 @@ export function WorkspaceNavigation({
           <div className="workspace-mobile-secondary" aria-label={`${mobileDestination} panels`}>
             {visibleGroups.map((group) => {
               const entries = PANEL_DEFINITIONS.filter((entry) => entry.group === group)
-              const hasSelected = entries.some((entry) => entry.id === activePanel)
               return (
                 <div className="workspace-nav-group" key={group}>
                   <h3>{group}</h3>
-                  <TabList label={`${group} panels`} className="workspace-nav-tabs">
-                    {entries.map((entry, index) => (
-                      <Tab
+                  <div aria-label={`${group} panels`} className="workspace-nav-buttons">
+                    {entries.map((entry) => (
+                      <button
+                        type="button"
                         key={entry.id}
-                        id={entry.id}
-                        domIdPrefix="mobile-tab"
-                        controlsId="workspace-active-panel"
-                        selected={activePanel === entry.id}
-                        tabStop={activePanel === entry.id || (!hasSelected && index === 0)}
-                        onSelect={(id) => onPanelChange(id as PanelID)}
+                        id={`workspace-panel-control-mobile-${entry.id}`}
+                        aria-current={activePanel === entry.id ? 'page' : undefined}
+                        aria-controls="workspace-active-panel"
+                        className="workspace-nav-button"
+                        onClick={() => onPanelChange(entry.id)}
                       >
                         {entry.label}
-                      </Tab>
+                      </button>
                     ))}
-                  </TabList>
+                  </div>
                 </div>
               )
             })}
@@ -94,25 +92,24 @@ export function WorkspaceNavigation({
     <nav className="workspace-desktop-nav" aria-label="Workspace panels">
       {GROUPS.map((group) => {
         const entries = PANEL_DEFINITIONS.filter((entry) => entry.group === group)
-        const hasSelected = entries.some((entry) => entry.id === activePanel)
         return (
           <section className="workspace-nav-group" key={group}>
             <h3>{group}</h3>
-            <TabList label={`${group} panels`} className="workspace-nav-tabs">
-              {entries.map((entry, index) => (
-                <Tab
+            <div aria-label={`${group} panels`} className="workspace-nav-buttons">
+              {entries.map((entry) => (
+                <button
+                  type="button"
                   key={entry.id}
-                  id={entry.id}
-                  domIdPrefix="desktop-tab"
-                  controlsId="workspace-active-panel"
-                  selected={activePanel === entry.id}
-                  tabStop={activePanel === entry.id || (!hasSelected && index === 0)}
-                  onSelect={(id) => onPanelChange(id as PanelID)}
+                  id={`workspace-panel-control-${entry.id}`}
+                  aria-current={activePanel === entry.id ? 'page' : undefined}
+                  aria-controls="workspace-active-panel"
+                  className="workspace-nav-button"
+                  onClick={() => onPanelChange(entry.id)}
                 >
                   {entry.label}
-                </Tab>
+                </button>
               ))}
-            </TabList>
+            </div>
           </section>
         )
       })}

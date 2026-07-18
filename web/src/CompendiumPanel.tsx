@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchRulebook } from './api'
 import type { RulebookResult } from './api'
+import { useToast } from './ui/ToastProvider'
 
 interface Props {
   rulesetId: number
 }
 
 export function CompendiumPanel({ rulesetId }: Props) {
+  const toast = useToast()
   const [query, setQuery] = useState(() => sessionStorage.getItem('compendium-last-query') ?? '')
   const [results, setResults] = useState<RulebookResult[]>([])
   const [mode, setMode] = useState<string | null>(null)
@@ -34,10 +36,11 @@ export function CompendiumPanel({ rulesetId }: Props) {
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       console.error(err)
+      toast.error('Could not search the compendium.')
     } finally {
       setLoading(false)
     }
-  }, [rulesetId])
+  }, [rulesetId, toast])
 
   useEffect(() => {
     sessionStorage.setItem('compendium-last-query', query)

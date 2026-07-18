@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { fetchNPCs, createNPC, patchNPC, deleteNPC, reanalyzeSession } from './api'
 import type { SessionNPC } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface Props {
   sessionId: number | null
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function NPCRosterPanel({ sessionId, lastEvent }: Props) {
+  const toast = useToast()
   const [npcs, setNpcs] = useState<SessionNPC[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [addName, setAddName] = useState('')
@@ -38,6 +40,7 @@ export function NPCRosterPanel({ sessionId, lastEvent }: Props) {
       setShowAddForm(false)
     } catch (err) {
       console.error(err)
+      toast.error('Could not add NPC.')
     } finally {
       setSaving(false)
     }
@@ -49,12 +52,16 @@ export function NPCRosterPanel({ sessionId, lastEvent }: Props) {
       setNpcs((prev) => prev.filter((n) => n.id !== id))
     } catch (err) {
       console.error(err)
+      toast.error('Could not delete NPC.')
     }
   }
 
   function handleNoteBlur(npc: SessionNPC, note: string) {
     if (note === npc.note) return
-    patchNPC(npc.id, note).catch(console.error)
+    patchNPC(npc.id, note).catch((cause) => {
+      console.error(cause)
+      toast.error(`Could not update ${npc.name}.`)
+    })
   }
 
   async function handleReanalyze() {
@@ -64,6 +71,7 @@ export function NPCRosterPanel({ sessionId, lastEvent }: Props) {
       await reanalyzeSession(sessionId)
     } catch (err) {
       console.error(err)
+      toast.error('Could not reanalyze NPCs.')
     } finally {
       setReanalyzing(false)
     }

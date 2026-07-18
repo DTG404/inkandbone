@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { listAdventures, createAdventure, updateAdventure, deleteAdventure, fetchSessions } from './api'
 import type { Adventure, Session } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface AdventuresPanelProps {
   campaignId: number
@@ -18,6 +19,7 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: AdventuresPanelProps) {
+  const toast = useToast()
   const [adventures, setAdventures] = useState<Adventure[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -67,6 +69,7 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       resetForm()
     } catch (err) {
       console.error('Failed to save adventure:', err)
+      toast.error('Could not save adventure.')
     }
   }
 
@@ -76,6 +79,7 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       setAdventures(adventures.filter(a => a.id !== id))
     } catch (err) {
       console.error('Failed to delete adventure:', err)
+      toast.error('Could not delete adventure.')
     }
   }
 
@@ -87,6 +91,7 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       setAdventures(updated)
     } catch (err) {
       console.error('Failed to update adventure status:', err)
+      toast.error('Could not update adventure status.')
     }
   }
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { fetchRuleset, patchCharacter, portraitAssetURL, uploadPortrait } from './api'
 import type { Ruleset } from './api'
 import type { Character } from './types'
+import { useToast } from './ui/ToastProvider'
 
 interface SchemaField {
   key: string
@@ -114,7 +115,7 @@ function PipRow({ label, value, max, onChange, color = 'gold' }: {
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '3px' }}>
-      <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--gold-dim)', width: '72px', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--gold-dim)', width: '72px', flexShrink: 0 }}>{label}</span>
       <div style={{ display: 'flex', gap: '3px' }}>
         {Array.from({ length: max }, (_, i) => (
           <button
@@ -143,7 +144,7 @@ function DamageTrack({ label, max, superficial, aggravated, onClickBox }: {
 }) {
   return (
     <div style={{ marginBottom: '6px' }}>
-      <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--gold-dim)' }}>{label}</span>
+      <span style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--gold-dim)' }}>{label}</span>
       <div style={{ display: 'flex', gap: '3px', marginTop: '3px' }}>
         {Array.from({ length: max }, (_, i) => {
           const fromRight = max - 1 - i
@@ -160,7 +161,7 @@ function DamageTrack({ label, max, superficial, aggravated, onClickBox }: {
                 width: 14, height: 14, border: '1px solid var(--gold-dim)',
                 background: isAgg ? '#8b0000' : isSup ? '#555' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '9px', color: isAgg ? '#fff' : isSup ? '#ccc' : 'transparent',
+                fontSize: '12px', color: isAgg ? '#fff' : isSup ? '#ccc' : 'transparent',
                 cursor: onClickBox ? 'pointer' : 'default', padding: 0,
               }}
             >
@@ -183,7 +184,7 @@ interface VtMSheetProps {
 
 function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMSheetProps) {
   const labelStyle: React.CSSProperties = {
-    fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px',
+    fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1.5px',
     color: 'var(--gold-dim)', fontFamily: 'var(--serif)'
   }
   const inputStyle: React.CSSProperties = {
@@ -191,7 +192,7 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
     color: 'var(--text)', fontSize: '12px', padding: '0.15rem 0.3rem', width: '100%'
   }
   const sectionHead: React.CSSProperties = {
-    fontSize: '11px', textTransform: 'uppercase', letterSpacing: '2px',
+    fontSize: '12px', textTransform: 'uppercase', letterSpacing: '2px',
     color: 'var(--gold)', borderBottom: '1px solid var(--border)',
     paddingBottom: '3px', marginTop: '12px', marginBottom: '6px'
   }
@@ -227,7 +228,7 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
       {/* Hunger — hidden for Ghoul and Mortal; capped at 4 for Thin-Blooded */}
       {!isGhoul && !isMortal && (
         <div style={{ marginBottom: '10px' }}>
-          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#c0392b', marginBottom: '4px' }}>
+          <div style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', color: '#c0392b', marginBottom: '4px' }}>
             Hunger{isThinBlood && ' (max 4)'}
           </div>
           <div style={{ display: 'flex', gap: '4px' }}>
@@ -341,7 +342,7 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
           { label: 'Mental', attrs: VTM_MENTAL_ATTRS },
         ].map(({ label, attrs }) => (
           <div key={label}>
-            <div style={{ fontSize: '9px', color: 'var(--gold)', marginBottom: '4px' }}>{label}</div>
+            <div style={{ fontSize: '12px', color: 'var(--gold)', marginBottom: '4px' }}>{label}</div>
             {attrs.map((key) => (
               <PipRow
                 key={key}
@@ -364,7 +365,7 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
           { label: 'Mental', skills: VTM_MENTAL_SKILLS },
         ].map(({ label, skills }) => (
           <div key={label}>
-            <div style={{ fontSize: '9px', color: 'var(--gold)', marginBottom: '4px' }}>{label}</div>
+            <div style={{ fontSize: '12px', color: 'var(--gold)', marginBottom: '4px' }}>{label}</div>
             {skills.map((key) => (
               <PipRow
                 key={key}
@@ -520,11 +521,15 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
 }
 
 export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTracks, characterOverride, onRollField }: CharacterSheetPanelProps) {
+  const toast = useToast()
   const effectiveCharacter = characterOverride ?? character
   const [ruleset, setRuleset] = useState<Ruleset | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
   const [computedValues, setComputedValues] = useState<Record<string, number>>({})
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const persistedFieldsRef = useRef<Record<string, string>>({})
+  const saveGenerationRef = useRef(0)
+  const persistedGenerationRef = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showRollHint, setShowRollHint] = useState(() =>
     !localStorage.getItem('inkandbone_roll_hint_shown')
@@ -539,17 +544,22 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     if (rulesetId === null) return
     fetchRuleset(rulesetId)
       .then(setRuleset)
-      .catch(console.error)
+      .catch(() => setRuleset(null)) // Background schema load is retried when the ruleset changes.
   }, [rulesetId])
 
   useEffect(() => {
     if (!effectiveCharacter) return
     try {
       const data = JSON.parse(effectiveCharacter.data_json || '{}') as Record<string, unknown>
-      setFields(Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')])))
+      const loaded = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')]))
+      setFields(loaded)
+      persistedFieldsRef.current = loaded
     } catch {
       setFields({})
+      persistedFieldsRef.current = {}
     }
+    saveGenerationRef.current += 1
+    persistedGenerationRef.current = saveGenerationRef.current
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveCharacter?.id])
 
@@ -559,7 +569,11 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
     if (lastEvent.payload.data_json) {
       try {
         const data = JSON.parse(lastEvent.payload.data_json) as Record<string, unknown>
-        setFields(Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')])))
+        const loaded = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')]))
+        setFields(loaded)
+        persistedFieldsRef.current = loaded
+        saveGenerationRef.current += 1
+        persistedGenerationRef.current = saveGenerationRef.current
       } catch { /* ignore */ }
     }
   }, [lastEvent, effectiveCharacter?.id])
@@ -607,6 +621,8 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
   }
 
   function handleChange(key: string, value: string) {
+    const generation = saveGenerationRef.current + 1
+    saveGenerationRef.current = generation
     const next = { ...fields, [key]: value }
     setFields(next)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -617,14 +633,29 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         const v = next[f.key] ?? f.default ?? ''
         updates[f.key] = f.type === 'number' ? (v === '' ? null : Number(v)) : v
       })
-      patchCharacter(effectiveCharacter!.id, updates).catch(console.error)
+      patchCharacter(effectiveCharacter!.id, updates)
+        .then(() => {
+          if (generation < persistedGenerationRef.current) return
+          persistedGenerationRef.current = generation
+          persistedFieldsRef.current = next
+        })
+        .catch((cause) => {
+          console.error(cause)
+          if (generation === saveGenerationRef.current) setFields(persistedFieldsRef.current)
+          const label = schema.find((field) => field.key === key)?.label ?? key
+          toast.error(`Could not save ${label}.`)
+        })
     }, 500)
   }
 
   function handlePortraitChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    uploadPortrait(effectiveCharacter!.id, file).catch(console.error)
+    uploadPortrait(effectiveCharacter!.id, file).catch((cause) => {
+      console.error(cause)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      toast.error('Could not upload portrait.')
+    })
   }
 
   const isVtM = ruleset?.name?.toLowerCase() === 'vtm'
@@ -668,14 +699,14 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
       {/* One-time roll hint */}
       {showRollHint && onRollField && (
         <div style={{
-          fontSize: '10px', color: 'var(--gold-dim)', textAlign: 'center',
+          fontSize: '12px', color: 'var(--gold-dim)', textAlign: 'center',
           padding: '4px 8px', border: '1px dashed var(--border)', borderRadius: '3px',
           marginBottom: '6px',
         }}>
           Click any skill or attribute to roll it.{' '}
           <button
             onClick={dismissHint}
-            style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: '10px' }}
+            style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: '12px' }}
           >
             ✕
           </button>
@@ -736,7 +767,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
         const numFields = nonBackstoryFields.filter((f) => f.type === 'number' && !f.options)
         const selectFields = nonBackstoryFields.filter((f) => f.options && f.options.length > 0)
         const wideFields = nonBackstoryFields.filter((f) => f.type !== 'number' && (!f.options || f.options.length === 0))
-        const labelStyle: React.CSSProperties = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--gold-dim)', fontFamily: 'var(--serif)', display: 'flex', flexDirection: 'column', gap: '2px' }
+        const labelStyle: React.CSSProperties = { fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--gold-dim)', fontFamily: 'var(--serif)', display: 'flex', flexDirection: 'column', gap: '2px' }
         const inputStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: '12px', padding: '0.15rem 0.3rem', width: '100%' }
         return (
           <>

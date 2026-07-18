@@ -73,6 +73,7 @@ interface PinPlacementModalProps {
 }
 
 function PinPlacementModal({ mapId, defaultLabel, onClose }: PinPlacementModalProps) {
+  const toast = useToast()
   const [label, setLabel] = useState(defaultLabel.slice(0, 60))
   const [note, setNote] = useState('')
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
@@ -96,6 +97,7 @@ function PinPlacementModal({ mapId, defaultLabel, onClose }: PinPlacementModalPr
       onClose()
     } catch (err) {
       console.error(err)
+      toast.error('Could not place map pin.')
     } finally {
       setSaving(false)
     }
@@ -264,6 +266,7 @@ interface SceneTagPickerProps {
 }
 
 function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
+  const toast = useToast()
   const activeTags = session.scene_tags ? session.scene_tags.split(',').filter(Boolean) : []
 
   async function toggleTag(tag: string) {
@@ -277,6 +280,7 @@ function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
       setAmbientTrack(newTags[0] ?? null)
     } catch (err) {
       console.error('Failed to update scene tags:', err)
+      toast.error('Could not update scene tags.')
     }
   }
 
@@ -402,7 +406,7 @@ export function SessionView({
 
   useEffect(() => {
     if (!ctx.session) return
-    fetchNPCs(ctx.session.id).then(setSessionNpcs).catch(console.error)
+    fetchNPCs(ctx.session.id).then(setSessionNpcs).catch(() => setSessionNpcs([])) // Background roster load retries on session change.
   }, [ctx.session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -842,8 +846,8 @@ export function SessionView({
         <div
           className="tab-content"
           id="workspace-active-panel"
-          role="tabpanel"
-          aria-label={`${PANEL_DEFINITIONS.find((panel) => panel.id === rightTab)?.label ?? 'Workspace'} panel`}
+          role="region"
+          aria-labelledby={`workspace-panel-control-${rightTab}`}
         >
           {rightTab === 'handouts' && ctx.campaign && (
             <HandoutsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
@@ -927,7 +931,12 @@ export function SessionView({
             <AdventuresPanel
               campaignId={ctx.campaign.id}
               onSessionClick={async (sessionId: number) => {
-                await patchSettings({ session_id: sessionId })
+                try {
+                  await patchSettings({ session_id: sessionId })
+                } catch (cause) {
+                  console.error(cause)
+                  toast.error('Could not open that adventure session.')
+                }
               }}
               lastEvent={lastEvent}
             />

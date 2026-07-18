@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { patchSessionSummary, generateRecap, patchSessionNotes, fetchXP, createXP, deleteXP, postImprovise, postPreSessionBrief, postDetectThreads, postCampaignAsk } from './api'
 import type { XPEntry } from './types'
 import { StatusRegion } from './ui/StatusRegion'
+import { useToast } from './ui/ToastProvider'
 
 interface JournalPanelProps {
   session: { id: number; summary: string; notes: string } | null
@@ -53,6 +54,7 @@ function isXPAddedEvent(ev: unknown): ev is XPAddedEvent {
 }
 
 export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: JournalPanelProps) {
+  const toast = useToast()
   const [draft, setDraft] = useState(session?.summary ?? '')
   const [recapError, setRecapError] = useState('')
   const [notes, setNotes] = useState(session?.notes ?? '')
@@ -83,7 +85,7 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
 
   useEffect(() => {
     if (!session) return
-    fetchXP(session.id).then(setXpEntries).catch(console.error)
+    fetchXP(session.id).then(setXpEntries).catch(() => setXpEntries([])) // Background load retries when session changes.
   }, [session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -109,18 +111,27 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
   }, [lastEvent, session?.id])
 
   const handleNotesChange = useCallback((value: string) => {
+    const previous = notes
     setNotes(value)
     if (!session) return
     if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current)
     notesDebounceRef.current = setTimeout(() => {
-      patchSessionNotes(session.id, value).catch(console.error)
+      patchSessionNotes(session.id, value).catch((cause) => {
+        console.error(cause)
+        setNotes((current) => current === value ? previous : current)
+        toast.error('Could not save session notes.')
+      })
     }, 300)
-  }, [session])
+  }, [notes, session, toast])
 
   if (session === null) return null
 
   function handleBlur() {
-    patchSessionSummary(session!.id, draft).catch(console.error)
+    patchSessionSummary(session!.id, draft).catch((cause) => {
+      console.error(cause)
+      setDraft(session!.summary)
+      toast.error('Could not save session summary.')
+    })
   }
 
   async function handleGenerateRecap() {
@@ -145,10 +156,11 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
       setXpEntries(prev => [...prev, entry])
     } catch (err) {
       console.error('Failed to add milestone:', err)
-    } finally {
-      setMilestoneNote('')
-      setMilestoneXP('')
+      toast.error('Could not add milestone.')
+      return
     }
+    setMilestoneNote('')
+    setMilestoneXP('')
   }
 
   async function handleDeleteMilestone(id: number) {
@@ -157,6 +169,7 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
       setXpEntries(prev => prev.filter(e => e.id !== id))
     } catch (err) {
       console.error('Failed to delete milestone:', err)
+      toast.error('Could not delete milestone.')
     }
   }
 

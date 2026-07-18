@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { listNpcStats, createNpcStat, updateNpcStat, deleteNpcStat } from './api'
 import type { NpcStat } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface NPCStatBlockPanelProps {
   campaignId: number
@@ -11,6 +12,7 @@ interface NPCStatBlockPanelProps {
 const ROLE_OPTIONS = ['brute', 'scout', 'caster', 'leader', 'support', 'minion', 'elite', 'solo', 'other']
 
 export function NPCStatBlockPanel({ campaignId, lastEvent }: NPCStatBlockPanelProps) {
+  const toast = useToast()
   const [stats, setStats] = useState<NpcStat[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -79,6 +81,7 @@ export function NPCStatBlockPanel({ campaignId, lastEvent }: NPCStatBlockPanelPr
       resetForm()
     } catch (err) {
       console.error('Failed to save NPC stat:', err)
+      toast.error('Could not save NPC stat block.')
     }
   }
 
@@ -88,6 +91,7 @@ export function NPCStatBlockPanel({ campaignId, lastEvent }: NPCStatBlockPanelPr
       setStats(stats.filter(s => s.id !== id))
     } catch (err) {
       console.error('Failed to delete NPC stat:', err)
+      toast.error('Could not delete NPC stat block.')
     }
   }
 

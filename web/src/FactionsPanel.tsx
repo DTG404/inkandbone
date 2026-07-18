@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { listFactions, createFaction, updateFaction, deleteFaction } from './api'
 import type { Faction } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface FactionsPanelProps {
   campaignId: number
@@ -11,6 +12,7 @@ interface FactionsPanelProps {
 const FACTION_TYPE_OPTIONS = ['faction', 'guild', 'clan', 'cult', 'kingdom', 'order', 'gang', 'corporation', 'tribe', 'other']
 
 export function FactionsPanel({ campaignId, lastEvent }: FactionsPanelProps) {
+  const toast = useToast()
   const [factions, setFactions] = useState<Faction[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -63,6 +65,7 @@ export function FactionsPanel({ campaignId, lastEvent }: FactionsPanelProps) {
       resetForm()
     } catch (err) {
       console.error('Failed to save faction:', err)
+      toast.error('Could not save faction.')
     }
   }
 
@@ -72,6 +75,7 @@ export function FactionsPanel({ campaignId, lastEvent }: FactionsPanelProps) {
       setFactions(factions.filter(f => f.id !== id))
     } catch (err) {
       console.error('Failed to delete faction:', err)
+      toast.error('Could not delete faction.')
     }
   }
 

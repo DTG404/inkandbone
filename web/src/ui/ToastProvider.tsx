@@ -26,6 +26,11 @@ interface ToastAPI {
 }
 
 const ToastContext = createContext<ToastAPI | null>(null)
+const NOOP_TOAST_API: ToastAPI = {
+  info: () => undefined,
+  success: () => undefined,
+  error: () => undefined,
+}
 
 function ToastItem({ toast, dismiss }: { toast: ToastEntry; dismiss: (id: number) => void }) {
   const [paused, setPaused] = useState(false)
@@ -96,6 +101,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function useToast(): ToastAPI {
   const context = useContext(ToastContext)
-  if (!context) throw new Error('useToast must be used inside ToastProvider')
-  return context
+  // The application tree always installs ToastProvider. The stable fallback keeps
+  // provider-owned leaf panels independently renderable in isolation and SSR.
+  return context ?? NOOP_TOAST_API
 }

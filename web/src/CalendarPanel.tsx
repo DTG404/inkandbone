@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { getCampaignCalendar, patchCampaignCalendar, listCalendarEvents, createCalendarEvent, deleteCalendarEvent } from './api'
 import type { CampaignCalendarInfo, CalendarEvent } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 const EVENT_TYPES = ['note', 'battle', 'festival', 'ceremony', 'death', 'birth', 'discovery', 'disaster', 'meeting', 'travel']
 
@@ -12,6 +13,7 @@ interface CalendarPanelProps {
 }
 
 export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPanelProps) {
+  const toast = useToast()
   const [info, setInfo] = useState<CampaignCalendarInfo | null>(null)
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,10 +40,11 @@ export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPane
       setFormDay(calInfo.in_game_day)
     } catch (err) {
       console.error('Failed to load calendar:', err)
+      toast.error('Could not load calendar.')
     } finally {
       setLoading(false)
     }
-  }, [campaignId])
+  }, [campaignId, toast])
 
   useEffect(() => { load() }, [load])
 
@@ -58,6 +61,7 @@ export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPane
       setFormDay(updated.in_game_day)
     } catch (err) {
       console.error('Failed to advance date:', err)
+      toast.error('Could not advance the calendar.')
     }
   }
 
@@ -81,6 +85,7 @@ export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPane
       await load()
     } catch (err) {
       console.error('Failed to create event:', err)
+      toast.error('Could not create calendar event.')
     } finally {
       setSaving(false)
     }
@@ -92,6 +97,7 @@ export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPane
       await load()
     } catch (err) {
       console.error('Failed to delete event:', err)
+      toast.error('Could not delete calendar event.')
     }
   }
 

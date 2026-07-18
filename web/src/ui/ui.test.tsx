@@ -23,6 +23,25 @@ function DialogHarness() {
   )
 }
 
+function NestedDialogHarness() {
+  const [parentOpen, setParentOpen] = useState(false)
+  const [childOpen, setChildOpen] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setParentOpen(true)}>Open parent</button>
+      <Dialog open={parentOpen} title="Parent dialog" onClose={() => setParentOpen(false)}>
+        <button type="button">Parent first</button>
+        <button type="button" onClick={() => setChildOpen(true)}>Open child</button>
+        <button type="button">Parent last</button>
+        <Dialog open={childOpen} title="Child dialog" onClose={() => setChildOpen(false)}>
+          <button type="button">Child first</button>
+          <button type="button">Child last</button>
+        </Dialog>
+      </Dialog>
+    </>
+  )
+}
+
 afterEach(cleanup)
 
 describe('accessible UI primitives', () => {
@@ -73,6 +92,31 @@ describe('accessible UI primitives', () => {
     await user.click(refresh)
 
     expect(screen.getByRole('button', { name: 'Refresh data 1' })).toHaveFocus()
+  })
+
+  it('gives Escape, focus trapping, restoration, and scroll lock to only the topmost nested dialog', async () => {
+    const user = userEvent.setup()
+    render(<NestedDialogHarness />)
+    const rootOpener = screen.getByRole('button', { name: 'Open parent' })
+    await user.click(rootOpener)
+    const childOpener = screen.getByRole('button', { name: 'Open child' })
+    await user.click(childOpener)
+
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(screen.getByRole('button', { name: 'Child first' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Child dialog' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Parent dialog' })).toBeInTheDocument()
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(childOpener).toHaveFocus()
+
+    screen.getByRole('button', { name: 'Parent first' }).focus()
+    await user.keyboard('{Shift>}{Tab}{/Shift}')
+    expect(screen.getByRole('button', { name: 'Parent last' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(document.body.style.overflow).not.toBe('hidden')
+    expect(rootOpener).toHaveFocus()
   })
 
   it('gives drawers dialog semantics by default', () => {

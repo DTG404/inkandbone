@@ -3,6 +3,7 @@ import type { CampaignMap, MapPin, MapToken, MapZone } from './api'
 import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone, mapAssetURL } from './api'
 import type { SessionNPC, Character } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id: number } } {
   return (
@@ -23,6 +24,7 @@ interface MapPanelProps {
 }
 
 export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters, sessionNpcs }: MapPanelProps) {
+  const toast = useToast()
   const [maps, setMaps] = useState<CampaignMap[]>([])
   const [activeMapIdx, setActiveMapIdx] = useState(0)
   const [pins, setPins] = useState<MapPin[]>([])
@@ -46,11 +48,11 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       if (goToLast && m.length > 0) {
         setActiveMapIdx(m.length - 1)
       }
-    }).catch(console.error)
+    }).catch(() => setMaps([])) // Background load retries on campaign or map events.
   }
 
   const loadTokens = useCallback((mapId: number) => {
-    fetchMapTokens(mapId).then(setTokens).catch(console.error)
+    fetchMapTokens(mapId).then(setTokens).catch(() => {}) // Background token refresh is event-driven best effort.
   }, [])
 
   useEffect(() => {
@@ -77,15 +79,15 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       onActiveMapChange?.(null, null)
       return
     }
-    fetchMapPins(activeMap.id).then(setPins).catch(console.error)
+    fetchMapPins(activeMap.id).then(setPins).catch(() => setPins([]))
     loadTokens(activeMap.id)
-    fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+    fetchMapZones(activeMap.id).then(setZones).catch(() => setZones([]))
     onActiveMapChange?.(activeMap.id, activeMap.image_path)
   }, [activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isMapPinAddedEvent(lastEvent) && activeMap && (lastEvent as { payload: { map_id: number } }).payload.map_id === activeMap.id) {
-      fetchMapPins(activeMap.id).then(setPins).catch(console.error)
+      fetchMapPins(activeMap.id).then(setPins).catch(() => {})
     }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -102,7 +104,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
     if (e.type === 'zone_revealed') {
       const p = e.payload as { map_id: number }
       if (p && p.map_id === activeMap.id) {
-        fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+        fetchMapZones(activeMap.id).then(setZones).catch(() => {})
       }
     }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -231,10 +233,15 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   async function handleCreateZone() {
     if (!pendingZoneName || !newZoneName.trim() || !activeMap) return
     const { x, y, w, h } = pendingZoneName
-    await createMapZone(activeMap.id, newZoneName.trim(), x, y, w, h)
-    setPendingZoneName(null)
-    setNewZoneName('')
-    fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+    try {
+      await createMapZone(activeMap.id, newZoneName.trim(), x, y, w, h)
+      setPendingZoneName(null)
+      setNewZoneName('')
+      fetchMapZones(activeMap.id).then(setZones).catch(() => {})
+    } catch (cause) {
+      console.error(cause)
+      toast.error('Could not create map zone.')
+    }
   }
 
   function handleMapMouseMove(e: React.MouseEvent<HTMLDivElement>) {
@@ -257,6 +264,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
     } catch (err) {
       console.error(err)
       if (activeMap) loadTokens(activeMap.id)
+      toast.error('Could not move map token.')
     }
   }
 
@@ -274,6 +282,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       loadTokens(activeMap.id)
     } catch (err) {
       console.error(err)
+      toast.error('Could not place map token.')
     }
   }
 
@@ -404,8 +413,13 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={async (e) => {
                       e.stopPropagation()
-                      await removeToken(token.id)
-                      if (activeMap) loadTokens(activeMap.id)
+                      try {
+                        await removeToken(token.id)
+                        if (activeMap) loadTokens(activeMap.id)
+                      } catch (cause) {
+                        console.error(cause)
+                        toast.error('Could not remove map token.')
+                      }
                     }}
                   >
                     ×
@@ -525,15 +539,25 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                   <span>{zone.name}</span>
                   <button
                     onClick={async () => {
-                      await patchMapZone(zone.id, { is_revealed: !zone.is_revealed })
-                      if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+                      try {
+                        await patchMapZone(zone.id, { is_revealed: !zone.is_revealed })
+                        if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(() => {})
+                      } catch (cause) {
+                        console.error(cause)
+                        toast.error('Could not change zone visibility.')
+                      }
                     }}
                   >
                     {zone.is_revealed ? 'Hide' : 'Reveal'}
                   </button>
                   <button onClick={async () => {
-                    await deleteMapZone(zone.id)
-                    if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+                    try {
+                      await deleteMapZone(zone.id)
+                      if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(() => {})
+                    } catch (cause) {
+                      console.error(cause)
+                      toast.error('Could not delete map zone.')
+                    }
                   }}>
                     ×
                   </button>

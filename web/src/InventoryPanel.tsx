@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchItems, createItem, patchItem, deleteItem, patchCurrency } from './api'
 import type { Item } from './types'
+import { useToast } from './ui/ToastProvider'
 
 interface InventoryPanelProps {
   characterId: number | null
@@ -24,6 +25,7 @@ export function InventoryPanel({
   lastEvent,
   characterIdOverride,
 }: InventoryPanelProps) {
+  const feedback = useToast()
   const effectiveCharacterId = characterIdOverride ?? characterId
   const [items, setItems] = useState<Item[]>([])
   const [addName, setAddName] = useState('')
@@ -107,6 +109,8 @@ export function InventoryPanel({
       await patchCurrency(effectiveCharacterId, { currency_balance: toast.prevBalance })
     } catch (err) {
       console.error(err)
+      setBalance(toast.newBalance)
+      feedback.error('Could not undo the currency change.')
     }
   }
 
@@ -117,12 +121,15 @@ export function InventoryPanel({
       return
     }
     const clamped = Math.max(0, parsed)
+    const previous = balance
     setBalance(clamped)
     setEditingBalance(false)
     try {
       await patchCurrency(effectiveCharacterId, { currency_balance: clamped })
     } catch (err) {
       console.error(err)
+      setBalance(previous)
+      feedback.error('Could not update currency balance.')
     }
   }
 
@@ -132,12 +139,15 @@ export function InventoryPanel({
       setEditingLabel(false)
       return
     }
+    const previous = label
     setLabel(trimmed)
     setEditingLabel(false)
     try {
       await patchCurrency(effectiveCharacterId, { currency_label: trimmed })
     } catch (err) {
       console.error(err)
+      setLabel(previous)
+      feedback.error('Could not update currency label.')
     }
   }
 
@@ -150,6 +160,7 @@ export function InventoryPanel({
       setAddName('')
     } catch (err) {
       console.error(err)
+      feedback.error('Could not add item.')
     } finally {
       setSaving(false)
     }
@@ -163,6 +174,7 @@ export function InventoryPanel({
       )
     } catch (err) {
       console.error(err)
+      feedback.error('Could not update item equipment.')
     }
   }
 
@@ -172,6 +184,7 @@ export function InventoryPanel({
       setItems((prev) => prev.filter((i) => i.id !== id))
     } catch (err) {
       console.error(err)
+      feedback.error('Could not delete item.')
     }
   }
 

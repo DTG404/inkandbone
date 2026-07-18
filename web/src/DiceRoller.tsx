@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { rollDice } from './api'
+import { useToast } from './ui/ToastProvider'
 
 interface DiceRollerProps {
   sessionId: number
@@ -8,6 +9,7 @@ interface DiceRollerProps {
 const DICE = [4, 6, 8, 10, 12, 20] as const
 
 export function DiceRoller({ sessionId }: DiceRollerProps) {
+  const toast = useToast()
   const [flash, setFlash] = useState<{ die: number; result: number } | null>(null)
 
   async function handleRoll(die: number) {
@@ -17,6 +19,7 @@ export function DiceRoller({ sessionId }: DiceRollerProps) {
       setTimeout(() => setFlash(null), 1500)
     } catch (err) {
       console.error(err)
+      toast.error(`Could not roll d${die}.`)
     }
   }
 

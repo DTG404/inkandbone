@@ -179,8 +179,8 @@ test('creating and revealing a secret triggers the handout modal', async ({ page
   await page.goto('/')
   await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
-  // Navigate to the Secrets right-panel tab
-  await page.getByRole('tab', { name: 'Secrets', exact: true }).click()
+  // Navigate to the Secrets right-panel destination
+  await page.locator('.workspace-desktop-nav').getByRole('button', { name: 'Secrets', exact: true }).click()
   await expect(page.locator('.secrets-panel')).toBeVisible({ timeout: 5_000 })
 
   // Create a secret via the in-panel form
@@ -215,8 +215,8 @@ test('Push button re-triggers handout modal for already-revealed secret', async 
   await page.goto('/')
   await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
-  // Navigate to Secrets tab
-  await page.getByRole('tab', { name: 'Secrets', exact: true }).click()
+  // Navigate to Secrets
+  await page.locator('.workspace-desktop-nav').getByRole('button', { name: 'Secrets', exact: true }).click()
   await expect(page.locator('.secrets-panel')).toBeVisible({ timeout: 5_000 })
 
   // Switch to "Revealed" filter so we see the secret from the prior test
@@ -253,16 +253,16 @@ test('map FX endpoint rejects out-of-range coordinates', async ({ request }) => 
   expect(res.status()).toBe(400)
 })
 
-// ── Test 6: Right-panel tab navigation ───────────────────────────────────────
+// ── Test 6: Right-panel destination navigation ───────────────────────────────
 
-test('navigates all right-panel tabs without crashing', async ({ page }) => {
+test('navigates all right-panel destinations without crashing', async ({ page }) => {
   await page.goto('/')
   await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
-  const tabs = ['Notes', 'NPCs', 'Objectives', 'Oracle', 'Secrets', 'Handouts', 'Journal']
-  for (const tab of tabs) {
-    const btn = page.getByRole('tab', { name: tab, exact: true })
-    // Some tabs may not exist in all rulesets — skip if absent
+  const destinations = ['Notes', 'NPCs', 'Objectives', 'Oracle', 'Secrets', 'Handouts', 'Journal']
+  for (const destination of destinations) {
+    const btn = page.locator('.workspace-desktop-nav').getByRole('button', { name: destination, exact: true })
+    // Some destinations may not exist in all rulesets — skip if absent
     if ((await btn.count()) === 0) continue
     await btn.click()
     // Just verify no error overlay appears
@@ -271,7 +271,7 @@ test('navigates all right-panel tabs without crashing', async ({ page }) => {
   }
 
   // Return to Notes — world notes search input should be visible
-  await page.getByRole('tab', { name: 'Notes', exact: true }).click()
+  await page.locator('.workspace-desktop-nav').getByRole('button', { name: 'Notes', exact: true }).click()
   await expect(page.locator('.notes-search')).toBeVisible({ timeout: 3_000 })
 })
 
@@ -281,7 +281,7 @@ test('creates an NPC via the right-panel', async ({ page }) => {
   await page.goto('/')
   await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
-  await page.getByRole('tab', { name: 'NPCs', exact: true }).click()
+  await page.locator('.workspace-desktop-nav').getByRole('button', { name: 'NPCs', exact: true }).click()
   await expect(page.locator('.npcs-panel, .npc-list, [class*="npc"]').first()).toBeVisible({ timeout: 5_000 })
 
   // Add a new NPC via the API directly (avoids UI differences across rulesets)
@@ -298,7 +298,7 @@ test('creates an NPC via the right-panel', async ({ page }) => {
   // Reload the page — NPC should appear after the WS/reload cycle
   await page.reload()
   await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
-  await page.getByRole('tab', { name: 'NPCs', exact: true }).click()
+  await page.locator('.workspace-desktop-nav').getByRole('button', { name: 'NPCs', exact: true }).click()
   await expect(page.locator('body')).toContainText('Gareth the Barkeep', { timeout: 5_000 })
 })
 

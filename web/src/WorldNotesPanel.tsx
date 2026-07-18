@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { fetchWorldNotes, draftWorldNote, patchWorldNotePersonality, patchWorldNoteRevealed } from './api'
 import type { WorldNote } from './types'
 import { wsEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface Props {
   campaignId: number
@@ -15,6 +16,7 @@ function parseTags(json: string): string[] {
 }
 
 function PersonalityEditor({ note, onSaved }: { note: WorldNote; onSaved: () => void }) {
+  const toast = useToast()
   const [value, setValue] = useState(note.personality_json || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,6 +29,7 @@ function PersonalityEditor({ note, onSaved }: { note: WorldNote; onSaved: () => 
       onSaved()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
+      toast.error('Could not save NPC personality.')
     } finally {
       setSaving(false)
     }
@@ -51,6 +54,7 @@ function PersonalityEditor({ note, onSaved }: { note: WorldNote; onSaved: () => 
 }
 
 export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
+  const toast = useToast()
   const [notes, setNotes] = useState<WorldNote[]>([])
   const [query, setQuery] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
@@ -81,6 +85,7 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
       await draftWorldNote(campaignId, hint)
     } catch (err) {
       console.error(err)
+      toast.error('Could not draft world note.')
     } finally {
       setDrafting(false)
     }
@@ -108,8 +113,13 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
                   className="reveal-toggle-btn"
                   title={n.is_revealed ? 'Hide from players' : 'Reveal to players'}
                   onClick={async () => {
-                    await patchWorldNoteRevealed(n.id, !n.is_revealed)
-                    loadNotes()
+                    try {
+                      await patchWorldNoteRevealed(n.id, !n.is_revealed)
+                      loadNotes()
+                    } catch (cause) {
+                      console.error(cause)
+                      toast.error('Could not change handout visibility.')
+                    }
                   }}
                 >
                   {n.is_revealed ? '✅' : '📤'}

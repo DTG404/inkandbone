@@ -20,7 +20,7 @@ describe('WorkspaceNavigation', () => {
     expect(registry.every(({ render }) => typeof render === 'function')).toBe(true)
   })
 
-  it('exposes every panel in keyboard-operable desktop groups', async () => {
+  it('exposes every panel as grouped navigation buttons with one current controller', async () => {
     const user = userEvent.setup()
     const onPanelChange = vi.fn()
     render(
@@ -36,12 +36,18 @@ describe('WorkspaceNavigation', () => {
     expect(screen.getByRole('heading', { name: 'Play' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'World' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'GM' })).toBeInTheDocument()
-    for (const label of EXPECTED_PANELS) expect(screen.getByRole('tab', { name: label })).toBeVisible()
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
+    expect(screen.queryAllByRole('tablist')).toHaveLength(0)
+    for (const label of EXPECTED_PANELS) expect(screen.getByRole('button', { name: label })).toBeVisible()
 
-    const handouts = screen.getByRole('tab', { name: 'Handouts' })
+    const handouts = screen.getByRole('button', { name: 'Handouts' })
+    expect(handouts).toHaveAttribute('aria-current', 'page')
+    expect(handouts).toHaveAttribute('aria-controls', 'workspace-active-panel')
+    expect(handouts).toHaveAttribute('id', 'workspace-panel-control-handouts')
     handouts.focus()
-    await user.keyboard('{ArrowRight}')
-    expect(screen.getByRole('tab', { name: 'Decks' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Decks' })).toHaveFocus()
+    await user.keyboard('{Enter}')
     expect(onPanelChange).toHaveBeenCalledWith('decks')
   })
 
@@ -77,8 +83,9 @@ describe('WorkspaceNavigation', () => {
         mobile
       />,
     )
-    expect(screen.getByRole('tab', { name: 'Handouts' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Calendar' })).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Objectives' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Handouts' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Calendar' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Objectives' })).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
   })
 })

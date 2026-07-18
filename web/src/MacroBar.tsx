@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Macro } from './types'
 import { fetchMacros, createMacro, updateMacro, deleteMacro, reorderMacros } from './api'
+import { useToast } from './ui/ToastProvider'
 
 const PRESET_COLORS = [
   { label: 'Gold',   value: 'var(--gold)' },
@@ -26,6 +27,7 @@ interface MacroFormState {
 const EMPTY_FORM: MacroFormState = { label: '', action_text: '', color: 'var(--gold)' }
 
 export function MacroBar({ characterId, onFire, disabled }: MacroBarProps) {
+  const toast = useToast()
   const [macros, setMacros] = useState<Macro[]>([])
   const [editMode, setEditMode] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -34,7 +36,7 @@ export function MacroBar({ characterId, onFire, disabled }: MacroBarProps) {
 
   useEffect(() => {
     if (!characterId) { setMacros([]); return }
-    fetchMacros(characterId).then(setMacros).catch(console.error)
+    fetchMacros(characterId).then(setMacros).catch(() => setMacros([])) // Background load retries when character changes.
   }, [characterId])
 
   if (!characterId) return null
@@ -49,6 +51,7 @@ export function MacroBar({ characterId, onFire, disabled }: MacroBarProps) {
       setForm(EMPTY_FORM)
     } catch (err) {
       console.error(err)
+      toast.error('Could not create macro.')
     }
   }
 
@@ -63,6 +66,7 @@ export function MacroBar({ characterId, onFire, disabled }: MacroBarProps) {
       setShowForm(false)
     } catch (err) {
       console.error(err)
+      toast.error('Could not update macro.')
     }
   }
 
@@ -73,6 +77,7 @@ export function MacroBar({ characterId, onFire, disabled }: MacroBarProps) {
       setMacros((prev) => prev.filter((m) => m.id !== id))
     } catch (err) {
       console.error(err)
+      toast.error('Could not delete macro.')
     }
   }
 
@@ -87,6 +92,7 @@ export function MacroBar({ characterId, onFire, disabled }: MacroBarProps) {
       setMacros(updated)
     } catch (err) {
       console.error(err)
+      toast.error('Could not reorder macros.')
     }
   }
 

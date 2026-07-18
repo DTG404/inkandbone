@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { listSecrets, createSecret, revealSecret, updateSecret, deleteSecret } from './api'
 import type { Secret } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface SecretsPanelProps {
   campaignId: number
@@ -12,6 +13,7 @@ interface SecretsPanelProps {
 const CATEGORY_OPTIONS = ['secret', 'handout', 'clue']
 
 export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelProps) {
+  const toast = useToast()
   const [secrets, setSecrets] = useState<Secret[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -59,6 +61,7 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
       resetForm()
     } catch (err) {
       console.error('Failed to save secret:', err)
+      toast.error('Could not save secret.')
     }
   }
 
@@ -70,6 +73,7 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
       setSecrets(updated)
     } catch (err) {
       console.error('Failed to reveal secret:', err)
+      toast.error('Could not reveal secret.')
     }
   }
 
@@ -79,6 +83,7 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
       setSecrets(secrets.filter(s => s.id !== id))
     } catch (err) {
       console.error('Failed to delete secret:', err)
+      toast.error('Could not delete secret.')
     }
   }
 

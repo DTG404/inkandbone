@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import { fetchWorldNotes } from './api'
 import type { WorldNote } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface Props {
   campaignId: number
@@ -11,12 +12,16 @@ interface Props {
 
 export function HandoutsPanel({ campaignId, lastEvent }: Props) {
   const [notes, setNotes] = useState<WorldNote[]>([])
+  const toast = useToast()
 
   const load = useCallback(() => {
     fetchWorldNotes(campaignId, undefined, undefined, true)
       .then(setNotes)
-      .catch(console.error)
-  }, [campaignId])
+      .catch((error) => {
+        console.error(error)
+        toast.error('Handouts could not be refreshed. Try again.')
+      })
+  }, [campaignId, toast])
 
   useEffect(() => { load() }, [load])
 

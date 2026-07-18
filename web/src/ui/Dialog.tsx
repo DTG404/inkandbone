@@ -9,6 +9,35 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+const dialogStack: symbol[] = []
+let bodyScrollLocks = 0
+let bodyOverflowBeforeLock = ''
+
+function registerDialog(token: symbol): () => void {
+  dialogStack.push(token)
+  return () => {
+    const index = dialogStack.lastIndexOf(token)
+    if (index >= 0) dialogStack.splice(index, 1)
+  }
+}
+
+function isTopmostDialog(token: symbol): boolean {
+  return dialogStack.at(-1) === token
+}
+
+function acquireBodyScrollLock(): () => void {
+  if (bodyScrollLocks === 0) bodyOverflowBeforeLock = document.body.style.overflow
+  bodyScrollLocks += 1
+  document.body.style.overflow = 'hidden'
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    bodyScrollLocks = Math.max(0, bodyScrollLocks - 1)
+    if (bodyScrollLocks === 0) document.body.style.overflow = bodyOverflowBeforeLock
+  }
+}
+
 function focusableElements(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
     .filter((element) => {
@@ -37,6 +66,7 @@ export function Dialog({ open, title, onClose, children, className = '', modal =
   const dialogRef = useRef<HTMLDivElement>(null)
   const previousActiveRef = useRef<HTMLElement | null>(null)
   const onCloseRef = useRef(onClose)
+  const stackTokenRef = useRef(Symbol('dialog'))
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -46,13 +76,15 @@ export function Dialog({ open, title, onClose, children, className = '', modal =
     if (!open) return
 
     previousActiveRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
-    if (modal) document.body.style.overflow = 'hidden'
+    const token = stackTokenRef.current
+    const unregister = registerDialog(token)
+    const releaseScrollLock = modal ? acquireBodyScrollLock() : () => undefined
     const dialog = dialogRef.current
     const firstFocusable = dialog ? focusableElements(dialog)[0] : undefined
     ;(firstFocusable ?? dialog)?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isTopmostDialog(token)) return
       if (event.key === 'Escape') {
         event.preventDefault()
         onCloseRef.current()
@@ -80,7 +112,8 @@ export function Dialog({ open, title, onClose, children, className = '', modal =
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
-      if (modal) document.body.style.overflow = previousOverflow
+      unregister()
+      releaseScrollLock()
       previousActiveRef.current?.focus()
     }
   }, [modal, open])
@@ -92,7 +125,7 @@ export function Dialog({ open, title, onClose, children, className = '', modal =
       className="ui-dialog-backdrop"
       data-testid="dialog-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
+        if (event.target === event.currentTarget && isTopmostDialog(stackTokenRef.current)) onCloseRef.current()
       }}
     >
       <div

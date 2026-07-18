@@ -96,17 +96,89 @@ test('tablet keeps Story unobstructed and opens one accessible workspace drawer 
   const toolsDrawer = page.getByRole('dialog', { name: 'Tools drawer' })
   await expect(toolsDrawer).toBeVisible()
   await expect(toolsDrawer.locator(':focus')).toHaveCount(1)
+  await expect(toolsDrawer.getByRole('region', { name: 'Notes', exact: true })).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'Character drawer' })).toHaveCount(0)
   await expect(page.getByRole('dialog')).toHaveCount(1)
 
-  for (const tab of await toolsDrawer.getByRole('tab').all()) {
-    const targetId = await tab.getAttribute('aria-controls')
+  for (const control of await toolsDrawer.locator('button[aria-controls="workspace-active-panel"]').all()) {
+    const targetId = await control.getAttribute('aria-controls')
     expect(targetId).toBeTruthy()
     await expect(page.locator(`#${targetId}`)).toHaveCount(1)
   }
   await page.keyboard.press('Escape')
   await expect(toolsDrawer).toHaveCount(0)
   await expect(toolsOpener).toBeFocused()
+})
+
+test('persisted desktop collapse reclaims Story width without suppressing 390px destinations', async ({ page, request }) => {
+  await activateFixture(request)
+  await page.addInitScript(() => {
+    localStorage.setItem('inkandbone.workspace.v1', JSON.stringify({
+      leftWidth: 420, rightWidth: 320, leftCollapsed: true, rightCollapsed: true,
+    }))
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  const desktopBody = await page.locator('.workspace-body').boundingBox()
+  const desktopStory = await page.locator('.workspace-story').boundingBox()
+  expect(desktopBody).not.toBeNull()
+  expect(desktopStory).not.toBeNull()
+  expect(desktopStory!.width).toBeGreaterThanOrEqual(desktopBody!.width - 2)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  const destinations = page.getByRole('navigation', { name: 'Workspace destinations' })
+  await destinations.getByRole('button', { name: 'Character' }).click()
+  await expect(page.locator('.sidebar-left')).toBeVisible()
+  await destinations.getByRole('button', { name: 'World' }).click()
+  await expect(page.locator('.sidebar-right')).toBeVisible()
+  await destinations.getByRole('button', { name: 'GM' }).click()
+  await expect(page.locator('.sidebar-right')).toBeVisible()
+})
+
+test.describe('coarse pointer sizing', () => {
+  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } })
+
+  test('legacy attribute, faction, and calendar controls meet label and 44px target floors', async ({ page, request }) => {
+    await activateFixture(request)
+    const factions = await request.get(`/api/campaigns/${fixture.campaignId}/factions`)
+    expect(factions.ok()).toBe(true)
+    if ((await factions.json() as unknown[]).length === 0) {
+      const created = await request.post(`/api/campaigns/${fixture.campaignId}/factions`, {
+        data: { name: 'Sizing Guild', faction_type: 'guild', description: '', influence: 5, color: '#996633' },
+      })
+      expect(created.ok()).toBe(true)
+    }
+    await page.goto('/')
+
+    async function expectTarget(selector: string) {
+      const control = page.locator(selector).first()
+      await expect(control).toBeVisible()
+      const box = await control.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.width).toBeGreaterThanOrEqual(44)
+      expect(box!.height).toBeGreaterThanOrEqual(44)
+    }
+    async function expectLabel(selector: string) {
+      const label = page.locator(selector).first()
+      await expect(label).toBeVisible()
+      expect(await label.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12)
+    }
+
+    const characterStat = page.getByLabel('Hunt')
+    await expect(characterStat).toBeVisible()
+    const characterStatBox = await characterStat.boundingBox()
+    expect(characterStatBox).not.toBeNull()
+    expect(characterStatBox!.width).toBeGreaterThanOrEqual(44)
+    expect(characterStatBox!.height).toBeGreaterThanOrEqual(44)
+    expect(await characterStat.evaluate((element) => Number.parseFloat(getComputedStyle(element.parentElement!).fontSize))).toBeGreaterThanOrEqual(12)
+    await page.locator('.workspace-desktop-nav button').filter({ hasText: /^Factions$/ }).click()
+    await expectTarget('.faction-header')
+    await expectLabel('.faction-type-badge')
+    await page.locator('.workspace-desktop-nav button').filter({ hasText: /^Calendar$/ }).click()
+    await expectTarget('.calendar-advance-btn')
+    await expectLabel('.calendar-date-label')
+  })
 })
 
 for (const viewport of VIEWPORTS) {

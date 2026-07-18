@@ -113,7 +113,7 @@ describe('App', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('tab', { name: 'Journal' }))
+    await user.click(await screen.findByRole('button', { name: 'Journal' }))
     await user.click(screen.getByRole('button', { name: /reanalyze/i }))
 
     const safeMessage = await screen.findByText('The session could not be reanalyzed. Try again.')

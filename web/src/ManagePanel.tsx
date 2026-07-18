@@ -90,8 +90,14 @@ export function ManagePanel({
 
   // Load initial data
   useEffect(() => {
-    fetchRulesets().then(setRulesets).catch(console.error)
-    fetchCampaigns().then(setCampaigns).catch(console.error)
+    fetchRulesets().then(setRulesets).catch((cause) => {
+      console.error(cause)
+      setError('Rulesets could not be loaded. Close and reopen Manage to try again.')
+    })
+    fetchCampaigns().then(setCampaigns).catch((cause) => {
+      console.error(cause)
+      setError('Campaigns could not be loaded. Close and reopen Manage to try again.')
+    })
   }, [])
 
   useEffect(() => {
@@ -101,17 +107,26 @@ export function ManagePanel({
   }, [rulesets, newCampaignRuleset])
 
   const loadCharacters = useCallback((campaignId: number) => {
-    fetchCharacters(campaignId).then(setCharacters).catch(console.error)
+    fetchCharacters(campaignId).then(setCharacters).catch((cause) => {
+      console.error(cause)
+      setError('Characters could not be loaded. Select the campaign again to retry.')
+    })
   }, [])
 
   const loadSessions = useCallback((campaignId: number) => {
-    fetchSessions(campaignId).then(setSessions).catch(console.error)
+    fetchSessions(campaignId).then(setSessions).catch((cause) => {
+      console.error(cause)
+      setError('Sessions could not be loaded. Select the campaign again to retry.')
+    })
   }, [])
 
   const loadRulebookSources = useCallback((campaignId: number) => {
     const campaign = campaigns.find(c => c.id === campaignId)
     if (!campaign) return
-    fetchRulebookSources(campaign.ruleset_id).then(setRulebookSources).catch(console.error)
+    fetchRulebookSources(campaign.ruleset_id).then(setRulebookSources).catch((cause) => {
+      console.error(cause)
+      setError('Rulebook sources could not be loaded. Reopen the Rulebooks tab to retry.')
+    })
   }, [campaigns])
 
   useEffect(() => {
@@ -124,7 +139,10 @@ export function ManagePanel({
       if (campaign) {
         fetchCharacterOptions(campaign.ruleset_id)
           .then(opts => { setCharacterOptions(opts); setCharOverrides({}) })
-          .catch(console.error)
+          .catch((cause) => {
+            console.error(cause)
+            setError('Character options could not be loaded. Select the campaign again to retry.')
+          })
       }
     }
   }, [selectedCampaignId, tab, loadCharacters, loadSessions, loadRulebookSources, campaigns])

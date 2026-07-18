@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { fetchObjectives, patchObjective, deleteObjective, createObjective, reanalyzeSession, deduplicateObjectives } from './api'
 import type { Objective } from './types'
 import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface ObjectivesPanelProps {
   campaignId: number | null
@@ -10,6 +11,7 @@ interface ObjectivesPanelProps {
 }
 
 export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: ObjectivesPanelProps) {
+  const toast = useToast()
   const [objectives, setObjectives] = useState<Objective[]>([])
   const [subTaskForm, setSubTaskForm] = useState<{ parentId: number; title: string } | null>(null)
   const [reanalyzing, setReanalyzing] = useState(false)
@@ -36,6 +38,7 @@ export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: Objectives
       await patchObjective(id, status)
     } catch (err) {
       console.error(err)
+      toast.error('Could not update objective.')
     }
   }
 
@@ -44,6 +47,7 @@ export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: Objectives
       await deleteObjective(id)
     } catch (err) {
       console.error(err)
+      toast.error('Could not delete objective.')
     }
   }
 
@@ -55,6 +59,7 @@ export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: Objectives
       load()
     } catch (err) {
       console.error(err)
+      toast.error('Could not add sub-task.')
     }
   }
 
@@ -65,6 +70,7 @@ export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: Objectives
       await reanalyzeSession(sessionId)
     } catch (err) {
       console.error(err)
+      toast.error('Could not reanalyze objectives.')
     } finally {
       setReanalyzing(false)
     }
@@ -78,6 +84,7 @@ export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: Objectives
       load()
     } catch (err) {
       console.error(err)
+      toast.error('Could not deduplicate objectives.')
     } finally {
       setDeduping(false)
     }

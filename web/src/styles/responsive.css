@@ -12,6 +12,14 @@ body {
   font-size: 14px;
 }
 
+@media (pointer: coarse) {
+  :is(button, input, select, textarea, [role='button']),
+  label:has(input[type='file']) {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
 .grimoire {
   height: 100dvh;
 }
@@ -43,7 +51,7 @@ body {
   overflow-x: hidden;
 }
 
-.workspace-nav-tabs .ui-tab,
+.workspace-nav-button,
 .tab-content :is(button, label),
 .sidebar-left :is(button, label) {
   overflow-wrap: anywhere;
@@ -51,7 +59,7 @@ body {
 
 @media (max-width: 1199px) {
   .workspace-body {
-    grid-template-columns: min(34vw, var(--left-panel-width)) 0.5rem minmax(0, 1fr) 0.5rem min(30vw, var(--right-panel-width));
+    grid-template-columns: min(34vw, var(--left-panel-width)) var(--left-resizer-width) minmax(0, 1fr) var(--right-resizer-width) min(30vw, var(--right-panel-width));
   }
 
   .story-scroll {
@@ -109,7 +117,7 @@ body {
     padding-left: max(0.5rem, env(safe-area-inset-left));
   }
 
-  .workspace-mobile-secondary .workspace-nav-tabs {
+  .workspace-mobile-secondary .workspace-nav-buttons {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

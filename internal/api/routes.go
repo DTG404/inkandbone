@@ -778,7 +778,7 @@ func (s *Server) handleGMRespond(w http.ResponseWriter, r *http.Request) {
 	}
 	var reminder string
 	if lastSpeakerName != "" {
-		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", lastSpeakerName)
+		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", safePromptDisplayName(lastSpeakerName))
 	} else {
 		reminder = "[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
 	}
@@ -1016,7 +1016,7 @@ func (s *Server) handleGMRespondStream(w http.ResponseWriter, r *http.Request) {
 
 	var reminder string
 	if lastSpeakerName != "" {
-		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", lastSpeakerName)
+		reminder = fmt.Sprintf("[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. End with **What do you do, %s?** on its own line.", safePromptDisplayName(lastSpeakerName))
 	} else {
 		reminder = "[REMINDER] Your response must be exactly 4-5 paragraphs. Count them. Do not write a sixth paragraph. End with **What do you do?** on its own line."
 	}

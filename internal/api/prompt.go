@@ -9,6 +9,8 @@ import (
 
 const maxNarrativePreferenceBytes = 8 * 1024
 
+const maxPromptDisplayNameBytes = 256
+
 var narrativeLocalePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$`)
 
 func validNarrativeLocale(locale string) bool {
@@ -34,6 +36,22 @@ func quotedPromptData(value string) string {
 	encoded, _ := json.Marshal(value)
 	quoted := strings.ReplaceAll(string(encoded), "[", `\u005b`)
 	return strings.ReplaceAll(quoted, "]", `\u005d`)
+}
+
+// safePromptDisplayName preserves ordinary names while encoding user-controlled
+// characters that could escape the fixed reminder section.
+func safePromptDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > maxPromptDisplayNameBytes {
+		value = value[:maxPromptDisplayNameBytes]
+		for !utf8.ValidString(value) {
+			value = value[:len(value)-1]
+		}
+	}
+	encoded, _ := json.Marshal(value)
+	inner := string(encoded[1 : len(encoded)-1])
+	inner = strings.ReplaceAll(inner, "[", `\u005b`)
+	return strings.ReplaceAll(inner, "]", `\u005d`)
 }
 
 // BuildSystemPrompt is the single immutable composition boundary for GM prompts.

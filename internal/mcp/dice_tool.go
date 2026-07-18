@@ -40,8 +40,9 @@ func (s *Server) handleRollDice(_ context.Context, req mcplib.CallToolRequest) (
 
 	s.logNarrative(req, sessID)
 	s.bus.Publish(api.Event{Type: api.EventDiceRolled, Payload: map[string]any{
+		"session_id": sessID,
 		"expression": expr,
-		"total":      total,
+		"result":     total,
 		"breakdown":  breakdown,
 	}})
 	return mcplib.NewToolResultText(summary), nil

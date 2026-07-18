@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -44,7 +46,11 @@ func (s *Server) handleCreateWorldNote(_ context.Context, req mcplib.CallToolReq
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventWorldNoteCreated, Payload: map[string]any{"note_id": noteID, "title": title}})
+	s.bus.Publish(api.Event{Type: api.EventWorldNoteCreated, Payload: map[string]any{
+		"campaign_id": campID,
+		"note_id":     noteID,
+		"title":       title,
+	}})
 	return mcplib.NewToolResultText(fmt.Sprintf("world note %d created: %s", noteID, title)), nil
 }
 
@@ -71,6 +77,13 @@ func (s *Server) handleUpdateWorldNote(_ context.Context, req mcplib.CallToolReq
 		b, _ := json.Marshal(tags)
 		tagsJSON = string(b)
 	}
+	note, err := s.db.GetWorldNote(noteID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mcplib.NewToolResultError(fmt.Sprintf("update note: world note %d not found", noteID)), nil
+	}
+	if err != nil {
+		return mcplib.NewToolResultError("update note: " + err.Error()), nil
+	}
 
 	if err := s.db.UpdateWorldNote(noteID, title, content, tagsJSON); err != nil {
 		return mcplib.NewToolResultError("update note: " + err.Error()), nil
@@ -78,7 +91,10 @@ func (s *Server) handleUpdateWorldNote(_ context.Context, req mcplib.CallToolReq
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventWorldNoteUpdated, Payload: map[string]any{"note_id": noteID}})
+	s.bus.Publish(api.Event{Type: api.EventWorldNoteUpdated, Payload: map[string]any{
+		"campaign_id": note.CampaignID,
+		"note_id":     noteID,
+	}})
 	return mcplib.NewToolResultText(fmt.Sprintf("world note %d updated", noteID)), nil
 }
 

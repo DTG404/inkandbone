@@ -25,7 +25,8 @@ func setupActiveCampaign(t *testing.T, s *Server) int64 {
 
 func TestCreateWorldNote(t *testing.T) {
 	s := newTestMCP(t)
-	setupActiveCampaign(t, s)
+	campID := setupActiveCampaign(t, s)
+	events := s.bus.SubscribeContext(t.Context())
 
 	req := mcplib.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
@@ -37,12 +38,13 @@ func TestCreateWorldNote(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 
-	campIDStr, _ := s.db.GetSetting("active_campaign_id")
-	campID, _ := strconv.ParseInt(campIDStr, 10, 64)
 	notes, err := s.db.SearchWorldNotes(campID, "Mira", "", "", nil)
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
 	assert.Equal(t, "Mira", notes[0].Title)
+	event := <-events
+	require.Equal(t, "world_note_created", string(event.Type))
+	assert.Equal(t, campID, event.Payload.(map[string]any)["campaign_id"])
 }
 
 func TestUpdateWorldNote(t *testing.T) {
@@ -51,6 +53,7 @@ func TestUpdateWorldNote(t *testing.T) {
 
 	noteID, err := s.db.CreateWorldNote(campID, "Old Title", "Old content", "location")
 	require.NoError(t, err)
+	events := s.bus.SubscribeContext(t.Context())
 
 	req := mcplib.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
@@ -66,6 +69,29 @@ func TestUpdateWorldNote(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
 	assert.Equal(t, "New content", notes[0].Content)
+	event := <-events
+	require.Equal(t, "world_note_updated", string(event.Type))
+	assert.Equal(t, campID, event.Payload.(map[string]any)["campaign_id"])
+}
+
+func TestUpdateWorldNote_missingNote(t *testing.T) {
+	s := newTestMCP(t)
+	setupActiveCampaign(t, s)
+	events := s.bus.SubscribeContext(t.Context())
+
+	req := mcplib.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"note_id": float64(999999),
+		"title":   "Missing",
+		"content": "Missing",
+	}
+	result, err := s.handleUpdateWorldNote(context.Background(), req)
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, tc.Text, "world note 999999 not found")
+	assert.Len(t, events, 0)
 }
 
 func TestUpdateWorldNote_withTags(t *testing.T) {

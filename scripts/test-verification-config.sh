@@ -38,6 +38,12 @@ require 'actions/checkout@v7\.0\.0' "$workflow"
 require 'actions/setup-go@v7\.0\.0' "$workflow"
 require 'actions/setup-node@v7\.0\.0' "$workflow"
 require 'golangci/golangci-lint-action@v9\.3\.0' "$workflow"
+require 'install-only:[[:space:]]*true' "$workflow"
+
+if grep -Eq 'args:[[:space:]]*--version' "$workflow"; then
+  echo "golangci-lint action must install the pinned binary without running lint" >&2
+  exit 1
+fi
 
 if grep -Eq 'uses:[[:space:]]+[^[:space:]@]+@v[0-9]+([[:space:]]|$)' "$workflow"; then
   echo "workflow action references must use exact release tags or commit SHAs" >&2

@@ -13,6 +13,13 @@ const E2E_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const LIFECYCLE = path.join(E2E_ROOT, 'lifecycle.mjs')
 const BINARY = process.env.INKANDBONE_E2E_BINARY || path.resolve(E2E_ROOT, '..', 'ttrpg')
 
+test('server-owning specs use the lifecycle-selected E2E binary', () => {
+  for (const spec of ['reliability.spec.ts', 'security.spec.ts']) {
+    const source = fs.readFileSync(path.join(E2E_ROOT, 'tests', spec), 'utf8')
+    assert.match(source, /process\.env\.INKANDBONE_E2E_BINARY\s*\|\|/)
+  }
+})
+
 function runRoots() {
   return fs.readdirSync(os.tmpdir())
     .filter((name) => name.startsWith(E2E_RUN_DIRECTORY_PREFIX))

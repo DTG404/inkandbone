@@ -14,6 +14,7 @@ import { LoginScreen } from './LoginScreen'
 import type { PanelID } from './navigation/panelRegistry'
 import { ToastProvider, useToast } from './ui/ToastProvider'
 import { fetchSessionInfo, request, setCSRFToken, type SessionInfo } from './transport'
+import '@fontsource-variable/cormorant-garamond/index.css'
 import './App.css'
 
 const appOwnedContextEvents = new Set([

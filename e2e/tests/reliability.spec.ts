@@ -12,7 +12,7 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-const BINARY = path.resolve(__dirname, '..', '..', 'ttrpg')
+const BINARY = process.env.INKANDBONE_E2E_BINARY || path.resolve(__dirname, '..', '..', 'ttrpg')
 const STREAM_TEXT = 'Rain taps the window. 🌧️\n骨の鐘が二度鳴る。\n\n**What do you do?**'
 
 interface ChatRequest {

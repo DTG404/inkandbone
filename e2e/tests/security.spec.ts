@@ -16,7 +16,7 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-const BINARY = path.resolve(__dirname, '..', '..', 'ttrpg')
+const BINARY = process.env.INKANDBONE_E2E_BINARY || path.resolve(__dirname, '..', '..', 'ttrpg')
 
 interface RunningServer {
   child: ChildProcessWithoutNullStreams

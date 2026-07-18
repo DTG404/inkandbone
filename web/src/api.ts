@@ -1009,6 +1009,11 @@ export interface AutomationSetting {
   key: string
   label: string
   enabled: boolean
+  status: 'closed' | 'open' | 'half-open'
+  queued: number
+  running: number
+  last_success: string | null
+  last_error: string
 }
 
 export async function fetchAutomationSettings(): Promise<AutomationSetting[]> {

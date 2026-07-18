@@ -287,7 +287,7 @@ func setWGTalentRank(stats map[string]any, talentName string, rank int) {
 	stats["talent_ranks"] = ranks
 }
 
-// handleSuggestAdvances triggers the XP spend suggestion goroutine on demand
+// handleSuggestAdvances queues XP spend suggestions on demand
 // (bypassing the per-session cap). The result arrives as a xp_spend_suggestions WS event.
 // POST /api/characters/{id}/suggest-advances
 func (s *Server) handleSuggestAdvances(w http.ResponseWriter, r *http.Request) {
@@ -360,10 +360,38 @@ func (s *Server) handleSuggestAdvances(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// sessionID = 0 signals "manual trigger" — the goroutine skips the per-session cap.
-	go s.autoSuggestXPSpend(0, charID, char, rs, stats, currentXP)
+	// sessionID = 0 signals "manual trigger" and skips the per-session cap.
+	character := *char
+	rulesetCopy := *rs
+	statsCopy := cloneAutomationStats(stats)
+	err = s.automations.Submit(r.Context(), AutomationJob{
+		Key:       fmt.Sprintf("manual-xp:%d", charID),
+		SessionID: 0,
+		Kind:      settingAutoSuggestXP,
+		Mode:      JobModeEvent,
+		Run: func(ctx context.Context) error {
+			s.autoSuggestXPSpend(ctx, 0, charID, &character, &rulesetCopy, statsCopy, currentXP)
+			return nil
+		},
+	})
+	if err != nil {
+		respondAutomationSubmissionError(w, err)
+		return
+	}
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func cloneAutomationStats(stats map[string]any) map[string]any {
+	encoded, err := json.Marshal(stats)
+	if err != nil {
+		return map[string]any{}
+	}
+	var clone map[string]any
+	if json.Unmarshal(encoded, &clone) != nil {
+		return map[string]any{}
+	}
+	return clone
 }
 
 // handleTalentDescription returns a 1-2 sentence description for any talent

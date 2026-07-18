@@ -28,6 +28,7 @@ type Server struct {
 	settingCache    sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
 	embCache        sync.Map     // rulesetID int64 → []db.RulebookChunk
 	breakers        *BreakerRegistry
+	automations     *Dispatcher
 	sessions        *sessionManager
 	secureCookies   bool
 	rootCtx         context.Context
@@ -80,6 +81,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		dataDir:         dataDir,
 		aiClient:        aiClient,
 		breakers:        NewBreakerRegistry(time.Now, defaultAutomationFailureThreshold, defaultAutomationCooldown),
+		automations:     NewDispatcher(parentCtx, DispatcherOptions{}),
 		secureCookies:   options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
 		rootCtx:         rootCtx,
 		cancel:          cancel,
@@ -192,6 +194,7 @@ func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
 
 // Shutdown gracefully stops a server started by ListenAndServe or ListenAndServeTLS.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.automations.stopAccepting()
 	s.beginShutdown()
 	s.httpServerMu.Lock()
 	server := s.httpServer
@@ -206,12 +209,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		lifecycleErr = ctx.Err()
 	}
-	return errors.Join(httpErr, lifecycleErr)
+	automationErr := s.automations.Shutdown(ctx)
+	return errors.Join(httpErr, lifecycleErr, automationErr)
 }
 
 // Close force-closes active HTTP connections after beginning lifecycle
 // cancellation. Callers should first attempt Shutdown with a bounded context.
 func (s *Server) Close() error {
+	s.automations.ForceCancel()
 	s.beginShutdown()
 	s.httpServerMu.Lock()
 	server := s.httpServer

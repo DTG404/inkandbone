@@ -1095,24 +1095,83 @@ The base prompt above says "the player controls only their character" — that r
 	}
 
 	s.autoRevealZones(r.Context(), id, fullText)
-	go s.extractNPCs(s.rootCtx, id, fullText)
-	go s.autoGenerateMap(s.rootCtx, id, fullText)
-	go s.autoUpdateCharacterStats(s.rootCtx, id, lastPlayerMsg, fullText)
-	go s.autoUpdateRecap(s.rootCtx, id)
-	go s.autoDetectObjectives(s.rootCtx, id, fullText)
-	go s.autoExtractItems(s.rootCtx, id, fullText)
-	go s.autoUpdateCurrency(s.rootCtx, id, fullText)
+	sessionID := id
+	gmText := fullText
+	playerAction := lastPlayerMsg
+	s.submitPostStreamAutomation(sessionID, settingAutoExtractNPCs, JobModeEvent, func(ctx context.Context) error {
+		s.extractNPCs(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoGenerateMap, JobModeEvent, func(ctx context.Context) error {
+		s.autoGenerateMap(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateStats, JobModeEvent, func(ctx context.Context) error {
+		s.autoUpdateCharacterStats(ctx, sessionID, playerAction, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateRecap, JobModeSnapshot, func(ctx context.Context) error {
+		s.autoUpdateRecap(ctx, sessionID)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoDetectObj, JobModeEvent, func(ctx context.Context) error {
+		s.autoDetectObjectives(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoExtractItems, JobModeEvent, func(ctx context.Context) error {
+		s.autoExtractItems(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateCurrency, JobModeEvent, func(ctx context.Context) error {
+		s.autoUpdateCurrency(ctx, sessionID, gmText)
+		return nil
+	})
 	tensionText := fullText
 	if roll != nil && !roll.Success {
 		tensionText = "critical failure " + fullText
 	}
-	go s.autoUpdateTension(id, tensionText)
-	go s.autoUpdateMasquerade(s.rootCtx, id, fullText)
-	go s.autoUpdateSceneTags(s.rootCtx, id, fullText)
-	go s.autoUpdateChronicleNight(s.rootCtx, id, fullText)
-	go s.autoVtMDisciplineRouseChecks(s.rootCtx, id, lastPlayerMsg, fullText)
-	go s.autoDetectVtMEmbrace(s.rootCtx, id, fullText)
-	go s.autoDetectVtMNightDOW(s.rootCtx, id, fullText)
+	immutableTensionText := tensionText
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateTension, JobModeEvent, func(context.Context) error {
+		s.autoUpdateTension(sessionID, immutableTensionText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateMasq, JobModeEvent, func(ctx context.Context) error {
+		s.autoUpdateMasquerade(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateSceneTags, JobModeEvent, func(ctx context.Context) error {
+		s.autoUpdateSceneTags(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateNight, JobModeEvent, func(ctx context.Context) error {
+		s.autoUpdateChronicleNight(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateStats, JobModeEvent, func(ctx context.Context) error {
+		s.autoVtMDisciplineRouseChecks(ctx, sessionID, playerAction, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateStats, JobModeEvent, func(ctx context.Context) error {
+		s.autoDetectVtMEmbrace(ctx, sessionID, gmText)
+		return nil
+	})
+	s.submitPostStreamAutomation(sessionID, settingAutoUpdateNight, JobModeEvent, func(ctx context.Context) error {
+		s.autoDetectVtMNightDOW(ctx, sessionID, gmText)
+		return nil
+	})
+}
+
+func (s *Server) submitPostStreamAutomation(sessionID int64, kind string, mode JobMode, run func(context.Context) error) {
+	job := AutomationJob{
+		Key:       fmt.Sprintf("%d:%s", sessionID, kind),
+		SessionID: sessionID,
+		Kind:      kind,
+		Mode:      mode,
+		Run:       run,
+	}
+	if err := s.automations.Submit(s.rootCtx, job); err != nil {
+		log.Printf("automation dispatch rejected (session %d, kind %s): %s", sessionID, kind, automationDispatchError(err))
+	}
 }
 
 // handleTyping broadcasts a typing indicator from a player agent (e.g. Nyx).
@@ -1369,10 +1428,10 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 		}
 	}
 
-	// VtM: detect Humanity-violating acts and increment stains (async, non-blocking).
+	// VtM: detect Humanity-violating acts inside this ordered event job.
 	// Mortals do not have a Humanity/Stains track.
 	if ruleset.Name == "vtm" && vtmCharType != "mortal" {
-		go s.detectAndApplyVtMStains(s.rootCtx, sessionID, playerAction+" "+gmText)
+		s.detectAndApplyVtMStains(ctx, sessionID, playerAction+" "+gmText)
 	}
 
 	schema := ruleset.SchemaJSON
@@ -1638,11 +1697,11 @@ Return ONLY a JSON object with the fields that must change and their new values.
 		"data_json":    string(updated),
 	}})
 
-	// If XP increased, suggest advancements asynchronously.
-	// Use the updated stats JSON for goroutine (not stale pre-patch char.DataJSON).
+	// If XP increased, suggest advancements before this ordered event completes.
+	// Use the updated stats JSON rather than stale pre-patch character data.
 	char.DataJSON = string(updated)
 	if afterXP > beforeXP {
-		go s.autoSuggestXPSpend(sessionID, charID, char, ruleset, current, afterXP)
+		s.autoSuggestXPSpend(ctx, sessionID, charID, char, ruleset, current, afterXP)
 	}
 }
 
@@ -1652,6 +1711,7 @@ Return ONLY a JSON object with the fields that must change and their new values.
 // A per-session cap of 20 suggestions is enforced to avoid spam.
 
 func (s *Server) autoSuggestXPSpend(
+	ctx context.Context,
 	sessionID, charID int64,
 	char *db.Character,
 	ruleset *db.Ruleset,
@@ -1799,7 +1859,7 @@ If there are no good suggestions, return an empty JSON array: []
 		fieldHintsSection,
 	)
 
-	ctx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	permit, ok := s.acquireAutomation(settingAutoSuggestXP)

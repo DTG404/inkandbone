@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"time"
 )
 
 // Automation config keys -- stored in the settings table.
@@ -61,15 +64,57 @@ func (s *Server) isAutomationEnabled(settingKey string) bool {
 // GET /api/settings/automations
 func (s *Server) handleListAutomationSettings(w http.ResponseWriter, r *http.Request) {
 	settings := AllAutomationSettings()
+	breakerHealth := make(map[string]AutomationHealth)
+	for _, health := range s.breakers.Snapshot() {
+		breakerHealth[health.Key] = health
+	}
+	dispatchHealth := make(map[string]AutomationDispatchHealth)
+	for _, health := range s.automations.Snapshot() {
+		dispatchHealth[health.Kind] = health
+	}
 	result := make([]map[string]any, len(settings))
 	for i, setting := range settings {
+		breaker := breakerHealth[s.automationBreakerKey(setting.Key)]
+		dispatch := dispatchHealth[setting.Key]
+		status := breaker.Status
+		if status == "" {
+			status = BreakerClosed
+		}
+		lastSuccess := latestTime(breaker.LastSuccess, dispatch.LastSuccess)
+		lastError := breaker.LastError
+		if lastError == "" {
+			lastError = dispatch.LastError
+		}
 		result[i] = map[string]any{
-			"key":     setting.Key,
-			"label":   setting.Label,
-			"enabled": s.isAutomationEnabled(setting.Key),
+			"key":          setting.Key,
+			"label":        setting.Label,
+			"enabled":      s.isAutomationEnabled(setting.Key),
+			"status":       status,
+			"queued":       dispatch.Queued,
+			"running":      dispatch.Running,
+			"last_success": lastSuccess,
+			"last_error":   lastError,
 		}
 	}
 	respondJSON(w, result)
+}
+
+func latestTime(values ...*time.Time) *time.Time {
+	var latest time.Time
+	for _, value := range values {
+		if value != nil && value.After(latest) {
+			latest = *value
+		}
+	}
+	return copyTime(latest)
+}
+
+func respondAutomationSubmissionError(w http.ResponseWriter, err error) {
+	status := http.StatusServiceUnavailable
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		status = http.StatusRequestTimeout
+	}
+	http.Error(w, automationDispatchError(err), status)
 }
 
 // handlePatchAutomationSetting toggles a single automation setting.

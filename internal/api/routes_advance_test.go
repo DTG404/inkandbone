@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,7 +33,7 @@ func TestAutoSuggestXPSpend_noopForCoC(t *testing.T) {
 	ch := s.bus.Subscribe()
 
 	// Should no-op immediately for CoC.
-	go s.autoSuggestXPSpend(1, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
+	go s.autoSuggestXPSpend(context.Background(), 1, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
 
 	// Wait briefly — no xp_spend_suggestions event should arrive.
 	select {
@@ -67,7 +68,7 @@ func TestAutoSuggestXPSpend_sessionCap(t *testing.T) {
 	ch := s.bus.Subscribe()
 
 	// Session cap reached — should no-op.
-	go s.autoSuggestXPSpend(sessionID, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
+	go s.autoSuggestXPSpend(context.Background(), sessionID, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
 
 	select {
 	case ev := <-ch:
@@ -309,8 +310,8 @@ func TestHandleAdvanceCharacter_dnd5eLevel(t *testing.T) {
 	var stats map[string]any
 	require.NoError(t, json.Unmarshal([]byte(char.DataJSON), &stats))
 	assert.Equal(t, float64(2), stats["level"])
-	assert.Equal(t, float64(15), stats["hp"]) // +5
-	assert.Equal(t, float64(300), stats["xp"]) // XP NOT subtracted for dnd5e
+	assert.Equal(t, float64(15), stats["hp"])               // +5
+	assert.Equal(t, float64(300), stats["xp"])              // XP NOT subtracted for dnd5e
 	assert.Equal(t, float64(2), stats["proficiency_bonus"]) // floor((2-1)/4)+2 = 2
 }
 

@@ -27,8 +27,8 @@ func TestVtMPredatorTypes_eachHasTwoDisciplines(t *testing.T) {
 
 func TestApplyVtMPredatorType_sirenGrantsPresenceAndPotence(t *testing.T) {
 	stats := map[string]any{
-		"presence": 0,
-		"potence":  0,
+		"presence":          0,
+		"potence":           0,
 		"skill_specialties": "",
 		"merits_flaws":      "",
 	}

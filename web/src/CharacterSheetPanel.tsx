@@ -3,6 +3,7 @@ import { fetchRuleset, patchCharacter, portraitAssetURL, uploadPortrait } from '
 import type { Ruleset } from './api'
 import type { Character } from './types'
 import { useToast } from './ui/ToastProvider'
+import { wsEvent } from './wsEvents'
 
 interface SchemaField {
   key: string
@@ -25,26 +26,6 @@ interface CharacterSheetPanelProps {
   afterTracks?: React.ReactNode
   characterOverride?: Character | null
   onRollField?: (label: string) => void
-}
-
-interface CharacterUpdatedPayload {
-  id: number
-  data_json?: string
-  portrait_path?: string
-}
-
-interface CharacterUpdatedEvent {
-  type: 'character_updated'
-  payload: CharacterUpdatedPayload
-}
-
-function isCharacterUpdatedEvent(ev: unknown): ev is CharacterUpdatedEvent {
-  if (typeof ev !== 'object' || ev === null) return false
-  const e = ev as Record<string, unknown>
-  if (e['type'] !== 'character_updated') return false
-  const p = e['payload']
-  if (typeof p !== 'object' || p === null) return false
-  return typeof (p as Record<string, unknown>)['id'] === 'number'
 }
 
 function evaluateComputed(formula: string, data: Record<string, string>): number {
@@ -564,11 +545,11 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
   }, [effectiveCharacter?.id])
 
   useEffect(() => {
-    if (!isCharacterUpdatedEvent(lastEvent)) return
-    if (lastEvent.payload.id !== effectiveCharacter?.id) return
-    if (lastEvent.payload.data_json) {
+    const event = wsEvent(lastEvent)
+    if (event?.type !== 'character_updated' || event.payload.id !== effectiveCharacter?.id) return
+    if (event.payload.data_json) {
       try {
-        const data = JSON.parse(lastEvent.payload.data_json) as Record<string, unknown>
+        const data = JSON.parse(event.payload.data_json) as Record<string, unknown>
         const loaded = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? '')]))
         setFields(loaded)
         persistedFieldsRef.current = loaded

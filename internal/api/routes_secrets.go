@@ -39,7 +39,7 @@ func (s *Server) handleCreateSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -112,15 +112,8 @@ func (s *Server) handleRevealSecret(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSecretRevealed, Payload: map[string]any{
-		"id":          secret.ID,
-		"campaign_id": secret.CampaignID,
-		"session_id":  body.SessionID,
-		"title":       secret.Title,
-		"content":     secret.Content,
-		"category":    secret.Category,
-	}})
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": secret.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventSecretRevealed, Payload: &SecretRevealedPayload{ID: RealtimeInt64(secret.ID), CampaignID: RealtimeInt64(secret.CampaignID), SessionID: RealtimeInt64(body.SessionID), Title: RealtimePtr(secret.Title), Content: RealtimePtr(secret.Content), Category: RealtimePtr(secret.Category)}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(secret.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -161,7 +154,7 @@ func (s *Server) handleUpdateSecret(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": secret.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(secret.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -185,6 +178,6 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": secret.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(secret.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

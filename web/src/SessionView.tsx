@@ -1,35 +1,18 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings, fetchNPCs, mapAssetURL } from './api'
+import { patchSession, fetchTalentDescription, fetchNPCs } from './api'
 import type { GameContext, Message, Session, XPSpendSuggestionsEvent, SessionNPC } from './types'
 import { CombatPanel } from './CombatPanel'
-import { WorldNotesPanel } from './WorldNotesPanel'
 import { DiceHistoryPanel } from './DiceHistoryPanel'
 import { DiceRoller } from './DiceRoller'
 import { MapPanel } from './MapPanel'
-import { JournalPanel } from './JournalPanel'
 import { CharacterSheetPanel } from './CharacterSheetPanel'
-import { NPCRosterPanel } from './NPCRosterPanel'
-import { ObjectivesPanel } from './ObjectivesPanel'
 import { InventoryPanel } from './InventoryPanel'
-import { OraclePanel } from './OraclePanel'
-import { RelationshipsPanel } from './RelationshipsPanel'
-import { FactionsPanel } from './FactionsPanel'
-import { SecretsPanel } from './SecretsPanel'
-import { NPCStatBlockPanel } from './NPCStatBlockPanel'
-import { AdventuresPanel } from './AdventuresPanel'
-import { CalendarPanel } from './CalendarPanel'
-import { GMToolsPanel } from './GMToolsPanel'
-import { HandoutsPanel } from './HandoutsPanel'
-import { CompendiumPanel } from './CompendiumPanel'
-import { DecksPanel } from './DecksPanel'
+import { wsEvent } from './wsEvents'
 import { XPSuggestionsPanel } from './XPSuggestionsPanel'
-import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
 import { CharacterSelector } from './CharacterSelector'
 import { setAmbientTrack } from './audio/ambient'
-import { MacroBar } from './MacroBar'
 import { wgTalentDescription } from './wgTalentData'
 import { WorkspaceShell } from './layout/WorkspaceShell'
 import { WorkspaceNavigation } from './navigation/WorkspaceNavigation'
@@ -37,226 +20,9 @@ import { PANEL_DEFINITIONS, type MobileDestination, type PanelID } from './navig
 import { Dialog } from './ui/Dialog'
 import { IconButton } from './ui/IconButton'
 import { useToast } from './ui/ToastProvider'
-import './App.css'
-
-// ── Turn Order Strip ────────────────────────────────────────
-
-interface TurnOrderStripProps {
-  combatants: GameContext['active_combat'] extends null ? never : NonNullable<GameContext['active_combat']>['combatants']
-}
-
-function TurnOrderStrip({ combatants }: TurnOrderStripProps) {
-  return (
-    <div className="turn-strip">
-      {combatants.map((c, idx) => {
-        const isDead = c.hp_current <= 0
-        const isActive = idx === 0
-        return (
-          <div
-            key={c.id}
-            className={`turn-chip${isActive ? ' active-turn' : ''}${isDead ? ' dead' : ''}`}
-          >
-            {c.name} ({c.initiative})
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Pin Placement Modal ─────────────────────────────────────
-
-interface PinPlacementModalProps {
-  mapId: number
-  defaultLabel: string
-  onClose: () => void
-}
-
-function PinPlacementModal({ mapId, defaultLabel, onClose }: PinPlacementModalProps) {
-  const toast = useToast()
-  const [label, setLabel] = useState(defaultLabel.slice(0, 60))
-  const [note, setNote] = useState('')
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-  const [saving, setSaving] = useState(false)
-  const imgRef = useRef<HTMLImageElement>(null)
-
-  function handleImageClick(e: React.MouseEvent<HTMLImageElement>) {
-    const rect = imgRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setPos({
-      x: (e.clientX - rect.left) / rect.width,
-      y: (e.clientY - rect.top) / rect.height,
-    })
-  }
-
-  async function handleSubmit() {
-    if (!pos) return
-    setSaving(true)
-    try {
-      await createMapPin(mapId, { x: pos.x, y: pos.y, label, note, color: '#c9a84c' })
-      onClose()
-    } catch (err) {
-      console.error(err)
-      toast.error('Could not place map pin.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open title="Place Map Pin" onClose={onClose} className="pin-modal">
-        <div className="pin-modal-header">
-          <span>Place Map Pin</span>
-          <IconButton className="pin-modal-close" label="Close map pin dialog" icon="×" onClick={onClose} />
-        </div>
-        <p className="pin-modal-hint">Click on the map to place the pin</p>
-        <div className="pin-modal-map-wrap">
-          <img
-            ref={imgRef}
-            src={mapAssetURL(mapId)}
-            alt="Map"
-            className="pin-modal-map"
-            onClick={handleImageClick}
-          />
-          {pos && (
-            <div
-              className="pin-modal-marker"
-              style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
-            >
-              ✦
-            </div>
-          )}
-        </div>
-        <input
-          className="pin-modal-input"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="Label…"
-        />
-        <textarea
-          className="pin-modal-textarea"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Note…"
-          rows={3}
-        />
-        <button
-          className="pin-modal-submit"
-          onClick={handleSubmit}
-          disabled={!pos || saving || !label.trim()}
-        >
-          {saving ? 'Saving…' : 'Place Pin'}
-        </button>
-    </Dialog>
-  )
-}
-
-// ── Prose Journal ───────────────────────────────────────────
-
-function highlightText(text: string, query: string): ReactNode {
-  if (!query) return text
-  const lower = text.toLowerCase()
-  const lowerQ = query.toLowerCase()
-  const parts: ReactNode[] = []
-  let start = 0
-  let idx = lower.indexOf(lowerQ, start)
-  while (idx !== -1) {
-    if (idx > start) parts.push(text.slice(start, idx))
-    parts.push(<mark key={idx}>{text.slice(idx, idx + query.length)}</mark>)
-    start = idx + query.length
-    idx = lower.indexOf(lowerQ, start)
-  }
-  if (start < text.length) parts.push(text.slice(start))
-  return <>{parts}</>
-}
-
-interface ProseJournalProps {
-  messages: Message[]
-  characterName: string
-  searchQuery?: string
-  activeMapId: number | null
-  activeMapImagePath: string | null
-  charactersList: { id: number; name: string }[]
-}
-
-// Ensure "What do you do?" at the end of GM responses is always its own paragraph
-// and rendered bold+italic gold to stand out as the player prompt cue.
-function normalizeGMContent(text: string): string {
-  return text.replace(/\s*(\*\*)?What do you do\??(\*\*)?\s*$/, '\n\n**What do you do?**')
-}
-
-function ProseJournal({
-  messages,
-  characterName,
-  searchQuery = '',
-  activeMapId,
-  activeMapImagePath,
-  charactersList = [],
-}: ProseJournalProps) {
-  const [pinModal, setPinModal] = useState<{ content: string } | null>(null)
-  const charNameMap = useMemo(() => {
-    const map: Record<number, string> = {}
-    for (const c of charactersList) map[c.id] = c.name
-    return map
-  }, [charactersList])
-
-  if (messages.length === 0) {
-    return <p className="empty">The story has not yet begun.</p>
-  }
-
-  const nodes: ReactNode[] = []
-  messages.forEach((m, i) => {
-    if (m.role === 'assistant') {
-      nodes.push(
-        <div key={m.id} className="prose-gm prose-gm-wrap">
-          <ReactMarkdown>{normalizeGMContent(m.content)}</ReactMarkdown>
-          {activeMapId !== null && activeMapImagePath !== null && (
-            <button
-              className="prose-pin-btn"
-              title="Place as map pin"
-              onClick={() => setPinModal({ content: m.content.replace(/[#*_`[\]]/g, '').slice(0, 60) })}
-            >
-              📍
-            </button>
-          )}
-        </div>
-      )
-    } else {
-      const isWhisper = m.whisper === true
-      const speakerName = m.character_id != null && charNameMap[m.character_id]
-        ? charNameMap[m.character_id]
-        : characterName
-      nodes.push(
-        <div key={m.id} className={`prose-player${isWhisper ? ' prose-player--whisper' : ''}`}>
-          <div className="prose-player-label">{speakerName} speaks</div>
-          <p className="prose-player-text">
-            {searchQuery ? highlightText(m.content, searchQuery) : m.content}
-          </p>
-        </div>
-      )
-      if (i < messages.length - 1) {
-        nodes.push(
-          <div key={`div-${m.id}`} className="prose-divider">◆</div>
-        )
-      }
-    }
-  })
-
-  return (
-    <>
-      {nodes}
-      {pinModal && activeMapId !== null && activeMapImagePath !== null && (
-        <PinPlacementModal
-          mapId={activeMapId}
-          defaultLabel={pinModal.content}
-          onClose={() => setPinModal(null)}
-        />
-      )}
-    </>
-  )
-}
-
-// ── Scene Tag Picker ────────────────────────────────────────
+import { NarrativeStream, TurnOrderStrip, normalizeGMContent } from './session/NarrativeStream'
+import { PlayerComposer } from './session/PlayerComposer'
+import { RightWorkspace } from './session/RightWorkspace'
 
 const SCENE_TAGS = ['tavern', 'dungeon', 'forest', 'city', 'ocean', 'cave', 'castle', 'rain', 'night', 'battle', 'market', 'temple', 'ruins']
 
@@ -393,9 +159,7 @@ export function SessionView({
   onCharacterSelect,
   typingNames,
 }: SessionViewProps) {
-  const toast = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
   const [mobileDestination, setMobileDestination] = useState<MobileDestination>('story')
   const [sessionNpcs, setSessionNpcs] = useState<SessionNPC[]>([])
   const [pendingHandout, setPendingHandout] = useState<{
@@ -416,10 +180,11 @@ export function SessionView({
   }, [messages, streamingText])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
-    if (ev?.type !== 'secret_revealed' || !ev.payload) return
+    const ev = wsEvent(lastEvent)
+    if (ev?.type !== 'secret_revealed') return
     if (ev.payload.session_id !== ctx.session?.id) return
-    const { title, content, category } = ev.payload as { title: string; content: string; category: string }
+    const { title, content, category } = ev.payload
+    if (typeof title !== 'string' || typeof content !== 'string' || typeof category !== 'string') return
     setPendingHandout({ title, content, category })
   }, [lastEvent, ctx.session?.id])
 
@@ -724,7 +489,7 @@ export function SessionView({
             </>
           )}
           {ctx.active_combat && <CombatPanel combat={ctx.active_combat} />}
-          <ProseJournal
+          <NarrativeStream
             messages={displayMessages}
             characterName={ctx.character?.name ?? 'Player'}
             searchQuery={searchQuery}
@@ -746,44 +511,17 @@ export function SessionView({
           <p className="typing-indicator">⏳ {typingNames.join(' & ')} {typingNames.length === 1 ? 'is' : 'are'} thinking…</p>
         )}
 
-        <MacroBar
+        <PlayerComposer
           characterId={ctx.character?.id ?? null}
-          onFire={(text) => { void onSendText(text) }}
-          disabled={sending || !ctx.session}
+          hasSession={ctx.session != null}
+          input={input}
+          onInputChange={setInput}
+          onSend={handleSend}
+          onSendText={onSendText}
+          sending={sending}
+          whisperMode={whisperMode}
+          setWhisperMode={setWhisperMode}
         />
-
-        <div className="player-input-bar">
-          <button
-            type="button"
-            className={`whisper-toggle${whisperMode ? ' active' : ''}`}
-            onClick={() => setWhisperMode((v) => !v)}
-            title={whisperMode ? 'Whisper mode on — GM will not respond' : 'Enable whisper mode'}
-          >
-            🔒
-          </button>
-          <textarea
-            className={`player-input-field${whisperMode ? ' whisper-active' : ''}`}
-            placeholder={whisperMode ? 'Whisper (private, no GM response)…' : 'What do you do?'}
-            value={input}
-            disabled={sending || !ctx.session}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            rows={3}
-          />
-          <button
-            type="button"
-            className="player-input-send"
-            disabled={sending || !input.trim() || !ctx.session}
-            onClick={handleSend}
-          >
-            {sending ? '…' : '↵'}
-          </button>
-        </div>
 
         <div className="map-drawer">
           <div className="map-drawer-handle-row">
@@ -835,128 +573,15 @@ export function SessionView({
         )}
 
         right={(
-          <aside className="sidebar-right">
-            <WorkspaceNavigation
-              activePanel={rightTab}
-              onPanelChange={setRightTab}
-              mobileDestination={mobileDestination}
-              onMobileDestinationChange={changeMobileDestination}
-              mobile={false}
-            />
-        <div
-          className="tab-content"
-          id="workspace-active-panel"
-          role="region"
-          aria-labelledby={`workspace-panel-control-${rightTab}`}
-        >
-          {rightTab === 'handouts' && ctx.campaign && (
-            <HandoutsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'compendium' && ctx.campaign && (
-            <CompendiumPanel rulesetId={ctx.campaign.ruleset_id} />
-          )}
-          {rightTab === 'decks' && ctx.campaign && ctx.session && (
-            <DecksPanel campaignId={ctx.campaign.id} sessionId={ctx.session.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'notes' && ctx.campaign && (
-            <WorldNotesPanel
-              campaignId={ctx.campaign.id}
-              lastEvent={lastEvent}
-              aiEnabled={aiEnabled}
-            />
-          )}
-          {rightTab === 'journal' && (
-            <div className="journal-container">
-              <div className="journal-subtabs">
-                <button className={`journal-subtab${journalSubTab === 'notes' ? ' active' : ''}`} onClick={() => setJournalSubTab('notes')}>Notes</button>
-                <button className={`journal-subtab${journalSubTab === 'timeline' ? ' active' : ''}`} onClick={() => setJournalSubTab('timeline')}>Timeline</button>
-              </div>
-              <button
-                className="journal-reanalyze-btn"
-                onClick={async () => {
-                  if (!ctx?.session?.id) return
-                  try {
-                    await reanalyzeSession(ctx.session.id)
-                    toast.success('Session reanalysis started.')
-                  } catch (cause) {
-                    console.error(cause)
-                    toast.error('The session could not be reanalyzed. Try again.')
-                  }
-                }}
-                title="Re-analyze session for objectives and NPCs"
-              >
-                ↻ Reanalyze
-              </button>
-              {journalSubTab === 'notes' ? (
-                <JournalPanel
-                  session={ctx?.session ?? null}
-                  campaignId={ctx?.campaign?.id ?? null}
-                  lastEvent={lastEvent}
-                  aiEnabled={aiEnabled}
-                />
-              ) : ctx?.session?.id != null ? (
-                <SessionTimeline sessionId={ctx.session.id} lastEvent={lastEvent} />
-              ) : null}
-            </div>
-          )}
-          {rightTab === 'npcs' && (
-            <NPCRosterPanel
-              sessionId={ctx?.session?.id ?? null}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'objectives' && (
-            <ObjectivesPanel campaignId={ctx?.campaign?.id ?? null} sessionId={ctx?.session?.id ?? null} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'oracle' && ctx.session && (
-            <OraclePanel sessionId={ctx.session.id} />
-          )}
-          {rightTab === 'relationships' && ctx.campaign && (
-            <RelationshipsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'factions' && ctx.campaign && (
-            <FactionsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'calendar' && ctx.campaign && (
-            <CalendarPanel
-              campaignId={ctx.campaign.id}
-              sessionId={ctx.session?.id ?? null}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'npcstats' && ctx.campaign && (
-            <NPCStatBlockPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'adventures' && ctx.campaign && (
-            <AdventuresPanel
-              campaignId={ctx.campaign.id}
-              onSessionClick={async (sessionId: number) => {
-                try {
-                  await patchSettings({ session_id: sessionId })
-                } catch (cause) {
-                  console.error(cause)
-                  toast.error('Could not open that adventure session.')
-                }
-              }}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'secrets' && ctx.campaign && (
-            <SecretsPanel
-              campaignId={ctx.campaign.id}
-              sessionId={ctx?.session?.id ?? null}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'gmtools' && (
-            <GMToolsPanel
-              sessionId={ctx?.session?.id ?? null}
-              campaignId={ctx?.campaign?.id ?? null}
-              aiEnabled={aiEnabled}
-            />
-          )}
-        </div>
-          </aside>
+          <RightWorkspace
+            aiEnabled={aiEnabled}
+            ctx={ctx}
+            lastEvent={lastEvent}
+            mobileDestination={mobileDestination}
+            onMobileDestinationChange={changeMobileDestination}
+            rightTab={rightTab}
+            setRightTab={setRightTab}
+          />
         )}
       />
     </>

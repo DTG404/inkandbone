@@ -69,7 +69,10 @@ func TestVtMPlayerGuideClans(t *testing.T) {
 	for _, c := range wantClans {
 		found := false
 		for _, clan := range clans {
-			if clan == c { found = true; break }
+			if clan == c {
+				found = true
+				break
+			}
 		}
 		if !found {
 			t.Errorf("clan %q not found in options", c)
@@ -84,7 +87,10 @@ func TestVtMPlayerGuideClans(t *testing.T) {
 	for _, p := range wantPreds {
 		found := false
 		for _, pt := range predTypes {
-			if pt == p { found = true; break }
+			if pt == p {
+				found = true
+				break
+			}
 		}
 		if !found {
 			t.Errorf("predator_type %q not found in options", p)
@@ -93,7 +99,10 @@ func TestVtMPlayerGuideClans(t *testing.T) {
 	gens := opts["generation"]
 	foundSixteenth := false
 	for _, g := range gens {
-		if g == "16th (Thin-Blooded)" { foundSixteenth = true; break }
+		if g == "16th (Thin-Blooded)" {
+			foundSixteenth = true
+			break
+		}
 	}
 	if !foundSixteenth {
 		t.Error("16th generation missing from options")

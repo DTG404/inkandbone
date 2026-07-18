@@ -102,6 +102,7 @@ describe('CharacterSheetPanel', () => {
 
     const event = {
       type: 'character_updated',
+      sequence: 1,
       payload: { id: 1, data_json: JSON.stringify({ hp: 20, level: 2, notes: 'veteran' }) },
     }
 

@@ -50,7 +50,7 @@ func (s *Server) handleCreateFaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: &FactionUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -140,7 +140,7 @@ func (s *Server) handleUpdateFaction(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"campaign_id": faction.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: &FactionUpdatedPayload{CampaignID: RealtimeInt64(faction.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -164,6 +164,6 @@ func (s *Server) handleDeleteFaction(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"campaign_id": faction.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: &FactionUpdatedPayload{CampaignID: RealtimeInt64(faction.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

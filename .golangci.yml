@@ -5,6 +5,10 @@ linters:
     - govet
     - ineffassign
     - unused
+  exclusions:
+    paths:
+      - web/node_modules
+      - e2e/node_modules
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

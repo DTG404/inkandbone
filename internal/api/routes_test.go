@@ -36,6 +36,17 @@ func seedCampaign(t *testing.T, d *db.DB) (campID, sessID int64) {
 	return
 }
 
+// eventPayload decodes the generated payload through its wire representation.
+// Tests should assert the public realtime contract, not its Go backing type.
+func eventPayload(t *testing.T, event Event) map[string]any {
+	t.Helper()
+	encoded, err := json.Marshal(event.Payload)
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &payload))
+	return payload
+}
+
 func TestListCampaigns_empty(t *testing.T) {
 	s := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/campaigns", nil)
@@ -751,7 +762,7 @@ func (s *stubCompleterStreamer) StreamRespond(_ context.Context, system string, 
 	s.capturedSys = system
 	s.capturedHistory = append([]ai.ChatMessage(nil), history...)
 	s.mu.Unlock()
-	if err := ai.WriteSSE(w, ai.SSEEvent{Type: "delta", Delta: s.streamResp}); err != nil {
+	if err := ai.WriteSSE(w, ai.SSEEvent{Type: SSEEventDelta, Delta: s.streamResp}); err != nil {
 		return "", err
 	}
 	return s.streamResp, nil
@@ -840,7 +851,7 @@ func TestHandleGMRespondStreamDoneWriteFailureStillPublishesPersistedMessage(t *
 	select {
 	case event := <-events:
 		assert.Equal(t, EventMessageCreated, event.Type)
-		assert.Equal(t, messages[1].ID, event.Payload.(map[string]any)["message_id"])
+		assert.EqualValues(t, messages[1].ID, eventPayload(t, event)["message_id"])
 	case <-time.After(time.Second):
 		t.Fatal("persisted message event was skipped after completion write failure")
 	}

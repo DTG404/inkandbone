@@ -37,7 +37,7 @@ func TestTriggerMapFX(t *testing.T) {
 		t.Fatal("expected map_fx event")
 	}
 	assert.Equal(t, EventMapFX, got.Type)
-	payload := got.Payload.(map[string]any)
-	assert.Equal(t, mapID, payload["map_id"])
+	payload := eventPayload(t, got)
+	assert.EqualValues(t, mapID, payload["map_id"])
 	assert.Equal(t, "fire", payload["effect"])
 }

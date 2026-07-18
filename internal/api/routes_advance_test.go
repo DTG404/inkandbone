@@ -45,6 +45,36 @@ func TestAutoSuggestXPSpend_noopForCoC(t *testing.T) {
 	}
 }
 
+func TestAdvancementConfig(t *testing.T) {
+	s := newTestServer(t)
+	for _, test := range []struct {
+		name    string
+		minimum int
+	}{
+		{"vtm", 3},
+		{"cyberpunk", 10},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ruleset, err := s.db.GetRulesetByName(test.name)
+			require.NoError(t, err)
+			require.NotNil(t, ruleset)
+
+			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/rulesets/%d/advancement-config", ruleset.ID), nil)
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+			var response struct {
+				MinimumXP int  `json:"minimum_xp"`
+				Supported bool `json:"supported"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, test.minimum, response.MinimumXP)
+			assert.True(t, response.Supported)
+		})
+	}
+}
+
 func TestAutoSuggestXPSpend_sessionCap(t *testing.T) {
 	s := newTestServer(t)
 	const sessionID = int64(42)

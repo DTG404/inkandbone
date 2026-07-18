@@ -58,9 +58,8 @@ func TestGenerateSessionRecap(t *testing.T) {
 		t.Fatal("timeout waiting for session_updated event")
 	}
 	assert.Equal(t, api.EventSessionUpdated, e.Type)
-	payload, ok := e.Payload.(map[string]any)
-	require.True(t, ok, "expected map[string]any payload")
-	assert.Equal(t, sessID, payload["session_id"])
+	payload := eventPayload(t, e)
+	assert.EqualValues(t, sessID, payload["session_id"])
 	assert.Equal(t, "The heroes fought valiantly.", payload["summary"])
 
 	// Verify DB updated

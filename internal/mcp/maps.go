@@ -33,6 +33,6 @@ func (s *Server) handleAddMapPin(_ context.Context, req mcplib.CallToolRequest) 
 		return mcplib.NewToolResultError("add pin: " + err.Error()), nil
 	}
 
-	s.bus.Publish(api.Event{Type: api.EventMapPinAdded, Payload: map[string]any{"pin_id": pinID, "map_id": mapID, "label": label}})
+	s.bus.Publish(api.Event{Type: api.EventMapPinAdded, Payload: &api.MapPinAddedPayload{PinID: api.RealtimeInt64(pinID), MapID: api.RealtimeInt64(mapID), Label: api.RealtimePtr(label)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("pin %d added to map %d: %s", pinID, mapID, label)), nil
 }

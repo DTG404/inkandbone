@@ -224,8 +224,8 @@ func (c *hubClient) enqueuePendingResync() {
 		Type:     EventResyncRequired,
 		Sequence: c.lostTo,
 		Payload: ResyncRequiredPayload{
-			FromSequence: c.lostFrom,
-			ToSequence:   c.lostTo,
+			FromSequence: int64(c.lostFrom),
+			ToSequence:   int64(c.lostTo),
 		},
 	}
 	select {

@@ -71,7 +71,7 @@ describe('WorldNotesPanel', () => {
     const { rerender } = render(<WorldNotesPanel campaignId={1} lastEvent={null} aiEnabled={false} />)
     await screen.findByText('No notes found.')
     const callsBefore = mockFetch.mock.calls.length
-    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', payload: { campaign_id: 1, note_id: 1 } }} aiEnabled={false} />)
+    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', sequence: 1, payload: { campaign_id: 1, note_id: 1 } }} aiEnabled={false} />)
     await waitFor(() => {
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore)
     })
@@ -83,7 +83,7 @@ describe('WorldNotesPanel', () => {
     const { rerender } = render(<WorldNotesPanel campaignId={1} lastEvent={null} aiEnabled={false} />)
     await screen.findByText('No notes found.')
     const callsBefore = mockFetch.mock.calls.length
-    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_created', payload: { campaign_id: 1, note_id: 2 } }} aiEnabled={false} />)
+    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_created', sequence: 1, payload: { campaign_id: 1, note_id: 2 } }} aiEnabled={false} />)
     await waitFor(() => {
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore)
     })
@@ -96,7 +96,7 @@ describe('WorldNotesPanel', () => {
     await screen.findByText('No notes found.')
     mockFetch.mockClear()
 
-    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', payload: { campaign_id: 2, note_id: 1 } }} aiEnabled={false} />)
+    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', sequence: 1, payload: { campaign_id: 2, note_id: 1 } }} aiEnabled={false} />)
     await act(async () => {})
     expect(mockFetch).not.toHaveBeenCalled()
   })

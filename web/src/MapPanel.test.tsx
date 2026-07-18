@@ -84,7 +84,7 @@ describe('MapPanel', () => {
     rerender(
       <MapPanel
         campaignId={1}
-        lastEvent={{ type: 'map_pin_added', payload: { map_id: 42 } }}
+        lastEvent={{ type: 'map_pin_added', sequence: 1, payload: { map_id: 42 } }}
       />,
     )
 

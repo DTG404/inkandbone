@@ -14,6 +14,30 @@ import (
 	ruleset "github.com/digitalghost404/inkandbone/internal/ruleset"
 )
 
+type advancementConfigResponse struct {
+	MinimumXP int  `json:"minimum_xp"`
+	Supported bool `json:"supported"`
+}
+
+func (s *Server) handleAdvancementConfig(w http.ResponseWriter, r *http.Request) {
+	rulesetID, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid ruleset id", http.StatusBadRequest)
+		return
+	}
+	configured, err := s.db.GetRuleset(rulesetID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if configured == nil {
+		http.NotFound(w, r)
+		return
+	}
+	minimum, supported := ruleset.MinimumXPCost(configured.Name)
+	writeJSON(w, advancementConfigResponse{MinimumXP: minimum, Supported: supported})
+}
+
 func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) {
 	charID, ok := parsePathID(r, "id")
 	if !ok {
@@ -244,11 +268,7 @@ func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":           charID,
-		"character_id": charID,
-		"data_json":    string(updated),
-	}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), DataJson: RealtimePtr(string(updated))}})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"data_json": string(updated)}) //nolint:errcheck

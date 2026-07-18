@@ -1,0 +1,1660 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	mathrand "math/rand"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/digitalghost404/inkandbone/internal/ai"
+	"github.com/digitalghost404/inkandbone/internal/db"
+	advancement "github.com/digitalghost404/inkandbone/internal/ruleset"
+)
+
+// autoGenerateMap detects if the GM response introduces a new location and, if
+// so, generates an SVG map for it automatically. Runs in a background goroutine.
+func (s *Server) autoGenerateMap(ctx context.Context, sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoGenerateMap) {
+		return
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		log.Printf("autoGenerateMap: session %d not found: %v", sessionID, err)
+		return
+	}
+
+	existing, _ := s.db.ListMaps(sess.CampaignID)
+	existingNames := make([]string, len(existing))
+	for i, m := range existing {
+		existingNames[i] = m.Name
+	}
+
+	detectPrompt := fmt.Sprintf(`You are a TTRPG map assistant. Analyze this story passage.
+
+Does this passage describe or establish a NAMED, visually distinct location? This includes: taverns, dungeons, caves, city streets, forests, ships, markets, ruins, castles, chambers, wilderness areas — any named place with atmosphere or layout details.
+
+Return ONLY JSON (no explanation, no markdown):
+- If a named location is clearly established: {"new_location":true,"name":"<exact location name>","context":"<50-word description: layout, atmosphere, key features for map generation>"}
+- If no named location or purely abstract/transitional text: {"new_location":false}
+
+Story passage:
+%s`, gmText)
+
+	permit, ok := s.acquireAutomation(settingAutoGenerateMap)
+	if !ok {
+		return
+	}
+	var raw string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		raw, e = completer.Generate(ctx, detectPrompt, 512)
+		return e
+	})
+	if err != nil {
+		log.Printf("autoGenerateMap: location detection failed (session %d): %v", sessionID, err)
+		permit.Complete(err)
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	// Strip markdown code fences that some models emit despite instructions.
+	if idx := strings.Index(raw, "```"); idx != -1 {
+		if end := strings.Index(raw[idx+3:], "\n"); end != -1 {
+			raw = raw[idx+3+end+1:]
+		}
+	}
+	if idx := strings.LastIndex(raw, "```"); idx != -1 {
+		raw = strings.TrimSpace(raw[:idx])
+	}
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		log.Printf("autoGenerateMap: no JSON in location detection response (session %d): %q", sessionID, raw)
+		permit.Success()
+		return
+	}
+
+	var loc struct {
+		NewLocation bool   `json:"new_location"`
+		Name        string `json:"name"`
+		Context     string `json:"context"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &loc); err != nil {
+		log.Printf("autoGenerateMap: JSON parse error (session %d): %v — raw: %q", sessionID, err, raw[start:end+1])
+		permit.Success()
+		return
+	}
+	if !loc.NewLocation || loc.Name == "" {
+		permit.Success()
+		return // no new location detected — not an error
+	}
+
+	locNameLower := strings.ToLower(loc.Name)
+	for _, name := range existingNames {
+		if strings.ToLower(name) == locNameLower {
+			permit.Success()
+			return // duplicate — not an error
+		}
+	}
+
+	// Map generation requires precise SVG output — use the structured AI client,
+	// not the narrative GM model.
+	mapPrompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + loc.Context
+	var svgRaw string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		svgRaw, e = completer.Generate(ctx, mapPrompt, 8192)
+		return e
+	})
+	if err != nil {
+		log.Printf("autoGenerateMap: SVG generation failed for %q (session %d): %v", loc.Name, sessionID, err)
+		permit.Complete(err)
+		return
+	}
+	svgContent, err := sanitizeGeneratedSVGResponse(svgRaw)
+	if err != nil {
+		log.Printf("autoGenerateMap: rejected generated SVG for %q (session %d): %v", loc.Name, sessionID, err)
+		permit.Failure(err)
+		return
+	}
+
+	mapID, err := s.persistGeneratedSVG(sess.CampaignID, loc.Name, svgContent)
+	if err != nil {
+		log.Printf("autoGenerateMap: rejected or failed generated map for %q (session %d): %v", loc.Name, sessionID, err)
+		permit.Failure(err)
+		return
+	}
+	permit.Success()
+	s.bus.Publish(Event{Type: EventMapCreated, Payload: &MapCreatedPayload{CampaignID: RealtimeInt64(sess.CampaignID), MapID: RealtimeInt64(mapID)}})
+}
+
+// autoUpdateCharacterStats checks whether the story events require any
+// character stat changes under the active ruleset (XP, wounds, level-ups,
+// stress, etc.) and applies them automatically.
+// statChangeKeywords are signals that something mechanically significant happened.
+var statChangeKeywords = []string{
+	"wound", "injur", "damage", "bleed", "hurt", "dead", "die", "dies", "dying",
+	"level", "experience", "xp", "exp", "advance",
+	"stress", "trauma", "exhaust", "corrupt",
+	"heal", "recover", "restore",
+	"spend", "use", "consume", "expend",
+	"critical", "fail", "success",
+	// Wrath & Glory specific
+	"glory", "ruin", "wrath", "rank", "heretic", "chaos", "enemy", "slain", "defeated",
+	// Vampire: The Masquerade specific
+	"feed", "fed", "hunt", "hunted", "blood", "bite", "embrace", "frenzy", "masquerade",
+	"torpor", "diablerie", "discipline", "vitae", "hunger", "humanity", "kindred",
+	"sunlight", "fire", "staked", "bane", "compulsion", "resonance", "blush",
+	"auspex", "dominate", "presence", "celerity", "fortitude", "obfuscate",
+	"potence", "protean", "animalism", "blood sorcery", "oblivion",
+}
+
+func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, playerAction, gmText string) {
+	if !s.isAutomationEnabled(settingAutoUpdateStats) {
+		return
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+	// Resolve active character.
+	charIDStr, err := s.db.GetSetting("active_character_id")
+	if err != nil || charIDStr == "" {
+		return
+	}
+	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	if err != nil {
+		return
+	}
+	char, err := s.db.GetCharacter(charID)
+	if err != nil || char == nil || char.DataJSON == "" || char.DataJSON == "{}" {
+		return
+	}
+
+	// Determine character type for VtM mortal/ghoul handling.
+	vtmCharType := ""
+	{
+		var charStats map[string]any
+		if json.Unmarshal([]byte(char.DataJSON), &charStats) == nil {
+			if ct, ok := charStats["character_type"].(string); ok {
+				vtmCharType = strings.ToLower(ct)
+			}
+		}
+	}
+
+	// Resolve ruleset via session → campaign.
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+	camp, err := s.db.GetCampaign(sess.CampaignID)
+	if err != nil || camp == nil {
+		return
+	}
+	ruleset, err := s.db.GetRuleset(camp.RulesetID)
+	if err != nil || ruleset == nil {
+		return
+	}
+
+	// Skip the AI call when the narrative contains no stat-change signals.
+	// Exception: VtM awards XP for every meaningful scene (including pure social/roleplay),
+	// so always run the stat check for VtM regardless of keywords.
+	if ruleset.Name != "vtm" && ruleset.Name != "wrath_glory" {
+		combined := strings.ToLower(playerAction + " " + gmText)
+		hasSignal := false
+		for _, kw := range statChangeKeywords {
+			if strings.Contains(combined, kw) {
+				hasSignal = true
+				break
+			}
+		}
+		if !hasSignal {
+			return
+		}
+	}
+
+	// VtM: detect Humanity-violating acts inside this ordered event job.
+	// Mortals do not have a Humanity/Stains track.
+	if ruleset.Name == "vtm" && vtmCharType != "mortal" {
+		s.detectAndApplyVtMStains(ctx, sessionID, playerAction+" "+gmText)
+	}
+
+	schema := ruleset.SchemaJSON
+	if len(schema) > 1200 {
+		schema = schema[:1200]
+	}
+
+	systemNote := ""
+	switch ruleset.Name {
+	case "wrath_glory":
+		systemNote = `
+Wrath & Glory rules:
+- XP: Award 1 XP for completing a significant scene (combat victory, key objective, notable roleplay). Award 2 XP for an exceptional scene (boss fight, major story milestone). Update the "xp" field by adding the award to current value.
+- Wrath tokens: increment "wrath" by 1 when the GM narrates a Wrath die result of 6.
+- Corruption: increment "corruption" when the character is exposed to the warp, Chaos artefacts, or forbidden acts.
+- Wounds/Shock: decrement when the character takes damage; set to 0 minimum.
+`
+	case "vtm":
+		if vtmCharType == "mortal" {
+			systemNote = `
+Vampire: The Masquerade V5 rules — this character is a MORTAL human. Update ONLY what the scene clearly caused:
+
+HEALTH (track superficial and aggravated separately):
+- "health_superficial": increase by 1-3 when the mortal takes blunt, bullet, or non-lethal damage. Decrease by 1-2 when resting/treated. Never exceed health_max.
+- "health_aggravated": increase by 1 when the mortal takes severe injury (fire, grievous wounds). Never exceed health_max.
+
+WILLPOWER (track "willpower_superficial"):
+- Decrease willpower_superficial by 1 when the character pushes past their limits or the GM explicitly says willpower is spent.
+- Restore toward willpower_max when the character rests or has a meaningful moment.
+- Never go below 0 or above willpower_max.
+
+XP:
+- Add 1 XP for any meaningful scene. Add 2 XP for a major milestone. Update "xp" by adding to its current value.
+
+DO NOT touch hunger, humanity, stains, blood_potency, clan, predator_type, or any discipline fields — this character has none.
+Return {} if nothing clearly changed. Only update fields that exist in the current stats JSON.
+`
+		} else {
+			systemNote = `
+Vampire: The Masquerade V5 rules — update ONLY what the scene clearly caused:
+
+HEALTH (track superficial and aggravated separately):
+- "health_superficial": increase by 1-3 when the vampire takes blunt, bullet, or non-lethal damage. Decrease by 1-2 when healing or resting. Never exceed health_max.
+- "health_aggravated": increase by 1 when the vampire takes fire, sunlight, or other aggravated damage. Never exceed health_max.
+
+HUNGER (0-5):
+- DO NOT increase hunger here. Hunger increases ONLY via explicit /rouse and /surge commands which are handled by the game engine separately.
+- ONLY decrease hunger if the GM text explicitly describes the character successfully drinking blood from a living vessel (sip=reduce by 1, proper feed=reduce by 2, deep feed=reduce by 3). Never go below 0.
+- If the scene does not contain explicit blood-drinking narration, do NOT touch hunger at all. Return the hunger field unchanged.
+
+WILLPOWER (track "willpower_superficial"):
+- Decrease willpower_superficial by 1 when: the character resists a Compulsion, makes a Willpower roll to resist mental powers, pushes past their limits, or the GM explicitly says willpower is spent.
+- Restore willpower_superficial toward willpower_max when: the character sleeps for the day, achieves a Conviction, or has a meaningful moment with a Touchstone.
+- Never go below 0 or above willpower_max.
+
+HUMANITY:
+- Do NOT update humanity here — handled by the stain and Remorse system separately.
+
+XP:
+- Add 1 XP for any meaningful scene (tense social encounter, surviving danger, significant feeding). Add 2 XP for a major milestone (story arc completed, powerful enemy survived, pivotal breach). Update "xp" by adding to its current value.
+
+DISCIPLINES: DO NOT change discipline dot values (animalism, auspex, blood_sorcery, celerity, dominate, fortitude, obfuscate, oblivion, potence, presence, protean). Discipline ratings only increase through explicit XP spending — never from scene events.
+
+STAINS: DO NOT update stains here — handled separately.
+Return {} if nothing clearly changed. Only update fields that exist in the current stats JSON.
+`
+		}
+	}
+
+	prompt := fmt.Sprintf(`You are a TTRPG rules engine. Based on what just happened in the story, determine which character stats need to change according to the ruleset rules.
+
+Ruleset: %s
+Rules schema (excerpt): %s
+%s
+Current character stats (JSON):
+%s
+
+What just happened:
+Player: %s
+GM: %s
+
+Return ONLY a JSON object with the fields that must change and their new values. Rules to follow:
+- Only update fields that already exist in the current stats JSON above.
+- Apply all relevant ruleset mechanics: HP/wound changes from combat outcomes, XP gains from significant events, level-ups when thresholds are met, stress or corruption changes, resources spent or gained.
+- When leveling up, also update all derived stats that change with the new level per the ruleset.
+- If nothing needs to change, return {}.
+- No explanation, no markdown — just the JSON object.`, ruleset.Name, schema, systemNote, char.DataJSON, playerAction, gmText)
+
+	permit, ok := s.acquireAutomation(settingAutoUpdateStats)
+	if !ok {
+		return
+	}
+	var raw string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		raw, e = completer.Generate(ctx, prompt, 400)
+		return e
+	})
+	permit.Complete(err)
+	if err != nil {
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return
+	}
+
+	var patch map[string]any
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &patch); err != nil || len(patch) == 0 {
+		return
+	}
+
+	// Unmarshal existing stats.
+	var current map[string]any
+	if err := json.Unmarshal([]byte(char.DataJSON), &current); err != nil {
+		return
+	}
+
+	// Capture XP before applying patch. Normalize string-stored XP to float64.
+	xpFieldKey := advancement.XPKey(ruleset.Name)
+	beforeXP := 0
+	if v, ok := current[xpFieldKey].(float64); ok {
+		beforeXP = int(v)
+	} else if s, ok := current[xpFieldKey].(string); ok {
+		if n, err := strconv.Atoi(s); err == nil {
+			beforeXP = n
+			current[xpFieldKey] = float64(n)
+		}
+	}
+
+	currentHunger := 0
+	if v, ok := current["hunger"].(float64); ok {
+		currentHunger = int(v)
+	}
+
+	for k, v := range patch {
+		_, exists := current[k]
+		// Allow xp to be created even if missing from character data (backfill guard).
+		if !exists && k == xpFieldKey {
+			exists = true
+			current[xpFieldKey] = float64(0)
+		}
+		if exists {
+			// Never let the AI goroutine lower XP — it can only award, not spend.
+			if k == xpFieldKey {
+				newXP, _ := v.(float64)
+				if int(newXP) <= beforeXP {
+					continue
+				}
+			}
+			// VtM: never let the AI goroutine increase hunger.
+			// Hunger rises only via explicit /rouse and /surge commands.
+			if k == "hunger" && ruleset.Name == "vtm" {
+				newHunger, _ := v.(float64)
+				if int(newHunger) > currentHunger {
+					continue
+				}
+			}
+			// VtM: never let the AI goroutine change discipline dots or identity fields.
+			// Disciplines only advance via explicit XP spending (/advance command).
+			// Identity fields (clan, sect, generation, etc.) are set at creation and never change.
+			if ruleset.Name == "vtm" {
+				vtmProtectedFields := map[string]bool{
+					"animalism": true, "auspex": true, "blood_sorcery": true, "celerity": true,
+					"dominate": true, "fortitude": true, "obfuscate": true, "oblivion": true,
+					"potence": true, "presence": true, "protean": true,
+					"clan": true, "sect": true, "predator_type": true, "generation": true,
+					"character_type": true,
+					"ambition":       true, "desire": true, "convictions": true, "touchstones": true,
+					"merits_flaws": true,
+				}
+				if vtmProtectedFields[k] {
+					continue
+				}
+			}
+			current[k] = v
+		}
+	}
+
+	// Capture XP after patch.
+	afterXP := 0
+	if v, ok := current[xpFieldKey].(float64); ok {
+		afterXP = int(v)
+	} else if s, ok := current[xpFieldKey].(string); ok {
+		// Handle legacy string-stored XP
+		if n, err := strconv.Atoi(s); err == nil {
+			afterXP = n
+			current[xpFieldKey] = float64(n) // normalize to number
+		}
+	}
+
+	// VtM: re-read live hunger before writing to avoid overwriting rouse check increases.
+	// autoUpdateCharacterStats reads char data before the AI call (slow). By the time
+	// the AI responds, a rouse check goroutine may have already incremented hunger via
+	// a concurrent handleVtMRouseCheck. Writing the stale snapshot would undo that.
+	//
+	// Two cases to handle correctly:
+	//   Feeding: AI decreases hunger (e.g. 5→2). Apply that same delta to the live
+	//            value so concurrent rouse changes are preserved proportionally.
+	//   No feed: AI returned hunger unchanged. Preserve whatever live value is (may be
+	//            higher due to a rouse check that ran while we waited for the AI).
+	if ruleset.Name == "vtm" {
+		if liveChar, liveErr := s.db.GetCharacter(charID); liveErr == nil && liveChar != nil && liveChar.DataJSON != "" {
+			var liveStats map[string]any
+			if json.Unmarshal([]byte(liveChar.DataJSON), &liveStats) == nil {
+				if liveHunger, ok := liveStats["hunger"].(float64); ok {
+					curHunger, _ := current["hunger"].(float64)
+					initialHungerF := float64(currentHunger) // captured before AI call
+					if curHunger < initialHungerF {
+						// AI decreased hunger (feeding): apply delta to live value.
+						delta := initialHungerF - curHunger
+						newHunger := liveHunger - delta
+						if newHunger < 0 {
+							newHunger = 0
+						}
+						current["hunger"] = newHunger
+					} else if liveHunger > curHunger {
+						// No feeding: preserve live value (rouse check may have raised it).
+						current["hunger"] = liveHunger
+					}
+				}
+			}
+		}
+	}
+
+	// Identity guard: before writing, merge AI-approved changes into the LIVE character data
+	// from the DB. This prevents concurrent goroutines from corrupting identity fields.
+	// Only safe fields (xp, hunger, health, willpower, stains) are written from the AI patch.
+	if freshChar, freshErr := s.db.GetCharacter(charID); freshErr == nil && freshChar != nil && freshChar.DataJSON != "" && freshChar.DataJSON != "{}" {
+		var live map[string]any
+		if json.Unmarshal([]byte(freshChar.DataJSON), &live) == nil {
+			safeFields := map[string]bool{"xp": true, "hunger": true, "health_superficial": true, "health_aggravated": true, "willpower_superficial": true, "willpower_aggravated": true, "stains": true, "humanity": true, "hp": true, "hp_max": true}
+			for k, v := range patch {
+				if safeFields[k] {
+					// XP guard: never let the AI lower XP — it can only award, not spend.
+					if k == xpFieldKey {
+						newXP, _ := v.(float64)
+						if int(newXP) <= beforeXP {
+							continue
+						}
+					}
+					live[k] = v
+				}
+			}
+			current = live
+		}
+	}
+	updated, err := json.Marshal(current)
+	if err != nil {
+		return
+	}
+
+	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+		return
+	}
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(string(updated))}})
+
+	// If XP increased, suggest advancements before this ordered event completes.
+	// Use the updated stats JSON rather than stale pre-patch character data.
+	char.DataJSON = string(updated)
+	if afterXP > beforeXP {
+		s.autoSuggestXPSpend(ctx, sessionID, charID, char, ruleset, current, afterXP)
+	}
+}
+
+func (s *Server) autoSuggestXPSpend(
+	ctx context.Context,
+	sessionID, charID int64,
+	char *db.Character,
+	ruleset *db.Ruleset,
+	stats map[string]any,
+	currentXP int,
+) {
+	system := ruleset.Name
+
+	// Skip systems without XP advancement (must be first).
+	switch system {
+	case "coc", "paranoia":
+		return
+	}
+
+	if !s.isAutomationEnabled(settingAutoSuggestXP) {
+		return
+	}
+
+	const maxSuggestionsPerSession = 20
+
+	// sessionID == 0 is the "manual trigger" sentinel — skip the per-session cap.
+	if sessionID != 0 {
+		// Atomically check-and-increment the session suggestion count.
+		for {
+			actual, _ := s.xpSuggestCounts.LoadOrStore(sessionID, 0)
+			count := actual.(int)
+			if count >= maxSuggestionsPerSession {
+				return
+			}
+			if s.xpSuggestCounts.CompareAndSwap(sessionID, count, count+1) {
+				break
+			}
+		}
+	}
+
+	// Gate: can the character afford any advance?
+	// Manual triggers (sessionID == 0) bypass this so the user can see what they could spend on.
+	if sessionID != 0 && !advancement.CanAffordAny(system, currentXP, char.DataJSON) {
+		return
+	}
+
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		log.Printf("autoSuggestXPSpend: AI client not available (no Completer interface)")
+		return
+	}
+
+	// Build context for the AI.
+	var statsJSON []byte
+	statsJSON, _ = json.Marshal(stats)
+
+	fieldHints := advancement.FieldHints(system)
+	fieldHintsSection := ""
+	if fieldHints != "" {
+		fieldHintsSection = "\n" + fieldHints + "\n"
+	}
+
+	// Build system-specific context block.
+	var systemContext string
+	switch system {
+	case "wrath_glory":
+		archetypeName, _ := stats["archetype"].(string)
+		tier := 1
+		if v, ok := stats["tier"].(float64); ok {
+			tier = int(v)
+		}
+		faction, _ := stats["faction"].(string)
+		talentsOwned, _ := stats["talents"].(string)
+		var startingAbilitiesStr string
+		if archetypeName != "" {
+			if def, ok := advancement.WGArchetypeDefFor(archetypeName); ok {
+				startingAbilitiesStr = strings.Join(def.Abilities(), ", ")
+			}
+		}
+		systemContext = fmt.Sprintf(`Archetype: %s
+Tier: %d
+Faction: %s
+Already-owned talents (pipe-delimited): %s
+Archetype starting abilities (do NOT suggest these): %s`,
+			archetypeName, tier, faction, talentsOwned, startingAbilitiesStr)
+	case "vtm":
+		vtmCT, _ := stats["character_type"].(string)
+		if strings.ToLower(vtmCT) == "mortal" {
+			// Mortals spend XP only on attributes and skills — no disciplines or blood potency.
+			systemContext = "Character type: Mortal. Suggest advances in Attributes and Skills only. Do NOT suggest Disciplines, Blood Potency, or any vampire-specific traits."
+		} else {
+			clan, _ := stats["clan"].(string)
+			bloodPotency := 1
+			if v, ok := stats["blood_potency"].(float64); ok {
+				bloodPotency = int(v)
+			}
+			inClanStr := ""
+			if clan != "" {
+				if discs, ok := advancement.VtMInClanDisciplinesFor(clan); ok {
+					inClanStr = strings.Join(discs, ", ")
+				}
+			}
+			systemContext = fmt.Sprintf(`Clan: %s
+Blood Potency: %d
+In-clan disciplines (cost 5 XP per dot): %s
+Out-of-clan disciplines cost 7 XP per dot.
+Do NOT suggest raising Blood Potency unless the character has enough XP to spend (cost 10 XP per dot).`,
+				clan, bloodPotency, inClanStr)
+		}
+	default:
+		// Generic: no additional system context.
+		systemContext = ""
+	}
+
+	contextSection := ""
+	if systemContext != "" {
+		contextSection = systemContext + "\n"
+	}
+
+	prompt := fmt.Sprintf(`You are advising a tabletop RPG character on how to spend their %s (%s system).
+
+Character: %s
+Current %s: %d
+%sCurrent stats (JSON): %s
+
+Cost rules for %s:
+%s
+%s
+Suggest 2–3 ranked advancement options. For each, output JSON with these exact fields:
+- field: the stat key — MUST match exactly the keys listed above or in the stats JSON
+- display_name: human-readable name
+- current_value: current numeric value
+- new_value: value after advance
+- xp_cost: XP cost (recalculate server-side; this is just for display)
+- reasoning: one sentence explaining why this is a good choice
+
+Output a JSON array only — no other text. Example:
+[{"field":"strength","display_name":"Strength","current_value":2,"new_value":3,"xp_cost":16,"reasoning":"Core physical stat with wide utility."}]
+
+Do NOT suggest advances the character cannot afford.
+If there are no good suggestions, return an empty JSON array: []
+`,
+		advancement.XPLabel(system), system,
+		char.Name,
+		advancement.XPLabel(system), currentXP,
+		contextSection,
+		string(statsJSON),
+		system,
+		advancement.CostRulesDescription(system),
+		fieldHintsSection,
+	)
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	permit, ok := s.acquireAutomation(settingAutoSuggestXP)
+	if !ok {
+		return
+	}
+	var raw string
+	err := retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		raw, e = completer.Generate(ctx, prompt, 1536)
+		return e
+	})
+	permit.Complete(err)
+	if err != nil {
+		log.Printf("autoSuggestXPSpend: AI error: %v", err)
+		return
+	}
+
+	// Extract JSON array from response using balanced bracket matching.
+	// The AI sometimes wraps output in markdown fences or adds trailing commentary
+	// with backticks; LastIndex would pull in that extra content.
+	start := strings.Index(raw, "[")
+	if start < 0 {
+		log.Printf("autoSuggestXPSpend: no JSON array in response: %q", raw)
+		return
+	}
+	depth := 0
+	end := -1
+	for i := start; i < len(raw); i++ {
+		switch raw[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				end = i
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
+	if end < 0 {
+		log.Printf("autoSuggestXPSpend: unbalanced JSON array in response: %q", raw)
+		return
+	}
+	raw = raw[start : end+1]
+
+	var suggestions []map[string]any
+	if err := json.Unmarshal([]byte(raw), &suggestions); err != nil {
+		log.Printf("autoSuggestXPSpend: unmarshal error: %v", err)
+		return
+	}
+	if len(suggestions) == 0 {
+		return
+	}
+
+	// Recalculate XP costs server-side and filter out invalid/unaffordable suggestions.
+	// Manual triggers (sessionID==0) skip the affordability check so the panel always shows.
+	filtered := suggestions[:0]
+	for _, sg := range suggestions {
+		field, _ := sg["field"].(string)
+		// Always use the ACTUAL current value from stats — the AI may hallucinate current_value.
+		// This ensures new_value agrees with what the advance handler will validate.
+		// Stats may be stored as float64 (numeric JSON) or string ("2") depending on ruleset schema.
+		actualCurVal := 0
+		if v, ok := stats[field].(float64); ok {
+			actualCurVal = int(v)
+		} else if s, ok := stats[field].(string); ok {
+			if n, err := strconv.Atoi(s); err == nil {
+				actualCurVal = n
+			}
+		}
+		newVal := actualCurVal + 1
+		sg["current_value"] = float64(actualCurVal)
+		sg["new_value"] = float64(newVal)
+		cost := advancement.XPCostFor(system, field, newVal, char.DataJSON)
+		if cost == 0 {
+			continue // unknown field — always skip
+		}
+		if sessionID != 0 && cost > currentXP {
+			continue // auto-trigger: only affordable options
+		}
+		sg["xp_cost"] = cost
+		filtered = append(filtered, sg)
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	suggestions = filtered
+
+	payload := &XPSpendSuggestionsPayload{
+		CharacterID:   RealtimeInt64(charID),
+		CharacterName: RealtimePtr(char.Name),
+		CurrentXP:     RealtimeInt64(currentXP),
+		XPLabel:       RealtimePtr(advancement.XPLabel(system)),
+		Suggestions:   RealtimeArray(suggestions),
+		SessionID:     RealtimeInt64(sessionID),
+	}
+	s.bus.Publish(Event{Type: EventXPSpendSuggestions, Payload: payload})
+}
+
+type rollCheckResult struct {
+	Expression    string
+	Total         int
+	Attribute     string
+	DC            int
+	Success       bool
+	Reason        string
+	MessyCritical bool   // VtM: critical success on a Hunger die
+	BestialFail   bool   // VtM: failure with a 1 on a Hunger die
+	Compulsion    string // VtM: compulsion text triggered by Messy Critical (empty if none)
+}
+
+// checkAndExecuteRoll asks haiku whether the player's action requires a dice
+// roll under the active ruleset. If it does, the roll is executed, saved to
+// the DB, and the result is returned so the GM prompt can incorporate it.
+func (s *Server) checkAndExecuteRoll(ctx context.Context, sessionID int64, playerAction string, characterName string) *rollCheckResult {
+	if !s.isAutomationEnabled(settingAutoCheckRoll) {
+		return nil
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return nil
+	}
+
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return nil
+	}
+	camp, err := s.db.GetCampaign(sess.CampaignID)
+	if err != nil || camp == nil {
+		return nil
+	}
+	ruleset, err := s.db.GetRuleset(camp.RulesetID)
+	if err != nil || ruleset == nil {
+		return nil
+	}
+
+	charStats := "none"
+	if charIDStr, err := s.db.GetSetting("active_character_id"); err == nil && charIDStr != "" {
+		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
+			if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
+				charStats = char.DataJSON
+			}
+		}
+	}
+
+	schema := ruleset.SchemaJSON
+	if len(schema) > 800 {
+		schema = schema[:800]
+	}
+
+	prompt := fmt.Sprintf(`You are a TTRPG rules referee. Determine if the player action requires a dice roll under this ruleset.
+
+Ruleset: %s
+Rules schema (excerpt): %s
+Character stats: %s
+
+Player action: "%s"
+
+If a dice roll IS required, respond with ONLY this JSON (no explanation, no markdown):
+{"required":true,"expression":"1d20","attribute":"Strength","dc":15,"reason":"Forcing open a stuck door requires a Strength check (DC 15)"}
+
+If NO dice roll is required, respond with ONLY:
+{"required":false}`, ruleset.Name, schema, charStats, playerAction)
+
+	raw, err := completer.Generate(ctx, prompt, 128)
+	if err != nil {
+		return nil
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return nil
+	}
+
+	var check struct {
+		Required   bool   `json:"required"`
+		Expression string `json:"expression"`
+		Attribute  string `json:"attribute"`
+		DC         int    `json:"dc"`
+		Reason     string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &check); err != nil || !check.Required || check.Expression == "" {
+		return nil
+	}
+
+	expr := strings.ToLower(strings.TrimSpace(check.Expression))
+	count, sides := 1, 0
+	if idx := strings.Index(expr, "d"); idx >= 0 {
+		if idx > 0 {
+			if n, err := strconv.Atoi(expr[:idx]); err == nil && n >= 1 {
+				count = n
+			}
+		}
+		if s2, err := strconv.Atoi(expr[idx+1:]); err == nil && s2 >= 1 {
+			sides = s2
+		}
+	}
+	if sides == 0 {
+		return nil
+	}
+
+	// VtM: use Hunger dice mechanic (pool of d10s, Hunger dice replace some).
+	if ruleset.Name == "vtm" && sides == 10 {
+		return s.vtmHungerDiceRoll(ctx, sessionID, count, check.Attribute, check.DC, check.Reason, check.Expression, charStats, characterName)
+	}
+
+	rolls := make([]int, count)
+	total := 0
+	for i := range rolls {
+		r := mathrand.Intn(sides) + 1
+		rolls[i] = r
+		total += r
+	}
+
+	breakdownBytes, _ := json.Marshal(rolls)
+	_, _ = s.db.LogDiceRoll(sessionID, check.Expression, total, string(breakdownBytes))
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(check.Expression), Result: RealtimeInt64(total), CharacterName: RealtimePtr(characterName), Hidden: RealtimePtr(false)}})
+
+	return &rollCheckResult{
+		Expression: check.Expression,
+		Total:      total,
+		Attribute:  check.Attribute,
+		DC:         check.DC,
+		Success:    check.DC == 0 || total >= check.DC,
+		Reason:     check.Reason,
+	}
+}
+
+// extractNPCs uses the AI to extract newly introduced named NPCs from a GM
+// response and adds any that don't already exist in the session roster.
+// It also removes NPCs that are dead, captured, permanently gone, or otherwise
+// no longer relevant to the story.
+func (s *Server) extractNPCs(ctx context.Context, sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoExtractNPCs) {
+		return
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+	existing, err := s.db.ListSessionNPCs(sessionID)
+	if err != nil {
+		return
+	}
+
+	var charName string
+	if charIDStr, err := s.db.GetSetting("active_character_id"); err == nil && charIDStr != "" {
+		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
+			if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
+				charName = char.Name
+			}
+		}
+	}
+
+	// Build existing NPC list for the prompt (with IDs so AI can reference them for removal).
+	type npcEntry struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	knownNames := make([]string, 0, len(existing))
+	knownEntries := make([]npcEntry, 0, len(existing))
+	for _, n := range existing {
+		knownNames = append(knownNames, n.Name)
+		knownEntries = append(knownEntries, npcEntry{ID: n.ID, Name: n.Name})
+	}
+	knownJSON, _ := json.Marshal(knownEntries)
+
+	excludeClause := ""
+	if charName != "" {
+		excludeClause = fmt.Sprintf("\nNever add the player character \"%s\" as an NPC.", charName)
+	}
+
+	prompt := fmt.Sprintf(`You are a TTRPG NPC roster manager. Analyze this story passage.
+
+Already-tracked NPCs (JSON array with id and name): %s%s
+
+Story passage:
+%s
+
+Return ONLY a JSON object with two fields:
+- "add": array of {name, note} for brand-new named NPCs that appear in this passage and are NOT already tracked. note = one sentence describing who they are. Empty array if none.
+- "remove": array of ids from the tracked list for NPCs that are now definitively gone — dead, killed, permanently fled, captured offscreen, dissolved, destroyed, or otherwise will never interact with the player again. Be confident but not trigger-happy: only remove when the story clearly confirms they are gone. Empty array if none.
+
+Example: {"add":[{"name":"Torvan","note":"A scarred mercenary guarding the gate"}],"remove":[12,7]}
+If nothing changed: {"add":[],"remove":[]}
+No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
+
+	permit, ok := s.acquireAutomation(settingAutoExtractNPCs)
+	if !ok {
+		return
+	}
+	var raw string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		raw, e = completer.Generate(ctx, prompt, 384)
+		return e
+	})
+	permit.Complete(err)
+	if err != nil {
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		// Fallback: try legacy array format
+		start = strings.Index(raw, "[")
+		end = strings.LastIndex(raw, "]")
+		if start < 0 || end <= start {
+			return
+		}
+		var npcs []struct {
+			Name string `json:"name"`
+			Note string `json:"note"`
+		}
+		if err := json.Unmarshal([]byte(raw[start:end+1]), &npcs); err != nil {
+			return
+		}
+		changed := 0
+		for _, npc := range npcs {
+			if npc.Name == "" || npc.Name == charName {
+				continue
+			}
+			if _, err := s.db.CreateSessionNPC(sessionID, npc.Name, npc.Note); err == nil {
+				changed++
+			}
+		}
+		if changed > 0 {
+			s.bus.Publish(Event{Type: EventNPCUpdated, Payload: &NPCUpdatedPayload{SessionID: RealtimeInt64(sessionID)}})
+		}
+		return
+	}
+
+	var result struct {
+		Add []struct {
+			Name string `json:"name"`
+			Note string `json:"note"`
+		} `json:"add"`
+		Remove []int64 `json:"remove"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &result); err != nil {
+		return
+	}
+
+	// Build a set of known NPC IDs for safety (only delete NPCs we actually track).
+	knownIDs := make(map[int64]bool, len(existing))
+	for _, n := range existing {
+		knownIDs[n.ID] = true
+	}
+	// Also build a set of known names (case-insensitive) to avoid duplicates.
+	knownNamesLower := make(map[string]bool, len(knownNames))
+	for _, n := range knownNames {
+		knownNamesLower[strings.ToLower(n)] = true
+	}
+
+	changed := 0
+	for _, npc := range result.Add {
+		if npc.Name == "" || npc.Name == charName {
+			continue
+		}
+		if knownNamesLower[strings.ToLower(npc.Name)] {
+			continue
+		}
+		if _, err := s.db.CreateSessionNPC(sessionID, npc.Name, npc.Note); err == nil {
+			changed++
+		}
+	}
+	for _, id := range result.Remove {
+		if !knownIDs[id] {
+			continue // safety: never delete an ID we didn't give the AI
+		}
+		if err := s.db.DeleteSessionNPC(id); err == nil {
+			changed++
+		}
+	}
+	if changed > 0 {
+		s.bus.Publish(Event{Type: EventNPCUpdated, Payload: &NPCUpdatedPayload{SessionID: RealtimeInt64(sessionID)}})
+	}
+	_ = knownNames // used above
+}
+
+// objectiveNewKeywords gates autoDetectObjectives when there are no active objectives.
+// Kept narrow: only words that strongly signal a quest/contract being issued, not generic
+// action words like "kill" or "find" which appear in every combat narrative.
+var objectiveNewKeywords = []string{
+	"quest", "mission", "objective", "bounty", "contract", "assignment",
+	"reward", "tasked", "ordered to", "charged with", "your mission", "your task",
+	"you must", "you need to", "you have to",
+}
+
+// autoDetectObjectives uses the AI to detect new objectives introduced in a GM
+// response and to resolve existing active objectives that were completed or failed.
+// Always runs when there are active objectives (to catch resolutions/failures).
+// Only skips entirely when there are no active objectives AND no new-objective keywords.
+// Runs in a background goroutine.
+func (s *Server) autoDetectObjectives(ctx context.Context, sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoDetectObj) {
+		return
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+
+	existing, err := s.db.ListObjectives(sess.CampaignID)
+	if err != nil {
+		return
+	}
+
+	// Count active objectives — if any exist, always run to catch resolutions.
+	hasActive := false
+	for _, o := range existing {
+		if o.Status == "active" {
+			hasActive = true
+			break
+		}
+	}
+
+	// If no active objectives, only run when new-objective keywords appear.
+	if !hasActive {
+		lower := strings.ToLower(gmText)
+		found := false
+		for _, kw := range objectiveNewKeywords {
+			if strings.Contains(lower, kw) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return
+		}
+	}
+
+	// Split objectives: active ones are candidates for resolution; all titles go into the dedup set.
+	existingTitleSet := make(map[string]bool, len(existing))
+	type slimObjective struct {
+		ID          int64  `json:"id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+	var activeSlim []slimObjective
+	var allTitles []string
+	for _, o := range existing {
+		key := strings.ToLower(strings.TrimSpace(o.Title))
+		existingTitleSet[key] = true
+		allTitles = append(allTitles, o.Title)
+		if o.Status == "active" {
+			activeSlim = append(activeSlim, slimObjective{ID: o.ID, Title: o.Title, Description: o.Description})
+		}
+	}
+	activeJSON, err := json.Marshal(activeSlim)
+	if err != nil {
+		return
+	}
+
+	// Fetch recent session history to give the AI resolution context.
+	// Include the last ~6000 chars of prior GM messages so the AI can detect
+	// objectives that were resolved in earlier turns, not just the current one.
+	recentContext := ""
+	if msgs, merr := s.db.ListAIVisibleMessages(sessionID); merr == nil {
+		var sb strings.Builder
+		for _, m := range msgs {
+			if m.Role == "assistant" {
+				sb.WriteString(m.Content)
+				sb.WriteString("\n\n")
+			}
+		}
+		prior := strings.TrimSpace(sb.String())
+		prior = strings.TrimSuffix(prior, strings.TrimSpace(gmText))
+		prior = strings.TrimSpace(prior)
+		if len(prior) > 6000 {
+			prior = prior[len(prior)-6000:]
+		}
+		if prior != "" {
+			recentContext = "\n\nRecent prior story:\n" + prior
+		}
+	}
+
+	// Build the all-titles list for dedup instruction.
+	allTitlesStr := "none"
+	if len(allTitles) > 0 {
+		allTitlesStr = strings.Join(allTitles, "; ")
+	}
+
+	prompt := fmt.Sprintf(`You are a TTRPG objective tracker. Your job is to maintain a clean, meaningful quest log — not a transcript of every action.
+
+ACTIVE objectives (these are the only ones you can resolve):
+%s
+
+ALL tracked objective titles — do NOT add anything that matches these, even paraphrased: %s
+
+Current GM narrative:
+%s%s
+
+RULES FOR ADDING NEW OBJECTIVES:
+Only add an objective if the story introduces a clear, named goal with stakes — a formal quest, contract, order, or mission. Do NOT add:
+- Incidental actions the player is currently doing ("cross the bridge", "search the room")
+- Combat encounters unless they are the named goal of a quest
+- Things that will resolve within 1-2 turns
+- Anything already in the tracked titles list above
+
+RULES FOR RESOLVING OBJECTIVES:
+Resolve an active objective the moment the story makes it clearly finished:
+- completed: the goal was achieved — enemy killed, item retrieved, person found, location reached, mission accomplished
+- failed: the goal became impossible — target died first, location destroyed, time ran out, player chose to abandon it
+If the recent story shows the goal was achieved or failed in a prior turn and it's still active, resolve it now.
+Do NOT leave an objective active if the story has clearly moved past it.
+
+Output ONLY: {"new":[{"title":"...","description":"..."}],"resolved":[{"id":3,"status":"completed"}]}
+No changes: {"new":[],"resolved":[]}
+No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentContext)
+
+	permit, ok := s.acquireAutomation(settingAutoDetectObj)
+	if !ok {
+		return
+	}
+	var raw string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		raw, e = completer.Generate(ctx, prompt, 1024)
+		return e
+	})
+	permit.Complete(err)
+	if err != nil {
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return
+	}
+
+	var result struct {
+		New []struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+		} `json:"new"`
+		Resolved []struct {
+			ID     int64  `json:"id"`
+			Status string `json:"status"`
+		} `json:"resolved"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &result); err != nil {
+		return
+	}
+
+	changed := 0
+	for _, n := range result.New {
+		if n.Title == "" {
+			continue
+		}
+		// Application-level dedup: skip if title already exists (case-insensitive).
+		key := strings.ToLower(strings.TrimSpace(n.Title))
+		if existingTitleSet[key] {
+			continue
+		}
+		if _, err := s.db.CreateObjective(sess.CampaignID, n.Title, n.Description, nil); err == nil {
+			changed++
+			existingTitleSet[key] = true // prevent same-batch duplicates
+		}
+	}
+	for _, res := range result.Resolved {
+		if res.Status != "completed" && res.Status != "failed" {
+			continue
+		}
+		if err := s.db.UpdateObjectiveStatus(res.ID, res.Status); err == nil {
+			changed++
+		}
+	}
+	if changed > 0 {
+		s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: &ObjectiveUpdatedPayload{CampaignID: RealtimeInt64(sess.CampaignID)}})
+	}
+}
+
+// autoExtractItems analyzes a GM response for items explicitly gained or lost
+// by the player and updates the active character's inventory accordingly.
+// Runs in a background goroutine.
+func (s *Server) autoExtractItems(ctx context.Context, sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoExtractItems) {
+		return
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+	// Resolve active character.
+	charIDStr, err := s.db.GetSetting("active_character_id")
+	if err != nil || charIDStr == "" {
+		return
+	}
+	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	if err != nil {
+		return
+	}
+
+	prompt := fmt.Sprintf(`You are a TTRPG inventory tracker. Analyze this GM story passage.
+
+Identify items the player character explicitly takes ownership of and will carry going forward. Also identify items explicitly lost, destroyed, or taken away.
+
+Rules:
+- GAINED: only items the player character picks up, receives, or is explicitly handed.
+- Do NOT add containers or bags that are opened/searched — only add the container if the player explicitly takes it with them.
+- Do NOT add items found inside something unless the player explicitly takes those items out and keeps them.
+- Do NOT add items merely mentioned, seen, or examined — only items the player now owns.
+- Do NOT add the same item more than once in the gained list.
+- LOST: items the passage explicitly says were dropped, destroyed, given away, used up, or taken from the player.
+
+Return ONLY a JSON object (no explanation, no markdown):
+{"gained":[{"name":"...","description":"...","quantity":1}],"lost":["item name","item name"]}
+
+If nothing changed: {"gained":[],"lost":[]}
+
+Story passage:
+%s`, gmText)
+
+	permit, ok := s.acquireAutomation(settingAutoExtractItems)
+	if !ok {
+		return
+	}
+	var raw string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		raw, e = completer.Generate(ctx, prompt, 256)
+		return e
+	})
+	permit.Complete(err)
+	if err != nil {
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return
+	}
+
+	var result struct {
+		Gained []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Quantity    int    `json:"quantity"`
+		} `json:"gained"`
+		Lost []string `json:"lost"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &result); err != nil {
+		return
+	}
+
+	// Load existing inventory once so we can deduplicate before inserting.
+	existing, _ := s.db.ListItems(charID)
+	existingNames := make(map[string]bool, len(existing))
+	for _, item := range existing {
+		existingNames[strings.ToLower(item.Name)] = true
+	}
+
+	changed := 0
+
+	for _, g := range result.Gained {
+		if g.Name == "" {
+			continue
+		}
+		// Skip if already in inventory (prevents re-adding on every mention).
+		if existingNames[strings.ToLower(g.Name)] {
+			continue
+		}
+		qty := g.Quantity
+		if qty <= 0 {
+			qty = 1
+		}
+		if _, err := s.db.CreateItem(charID, g.Name, g.Description, qty); err == nil {
+			existingNames[strings.ToLower(g.Name)] = true // prevent dupe within same response
+			changed++
+		}
+	}
+
+	if len(result.Lost) > 0 {
+		for _, lostName := range result.Lost {
+			lostLower := strings.ToLower(lostName)
+			for _, item := range existing {
+				if strings.ToLower(item.Name) == lostLower {
+					if err := s.db.DeleteItem(item.ID); err == nil {
+						changed++
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if changed > 0 {
+		s.bus.Publish(Event{Type: EventItemUpdated, Payload: &ItemUpdatedPayload{CharacterID: RealtimeInt64(charID)}})
+	}
+}
+
+// sceneTagKeywords maps each scene tag to keywords that strongly indicate it.
+// Keyword matching replaces an AI call — same accuracy, zero token cost.
+var sceneTagKeywords = map[string][]string{
+	"battle":     {"battle", "fight", "combat", "attack", "enemy", "clash", "sword", "skirmish", "weapon", "strike", "wound", "blood", "war"},
+	"dungeon":    {"dungeon", "corridor", "cell", "prison", "iron door", "torch"},
+	"cave":       {"cave", "cavern", "stalactite", "stalagmite", "underground", "tunnel", "grotto"},
+	"forest":     {"forest", "tree", "woods", "grove", "undergrowth", "canopy", "thicket", "bark"},
+	"castle":     {"castle", "throne", "tower", "battlement", "great hall", "rampart", "fortress", "keep", "parapet"},
+	"tavern":     {"tavern", "inn", "alehouse", "taproom", "barmaid", "bartender", "tankard", "common room"},
+	"market":     {"market", "stall", "merchant", "vendor", "bazaar", "goods", "wares"},
+	"temple":     {"temple", "shrine", "altar", "priest", "prayer", "ritual", "holy", "sacred", "chapel"},
+	"ruins":      {"ruins", "ruin", "crumble", "ancient", "collapse", "decay", "abandoned", "overgrown", "rubble"},
+	"city":       {"city", "street", "alley", "crowd", "cobblestone", "district", "urban", "plaza"},
+	"ocean":      {"ocean", "sea", "ship", "wave", "sail", "harbor", "dock", "tide", "shore"},
+	"rain":       {"rain", "storm", "thunder", "lightning", "drizzle", "downpour", "soaked", "puddle"},
+	"night":      {"night", "midnight", "moonlight", "dusk", "twilight"},
+	"elysium":    {"elysium", "court of elysium", "neutral ground", "the salon", "gathering of kindred"},
+	"haven":      {"haven", "lair", "sanctuary", "your haven", "safe house", "feeding ground"},
+	"hunt":       {"hunting", "stalking", "feeding ground", "prey", "the hunt", "the rack"},
+	"masquerade": {"masquerade breach", "mortal witnesses", "humans watching", "public eye", "crowd of mortals"},
+}
+
+// autoUpdateSceneTags classifies the scene via keyword matching and updates the
+// session's scene_tags to drive ambient audio. Skips the write if the active
+// (first) tag is unchanged (stability — avoids restarting the track mid-scene).
+// Uses keyword matching instead of an AI call: same accuracy, zero token cost.
+func (s *Server) autoUpdateSceneTags(_ context.Context, sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoUpdateSceneTags) {
+		return
+	}
+	if gmText == "" {
+		return
+	}
+	lowerText := strings.ToLower(gmText)
+
+	bestTag := ""
+	bestScore := 0
+	for tag, keywords := range sceneTagKeywords {
+		score := 0
+		for _, kw := range keywords {
+			if strings.Contains(lowerText, kw) {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			bestTag = tag
+		}
+	}
+	if bestTag == "" {
+		return
+	}
+
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+
+	// Tag stability: skip if the active (first) tag is unchanged.
+	currentFirst := ""
+	if sess.SceneTags != "" {
+		currentFirst = strings.SplitN(sess.SceneTags, ",", 2)[0]
+	}
+	if bestTag == currentFirst {
+		return
+	}
+
+	if err := s.db.UpdateSceneTags(sessionID, bestTag); err != nil {
+		return
+	}
+	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: &SessionUpdatedPayload{SessionID: RealtimeInt64(sessionID), SceneTags: RealtimePtr(bestTag)}})
+}
+
+// crisisRE matches crisis keywords at word boundaries to avoid false positives
+// (e.g. "trapped" should not match "trap", "critical" should not match alone).
+var crisisRE = regexp.MustCompile(
+	`\b(critical\s+failure|disaster|catastrophe|ambush|betrayal|dying|wounded|doomed|cornered|overwhelmed)\b`,
+)
+
+// autoUpdateTension adjusts session tension after each GM response.
+// Failed dice rolls increase tension +1 (caller prepends "critical failure" to text).
+// Crisis keywords in the GM text also increase tension +1.
+func (s *Server) autoUpdateTension(sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoUpdateTension) {
+		return
+	}
+	lower := strings.ToLower(gmText)
+
+	matched := crisisRE.MatchString(lower)
+
+	// For VtM sessions, also check VtM-specific crisis keywords.
+	if !matched {
+		if sess, err := s.db.GetSession(sessionID); err == nil && sess != nil {
+			if camp, err := s.db.GetCampaign(sess.CampaignID); err == nil && camp != nil {
+				if rs, err := s.db.GetRuleset(camp.RulesetID); err == nil && rs != nil && rs.Name == "vtm" {
+					matched = matched || vtmCrisisRE.MatchString(lower)
+				}
+			}
+		}
+	}
+
+	if !matched {
+		return
+	}
+
+	current, err := s.db.GetTension(sessionID)
+	if err != nil {
+		return
+	}
+
+	newLevel := current + 1
+	_ = s.db.UpdateTension(sessionID, newLevel)
+	s.bus.Publish(Event{Type: EventTensionUpdated, Payload: &TensionUpdatedPayload{SessionID: RealtimeInt64(sessionID), TensionLevel: RealtimeInt64(newLevel)}})
+}
+
+// autoUpdateCurrency analyzes a GM response for explicit currency transactions
+// (e.g. "you receive 30 gold", "costs 15 coin") and updates the active character's
+// balance accordingly. Runs in a background goroutine.
+// Only fires when a specific number AND a currency word appear together.
+// Publishes currency_delta in the character_updated event so the frontend can show an undo toast.
+func (s *Server) autoUpdateCurrency(ctx context.Context, sessionID int64, gmText string) {
+	if !s.isAutomationEnabled(settingAutoUpdateCurrency) {
+		return
+	}
+	completer, ok := s.aiClient.(ai.Completer)
+	if !ok {
+		return
+	}
+
+	// Skip for systems that use abstract wealth rather than tracked currency.
+	if sess, err := s.db.GetSession(sessionID); err == nil && sess != nil {
+		if camp, err := s.db.GetCampaign(sess.CampaignID); err == nil && camp != nil {
+			if rs, err := s.db.GetRuleset(camp.RulesetID); err == nil && rs != nil {
+				if rs.Name == "wrath_glory" || rs.Name == "vtm" {
+					return
+				}
+			}
+		}
+	}
+
+	// Resolve active character.
+	charIDStr, err := s.db.GetSetting("active_character_id")
+	if err != nil || charIDStr == "" {
+		return
+	}
+	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	if err != nil {
+		return
+	}
+
+	prompt := fmt.Sprintf(`You are a TTRPG currency tracker. Analyze this GM story passage.
+
+Extract any EXPLICIT currency transaction where BOTH a specific number AND a currency word appear together.
+Currency words include: gold, gp, silver, sp, copper, cp, coin, coins, crowns, marks, ducats, dollars, credits.
+
+Rules:
+- Only extract when both a number AND a currency word are present (e.g. "30 gold", "15 coin", "5 gp").
+- Positive delta = player gains currency. Negative delta = player spends or loses currency.
+- If multiple transactions exist, sum them into a single delta.
+- Do NOT infer amounts. "A handful of coins" or "some gold" are NOT explicit — return delta 0.
+- Do NOT extract currency that belongs to NPCs unless it transfers to the player.
+
+Return ONLY a JSON object (no explanation, no markdown):
+{"delta": 0}
+
+Story passage:
+%s`, gmText)
+
+	raw, err := completer.Generate(ctx, prompt, 64)
+	if err != nil {
+		return
+	}
+
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return
+	}
+
+	var result struct {
+		Delta int64 `json:"delta"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &result); err != nil {
+		return
+	}
+	if result.Delta == 0 {
+		return
+	}
+
+	// Get current balance.
+	char, err := s.db.GetCharacter(charID)
+	if err != nil || char == nil {
+		return
+	}
+
+	newBalance := char.CurrencyBalance + result.Delta
+	if newBalance < 0 {
+		newBalance = 0
+	}
+
+	if err := s.db.UpdateCharacterCurrencyBalance(charID, newBalance); err != nil {
+		return
+	}
+
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), CurrencyBalance: RealtimeInt64(newBalance), CurrencyLabel: RealtimePtr(char.CurrencyLabel), CurrencyDelta: RealtimeInt64(result.Delta)}})
+}
+
+// autoUpdateRecap regenerates the session recap in the background every 4 GM
+// messages so the journal stays current without manual intervention.
+func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
+	if s.aiClient == nil {
+		return
+	}
+	if !s.isAutomationEnabled(settingAutoUpdateRecap) {
+		return
+	}
+	msgs, err := s.db.ListAIVisibleMessages(sessionID)
+	if err != nil {
+		return
+	}
+	// Count assistant messages — update on every 4th one (and always on the first).
+	gmCount := 0
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			gmCount++
+		}
+	}
+	if gmCount == 0 || gmCount%4 != 0 {
+		return
+	}
+	permit, ok := s.acquireAutomation(settingAutoUpdateRecap)
+	if !ok {
+		return
+	}
+	var summary string
+	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
+		var e error
+		summary, e = s.buildRecap(ctx, sessionID)
+		return e
+	})
+	permit.Complete(err)
+	if err != nil {
+		return
+	}
+	if err := s.db.UpdateSessionSummary(sessionID, summary); err != nil {
+		return
+	}
+	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: &SessionUpdatedPayload{SessionID: RealtimeInt64(sessionID), Summary: RealtimePtr(summary)}})
+}
+
+// buildRecap reads messages and dice rolls, builds a prompt, and calls the AI.
+func (s *Server) buildRecap(ctx context.Context, sessionID int64) (string, error) {
+	msgs, err := s.db.ListAIVisibleMessages(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("list messages: %w", err)
+	}
+	rolls, err := s.db.ListDiceRolls(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("list rolls: %w", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Write a 2-3 sentence narrative recap of this TTRPG session.\n\nMessages:\n")
+	for _, m := range msgs {
+		fmt.Fprintf(&sb, "[%s]: %s\n", m.Role, m.Content)
+	}
+	sb.WriteString("\nDice rolls:\n")
+	for _, r := range rolls {
+		fmt.Fprintf(&sb, "%s = %d\n", r.Expression, r.Result)
+	}
+
+	return s.aiClient.Generate(ctx, sb.String(), 200)
+}
+
+// autoRevealZones checks the latest map's unrevealed zones against the GM narrative text.
+// Any zone whose name appears as a whole word is revealed and broadcast via WS.
+// Runs synchronously after streaming — no goroutine needed.
+func (s *Server) autoRevealZones(ctx context.Context, sessionID int64, gmText string) {
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil || sess == nil {
+		return
+	}
+	latestMap, err := s.db.GetLatestMap(sess.CampaignID)
+	if err != nil || latestMap == nil {
+		return
+	}
+	zones, err := s.db.ListUnrevealedZones(latestMap.ID)
+	if err != nil || len(zones) == 0 {
+		return
+	}
+	for _, z := range zones {
+		pattern := `(?i)\b` + regexp.QuoteMeta(z.Name) + `\b`
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+		if !re.MatchString(gmText) {
+			continue
+		}
+		if err := s.db.RevealZone(z.ID, true); err != nil {
+			log.Printf("autoRevealZones: reveal zone %d: %v", z.ID, err)
+			continue
+		}
+		s.bus.Publish(Event{Type: EventZoneRevealed, Payload: &ZoneRevealedPayload{MapID: RealtimeInt64(latestMap.ID), ZoneID: RealtimeInt64(z.ID), ZoneName: RealtimePtr(z.Name), IsRevealed: RealtimePtr(true)}})
+	}
+}

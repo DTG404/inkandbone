@@ -12,7 +12,8 @@ import { test, expect } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
-const BASE = 'http://localhost:7432'
+const BASE = process.env.INKANDBONE_E2E_BASE_URL
+if (!BASE) throw new Error('smoke tests require INKANDBONE_E2E_BASE_URL')
 const CHAR_NAME = 'Theron Brightwald'
 
 // Shared IDs populated by beforeAll

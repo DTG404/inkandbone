@@ -1,20 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchTimeline } from './api'
 import type { TimelineEntry } from './types'
+import type { RealtimeEvent } from './realtime.gen'
+import { wsEvent } from './wsEvents'
 
 interface Props {
   sessionId: number
   lastEvent: unknown
 }
 
-type WsPayload = Record<string, unknown>
-type WsEvent = { type?: string; payload?: WsPayload }
-
 // Build a TimelineEntry from a WS event payload. Returns null if the event
 // type is not one the timeline cares about.
-function wsToEntry(ev: WsEvent): TimelineEntry | null {
+function wsToEntry(ev: RealtimeEvent): TimelineEntry | null {
   const now = new Date().toISOString()
-  const p = ev.payload ?? {}
 
   switch (ev.type) {
     case 'dice_rolled':
@@ -22,28 +20,28 @@ function wsToEntry(ev: WsEvent): TimelineEntry | null {
         type: 'dice_roll',
         timestamp: now,
         data: {
-          expression: p.expression as string,
-          result: p.result as number,
-          breakdown_json: JSON.stringify(p.breakdown ?? []),
+          expression: ev.payload.expression ?? '',
+          result: ev.payload.result ?? 0,
+          breakdown_json: JSON.stringify(ev.payload.breakdown ?? []),
         },
       }
     case 'world_note_created':
       return {
         type: 'world_note_event',
         timestamp: now,
-        data: { note_id: p.note_id as number, title: p.title as string, action: 'created' },
+        data: { note_id: ev.payload.note_id ?? 0, title: ev.payload.title ?? '', action: 'created' },
       }
     case 'combat_started':
       return {
         type: 'combat_event',
         timestamp: now,
-        data: { encounter_id: p.encounter_id as number, name: p.name as string, ended: false },
+        data: { encounter_id: ev.payload.encounter_id ?? 0, name: ev.payload.name ?? '', ended: false },
       }
     case 'combat_ended':
       return {
         type: 'combat_event',
         timestamp: now,
-        data: { encounter_id: p.encounter_id as number, ended: true },
+        data: { encounter_id: ev.payload.encounter_id ?? 0, ended: true },
       }
     default:
       return null
@@ -67,9 +65,8 @@ export function SessionTimeline({ sessionId, lastEvent }: Props) {
   useEffect(() => loadTimeline(), [loadTimeline])
 
   useEffect(() => {
-    const ev = lastEvent as WsEvent | null
-    if (!ev?.type) return
-    if (ev.payload?.session_id !== sessionId) return
+    const ev = wsEvent(lastEvent)
+    if (!ev || Reflect.get(ev.payload, 'session_id') !== sessionId) return
     const entry = wsToEntry(ev)
     if (!entry) return
 

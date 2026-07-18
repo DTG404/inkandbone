@@ -172,18 +172,7 @@ func (s *Server) vtmHungerDiceRoll(ctx context.Context, sessionID int64, pool in
 	allRolls := append(normal, hungerDice...)
 	breakdownBytes, _ := json.Marshal(allRolls)
 	_, _ = s.db.LogDiceRoll(sessionID, expr, successes, string(breakdownBytes))
-	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{
-		"session_id":     sessionID,
-		"expression":     expr,
-		"result":         successes,
-		"normal_dice":    normal,
-		"hunger_dice":    hungerDice,
-		"successes":      successes,
-		"messy_critical": messyCritical,
-		"bestial_fail":   bestialFail,
-		"character_name": characterName,
-		"hidden":         false,
-	}})
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(expr), Result: RealtimeInt64(successes), NormalDice: RealtimeArray(normal), HungerDice: RealtimeArray(hungerDice), Successes: RealtimeInt64(successes), MessyCritical: RealtimePtr(messyCritical), BestialFail: RealtimePtr(bestialFail), CharacterName: RealtimePtr(characterName), Hidden: RealtimePtr(false)}})
 
 	// Messy Critical → roll clan Compulsion.
 	var compulsion string
@@ -237,13 +226,7 @@ func (s *Server) vtmRollClanCompulsion(ctx context.Context, sessionID int64, cha
 		result = "The Beast surges. The character must immediately seek to slake their Hunger through feeding — all other actions feel meaningless until Hunger drops below 3."
 	}
 
-	s.bus.Publish(Event{Type: "oracle_result", Payload: map[string]any{
-		"session_id":   sessionID,
-		"table":        tableName,
-		"roll":         roll,
-		"result":       result,
-		"is_compulsion": true,
-	}})
+	s.bus.Publish(Event{Type: EventOracleResult, Payload: &OracleResultPayload{SessionID: RealtimeInt64(sessionID), Table: RealtimePtr(tableName), Roll: RealtimeInt64(roll), Result: RealtimePtr(result), IsCompulsion: RealtimePtr(true)}})
 
 	return result
 }
@@ -282,11 +265,7 @@ func (s *Server) handleVtMRouseCheck(ctx context.Context, sessionID int64) strin
 
 	roll := mathrand.Intn(10) + 1
 	_, _ = s.db.LogDiceRoll(sessionID, "1d10 (Rouse Check)", roll, "[]")
-	s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{
-		"session_id": sessionID,
-		"expression": "1d10 (Rouse Check)",
-		"result":     roll,
-	}})
+	s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr("1d10 (Rouse Check)"), Result: RealtimeInt64(roll)}})
 
 	if roll >= 6 {
 		return fmt.Sprintf("[ROUSE CHECK] Result: %d — Success. Hunger unchanged at %d.", roll, currentHunger)
@@ -306,7 +285,7 @@ func (s *Server) handleVtMRouseCheck(ctx context.Context, sessionID int64) strin
 	if err := s.db.UpdateCharacterData(charID, string(dataJSON)); err != nil {
 		return fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger should increase to %d but stat update failed.", roll, newHunger)
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{"id": charID, "character_id": charID, "session_id": sessionID}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID)}})
 
 	msg := fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger increases to %d.", roll, newHunger)
 	if newHunger >= 4 {
@@ -485,17 +464,14 @@ func (s *Server) autoDetectVtMNightDOW(ctx context.Context, sessionID int64, gmT
 	}
 
 	// Back-calculate: current night is chronicle_night; Night 1 was (chronicle_night-1) days before today's story day.
-	night1DOW := ((dow - (camp.ChronicleNight - 1)) % 7 + 7) % 7
+	night1DOW := ((dow-(camp.ChronicleNight-1))%7 + 7) % 7
 	if err := s.db.SetCampaignChronicleNightStartDOW(camp.ID, night1DOW); err != nil {
 		log.Printf("autoDetectVtMNightDOW: failed to store DOW: %v", err)
 		return
 	}
 	s.bus.Publish(Event{
-		Type: "campaign_updated",
-		Payload: map[string]any{
-			"campaign_id":               camp.ID,
-			"chronicle_night_start_dow": night1DOW,
-		},
+		Type:    EventCampaignUpdated,
+		Payload: &CampaignUpdatedPayload{CampaignID: RealtimeInt64(camp.ID), ChronicleNightStartDow: RealtimeInt64(night1DOW)},
 	})
 	log.Printf("autoDetectVtMNightDOW: campaign %d Night 1 anchored to DOW %d (detected %q on night %d)", camp.ID, night1DOW, match, camp.ChronicleNight)
 }
@@ -644,14 +620,8 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 	}
 
 	s.bus.Publish(Event{
-		Type: EventCharacterUpdated,
-		Payload: map[string]any{
-			"character_id":  charID,
-			"session_id":    sessionID,
-			"embrace":       true,
-			"clan":          sireClan,
-			"predator_type": predatorType,
-		},
+		Type:    EventCharacterUpdated,
+		Payload: &CharacterUpdatedPayload{CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), Embrace: RealtimePtr(true), Clan: RealtimePtr(sireClan), PredatorType: RealtimePtr(predatorType)},
 	})
 	log.Printf("autoDetectVtMEmbrace: character %d embraced into clan %s (predator type: %s)", charID, sireClan, predatorType)
 }
@@ -697,10 +667,7 @@ func (s *Server) autoUpdateMasquerade(ctx context.Context, sessionID int64, gmTe
 		newLevel = 0
 	}
 	_ = s.db.UpdateMasqueradeIntegrity(sessionID, newLevel)
-	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: map[string]any{
-		"session_id":           sessionID,
-		"masquerade_integrity": newLevel,
-	}})
+	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: &SessionUpdatedPayload{SessionID: RealtimeInt64(sessionID), MasqueradeIntegrity: RealtimeInt64(newLevel)}})
 }
 
 // detectAndApplyVtMStains scans text for Humanity-violating acts and adds Stains.
@@ -780,13 +747,7 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 			}
 		}
 		_, _ = s.db.LogDiceRoll(sessionID, expr, totalRoll, string(rollsJSON))
-		s.bus.Publish(Event{Type: EventDiceRolled, Payload: map[string]any{
-			"session_id": sessionID,
-			"expression": expr,
-			"result":     totalRoll,
-			"rolls":      rolls,
-			"successes":  successes,
-		}})
+		s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(expr), Result: RealtimeInt64(totalRoll), Rolls: RealtimeArray(rolls), Successes: RealtimeInt64(successes)}})
 
 		// Apply result
 		stats["stains"] = float64(0)
@@ -808,11 +769,7 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":           charID,
-		"character_id": charID,
-		"session_id":   sessionID,
-	}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID)}})
 }
 
 // autoUpdateChronicleNight detects when a new night begins in a VtM session
@@ -842,10 +799,7 @@ func (s *Server) autoUpdateChronicleNight(ctx context.Context, sessionID int64, 
 	if err := s.db.UpdateCampaignChronicleNight(camp.ID, newNight); err != nil {
 		return
 	}
-	s.bus.Publish(Event{Type: "campaign_updated", Payload: map[string]any{
-		"campaign_id":     camp.ID,
-		"chronicle_night": newNight,
-	}})
+	s.bus.Publish(Event{Type: EventCampaignUpdated, Payload: &CampaignUpdatedPayload{CampaignID: RealtimeInt64(camp.ID), ChronicleNight: RealtimeInt64(newNight)}})
 
 	// Rouse Check to rise: every vampire makes a Rouse Check when waking for the night.
 	// handleVtMRouseCheck handles the d10 roll, updates Hunger if failed, and broadcasts.
@@ -918,10 +872,5 @@ func (s *Server) vtmRestoreWillpowerOnWake(sessionID int64) {
 	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":           charID,
-		"character_id": charID,
-		"session_id":   sessionID,
-		"data_json":    string(updated),
-	}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(string(updated))}})
 }

@@ -14,9 +14,8 @@ func scopedEvent(t *testing.T, events <-chan Event, eventType EventType, scope s
 	t.Helper()
 	event := <-events
 	require.Equal(t, eventType, event.Type)
-	payload, ok := event.Payload.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, id, payload[scope])
+	payload := eventPayload(t, event)
+	require.EqualValues(t, id, payload[scope])
 }
 
 func handlerRequest(t *testing.T, method, body, id string) (*httptest.ResponseRecorder, *http.Request) {
@@ -88,7 +87,7 @@ func TestPanelMutationEventsIncludeOwningScope(t *testing.T) {
 	w, req = handlerRequest(t, http.MethodPut, `{"name":"Guard","role":"brute","data_json":"{}","hp_max":12}`, fmt.Sprint(npcStatID))
 	s.handleUpdateNpcStat(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
-	scopedEvent(t, events, EventNpcStatUpdated, "campaign_id", campaignID)
+	scopedEvent(t, events, EventNPCStatUpdated, "campaign_id", campaignID)
 }
 
 func TestPanelDeleteEventsIncludeOwningScope(t *testing.T) {
@@ -143,7 +142,7 @@ func TestPanelDeleteEventsIncludeOwningScope(t *testing.T) {
 	w, req = handlerRequest(t, http.MethodDelete, "", fmt.Sprint(npcStatID))
 	s.handleDeleteNpcStat(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
-	scopedEvent(t, events, EventNpcStatUpdated, "campaign_id", campaignID)
+	scopedEvent(t, events, EventNPCStatUpdated, "campaign_id", campaignID)
 }
 
 func TestSecretRevealEventsIncludeCampaignAndSessionScope(t *testing.T) {
@@ -159,8 +158,8 @@ func TestSecretRevealEventsIncludeCampaignAndSessionScope(t *testing.T) {
 
 	event := <-events
 	require.Equal(t, EventSecretRevealed, event.Type)
-	payload := event.Payload.(map[string]any)
-	require.Equal(t, campaignID, payload["campaign_id"])
-	require.Equal(t, sessionID, payload["session_id"])
+	payload := eventPayload(t, event)
+	require.EqualValues(t, campaignID, payload["campaign_id"])
+	require.EqualValues(t, sessionID, payload["session_id"])
 	scopedEvent(t, events, EventSecretsUpdated, "campaign_id", campaignID)
 }

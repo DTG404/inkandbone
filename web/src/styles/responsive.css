@@ -99,6 +99,8 @@ body {
 }
 
 @media (max-width: 599px) {
+  /* Repeat the mobile grid at the final cascade boundary so imported legacy
+     layout sheets cannot reintroduce desktop tracks in bundled CSS. */
   .workspace-body {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -38,7 +38,7 @@ func (s *Server) handleCreateCampaign(_ context.Context, req mcplib.CallToolRequ
 		return mcplib.NewToolResultError("set active campaign: " + err.Error()), nil
 	}
 
-	s.bus.Publish(api.Event{Type: api.EventCampaignCreated, Payload: map[string]any{"campaign_id": campID, "name": name}})
+	s.bus.Publish(api.Event{Type: api.EventCampaignCreated, Payload: &api.CampaignCreatedPayload{CampaignID: api.RealtimeInt64(campID), Name: api.RealtimePtr(name)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("campaign %d created and activated: %s (%s)", campID, name, rulesetName)), nil
 }
 
@@ -104,7 +104,7 @@ func (s *Server) handleCreateCharacter(_ context.Context, req mcplib.CallToolReq
 		msg += fmt.Sprintf(" (stats rolled for %s)", rs.Name)
 	}
 
-	s.bus.Publish(api.Event{Type: api.EventCharacterCreated, Payload: map[string]any{"character_id": charID, "name": name}})
+	s.bus.Publish(api.Event{Type: api.EventCharacterCreated, Payload: &api.CharacterCreatedPayload{CharacterID: api.RealtimeInt64(charID), Name: api.RealtimePtr(name)}})
 	return mcplib.NewToolResultText(msg), nil
 }
 
@@ -229,7 +229,7 @@ func (s *Server) handleCloseCampaign(_ context.Context, req mcplib.CallToolReque
 		}
 	}
 
-	s.bus.Publish(api.Event{Type: api.EventCampaignClosed, Payload: map[string]any{"campaign_id": id}})
+	s.bus.Publish(api.Event{Type: api.EventCampaignClosed, Payload: &api.CampaignClosedPayload{CampaignID: api.RealtimeInt64(id)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("campaign %d closed: %s", id, campaign.Name)), nil
 }
 
@@ -295,6 +295,6 @@ func (s *Server) handleDeleteCampaign(_ context.Context, req mcplib.CallToolRequ
 		}
 	}
 
-	s.bus.Publish(api.Event{Type: api.EventCampaignDeleted, Payload: map[string]any{"campaign_id": id}})
+	s.bus.Publish(api.Event{Type: api.EventCampaignDeleted, Payload: &api.CampaignDeletedPayload{CampaignID: api.RealtimeInt64(id)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("campaign %d deleted", id)), nil
 }

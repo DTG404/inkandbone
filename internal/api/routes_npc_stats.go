@@ -46,7 +46,7 @@ func (s *Server) handleCreateNpcStat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventNPCStatUpdated, Payload: &NPCStatUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -133,7 +133,7 @@ func (s *Server) handleUpdateNpcStat(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"campaign_id": npcStat.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventNPCStatUpdated, Payload: &NPCStatUpdatedPayload{CampaignID: RealtimeInt64(npcStat.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -157,6 +157,6 @@ func (s *Server) handleDeleteNpcStat(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"campaign_id": npcStat.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventNPCStatUpdated, Payload: &NPCStatUpdatedPayload{CampaignID: RealtimeInt64(npcStat.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

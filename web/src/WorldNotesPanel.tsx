@@ -72,7 +72,7 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
 
   useEffect(() => {
     const ev = wsEvent(lastEvent)
-    if (ev && ['world_note_revealed', 'world_note_created', 'world_note_updated'].includes(ev.type ?? '') && ev.payload?.campaign_id === campaignId) {
+    if (ev && ['world_note_revealed', 'world_note_created', 'world_note_updated'].includes(ev.type) && Reflect.get(ev.payload, 'campaign_id') === campaignId) {
       loadNotes()
     }
   }, [lastEvent, campaignId, loadNotes])

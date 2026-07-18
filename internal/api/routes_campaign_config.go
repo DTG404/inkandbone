@@ -85,8 +85,6 @@ func (s *Server) handlePatchCampaignConfig(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventCampaignConfigUpdated, Payload: map[string]any{
-		"campaign_id": id,
-	}})
+	s.bus.Publish(Event{Type: EventCampaignConfigUpdated, Payload: &CampaignConfigUpdatedPayload{CampaignID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

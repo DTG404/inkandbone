@@ -463,8 +463,6 @@ func TestHealthEndpoint(t *testing.T) {
 	assert.False(t, resp["ai_enabled"].(bool))
 }
 
-
-
 // --- XP ---
 
 func TestCreateXP(t *testing.T) {
@@ -520,8 +518,6 @@ func TestIngestRulebook_plainText(t *testing.T) {
 	assert.Equal(t, float64(3), resp["chunks_created"])
 }
 
-
-
 // --- VALIDATION / ERROR CASES ---
 func TestCreateCharacter_invalidCampaignID(t *testing.T) {
 	s := newTestServer(t)
@@ -563,4 +559,3 @@ func TestPatchSession_sceneTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "dungeon,night", sess.SceneTags)
 }
-

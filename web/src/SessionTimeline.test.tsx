@@ -56,7 +56,7 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'dice_rolled', payload: { session_id: 1, expression: '2d6', result: 8, breakdown: [3, 5] } }}
+        lastEvent={{ type: 'dice_rolled', sequence: 1, payload: { session_id: 1, expression: '2d6', result: 8, breakdown: [3, 5] } }}
       />,
     )
 
@@ -74,7 +74,7 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'combat_started', payload: { session_id: 1, encounter_id: 1, name: 'Goblin Raid' } }}
+        lastEvent={{ type: 'combat_started', sequence: 1, payload: { session_id: 1, encounter_id: 1, name: 'Goblin Raid' } }}
       />,
     )
 
@@ -92,7 +92,7 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'dice_rolled', payload: { session_id: 2, expression: '2d6', result: 8 } }}
+        lastEvent={{ type: 'dice_rolled', sequence: 1, payload: { session_id: 2, expression: '2d6', result: 8 } }}
       />,
     )
     expect(screen.queryByText('2d6')).not.toBeInTheDocument()

@@ -29,9 +29,7 @@ func (s *Server) handleOracleRoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventOracleRolled, Payload: map[string]any{
-		"table": body.Table, "roll": body.Roll, "result": result,
-	}})
+	s.bus.Publish(Event{Type: EventOracleRolled, Payload: &OracleRolledPayload{Table: RealtimePtr(body.Table), Roll: RealtimeInt64(body.Roll), Result: RealtimePtr(result)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
@@ -91,7 +89,7 @@ func (s *Server) handleCreateRelationship(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: &RelationshipUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -148,7 +146,7 @@ func (s *Server) handleUpdateRelationship(w http.ResponseWriter, r *http.Request
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"campaign_id": relationship.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: &RelationshipUpdatedPayload{CampaignID: RealtimeInt64(relationship.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -172,7 +170,7 @@ func (s *Server) handleDeleteRelationship(w http.ResponseWriter, r *http.Request
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"campaign_id": relationship.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: &RelationshipUpdatedPayload{CampaignID: RealtimeInt64(relationship.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -214,10 +212,7 @@ func (s *Server) handlePatchMasqueradeIntegrity(w http.ResponseWriter, r *http.R
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: map[string]any{
-		"session_id":           sessionID,
-		"masquerade_integrity": *body.MasqueradeIntegrity,
-	}})
+	s.bus.Publish(Event{Type: EventSessionUpdated, Payload: &SessionUpdatedPayload{SessionID: RealtimeInt64(sessionID), MasqueradeIntegrity: RealtimeInt64(*body.MasqueradeIntegrity)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -246,9 +241,7 @@ func (s *Server) handlePatchTension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventTensionUpdated, Payload: map[string]any{
-		"session_id": sessionID, "tension_level": body.TensionLevel,
-	}})
+	s.bus.Publish(Event{Type: EventTensionUpdated, Payload: &TensionUpdatedPayload{SessionID: RealtimeInt64(sessionID), TensionLevel: RealtimeInt64(*body.TensionLevel)}})
 
 	w.WriteHeader(http.StatusOK)
 }

@@ -1,6 +1,6 @@
 # ink & bone
 
-**A private, local AI Game Master for 13 tabletop RPG systems — no cloud, no subscriptions, no limits.**
+**A local-first AI Game Master for 14 tabletop RPG systems, with local and cloud model options.**
 
 You type in your browser. The AI GM narrates. Your dashboard updates live. That's the whole loop.
 
@@ -14,9 +14,9 @@ Every other AI GM tool is a SaaS product: cloud servers, token limits, monthly s
 
 **It uses capable AI models directly.** ink & bone calls the AI API (DeepSeek, Anthropic, or a local Ollama model) to narrate, make GM judgment calls, and track the story. The AI is grounded in a structured database — character sheets, world notes, NPCs, maps, and rulebook text — so it remembers everything without hallucinating your game state.
 
-**It supports 13 game systems out of the box — and any game you already own.** The rest of the field is almost entirely D&D 5e with a coat of paint. ink & bone ships with Ironsworn, Wrath & Glory, Blades in the Dark, Vampire: The Masquerade, Call of Cthulhu, Shadowrun, Warhammer Fantasy Roleplay, Star Wars Edge of the Empire, Legend of the Five Rings, The One Ring, Paranoia, and more. But the ruleset system is open: if you own a game that isn't on the list, you define its character sheet fields in a single JSON insert and it works immediately — correct field labels, correct input types, correct sheet layout in the browser. You can also upload the official PDF or text of any rulebook and the AI will search it during play, answering rules questions from the actual text rather than guessing.
+**It supports 14 game systems out of the box — and any game you already own.** The rest of the field is almost entirely D&D 5e with a coat of paint. ink & bone ships with Ironsworn, Wrath & Glory, Blades in the Dark, Vampire: The Masquerade, Call of Cthulhu, Shadowrun, Warhammer Fantasy Roleplay, Star Wars Edge of the Empire, Legend of the Five Rings, The One Ring, Paranoia, and more. But the ruleset system is open: if you own a game that isn't on the list, you define its character sheet fields in a single JSON insert and it works immediately — correct field labels, correct input types, correct sheet layout in the browser. You can also upload the official PDF or text of any rulebook and the AI will search it during play, answering rules questions from the actual text rather than guessing.
 
-**It costs fractions of a cent per message.** Using DeepSeek V4 Flash, a full combat scene costs less than a penny. Competitors charge $10–30/month for token-gated access to a less capable model.
+**It supports cloud and local model economics.** Review the selected provider's current pricing and data policy, or use an Ollama service you control.
 
 ---
 
@@ -24,7 +24,7 @@ Every other AI GM tool is a SaaS product: cloud servers, token limits, monthly s
 
 You sit down and tell the AI a story about your character. The AI plays everyone else — the shopkeeper, the dragon, the mysterious stranger. The AI describes what happens, rolls the dice when there's uncertainty, tracks your character's health and equipment, and remembers everything that came before.
 
-Your browser dashboard shows it all as it happens: your character's stats, the conversation transcript, dice rolls, combat, maps, NPCs, and world-building notes. Everything syncs live — no refresh, no waiting, no cloud roundtrip.
+Your browser dashboard shows it all as it happens: your character's stats, the conversation transcript, dice rolls, combat, maps, NPCs, and world-building notes. Everything syncs live without manual refresh.
 
 Think of it as a collaborative storytelling tool where the AI is the Game Master and you are the player. The browser is your character sheet and record keeper combined.
 
@@ -76,6 +76,8 @@ Repeat. That's it. The browser is your interface. No coding assistant needed.
 
 ### Security and Data Flow
 
+See [Security and provider data flow](docs/security.md) for the complete listener, authentication, session-lifetime, CSRF, asset, whisper, and provider boundaries.
+
 The default listener is `127.0.0.1:7432`, so a normal `ttrpg` launch is reachable only from the same machine and does not show a login screen. This loopback mode is intended for a single local user.
 
 Exposing the server beyond loopback is an explicit security mode. A non-loopback `-listen` value is rejected at startup unless all three controls are present:
@@ -107,13 +109,12 @@ Whispers remain in the authorized browser transcript, but every AI-visible messa
 ### Prerequisites
 
 Choose one AI backend:
-- **DeepSeek (recommended):** Set `DEEPSEEK_API_KEY` in your environment. Get a key at [platform.deepseek.com](https://platform.deepseek.com). Cost: ~$1.20/month for 20 sessions.
+- **DeepSeek (recommended):** Set `DEEPSEEK_API_KEY` in your environment. Get a key and review current pricing at [platform.deepseek.com](https://platform.deepseek.com).
 - **Claude Haiku (fallback):** Set `ANTHROPIC_API_KEY` in your shell. Get a key at [console.anthropic.com](https://console.anthropic.com).
-- **Local Ollama:** Install [Ollama](https://ollama.ai) and run a model locally. No API keys, no cloud calls, completely private.
+- **Local Ollama:** Install [Ollama](https://ollama.ai) and run a model on an Ollama service you control.
 
 Other tools:
-- **Go 1.22+** — Download from [golang.org](https://golang.org/dl).
-- **Node.js 18+ and npm 9+** — Download from [nodejs.org](https://nodejs.org).
+- **Go 1.26.5 and Node.js 24.18.0** — See the canonical [development and verification guide](docs/development.md).
 
 ### Quick Start
 
@@ -166,7 +167,7 @@ export DEEPSEEK_API_KEY="sk-..."
 ~/bin/ttrpg-bin "$@"
 ```
 
-Cost: ~$0.06 per 3-hour session. 20 sessions/month ≈ $1.20.
+Review DeepSeek's current pricing before use; provider prices and model availability can change.
 
 **Option 2: Claude Haiku (Fallback)**
 
@@ -774,9 +775,9 @@ Supported scene tags (13 total): `tavern`, `dungeon`, `forest`, `city`, `ocean`,
 
 ### Tech Stack
 
-- **Go 1.22+:** HTTP server, SQLite database layer, MCP integration.
-- **SQLite:** Persistent session, character, and campaign data in a single local file (`~/.ttrpg`). 30 migrations, including per-ruleset GM context, Wrath & Glory prose directives, and full VtM V5 schema.
-- **React 18 + TypeScript:** Vite-bundled frontend, embedded in the binary.
+- **Go 1.26.5:** HTTP server, SQLite database layer, MCP integration.
+- **SQLite:** Persistent session, character, and campaign data in `~/.ttrpg/ttrpg.db`, with 57 ordered migrations.
+- **React 19 + TypeScript 6:** Vite-bundled frontend, embedded in the binary.
 - **WebSocket:** Live dashboard updates from server to browser.
 - **SSE (Server-Sent Events):** Streaming GM responses for character-by-character prose display.
 - **AI:** DeepSeek, Anthropic Claude, or local Ollama models (single-model, dual-model, hybrid, or MCP modes).
@@ -861,7 +862,7 @@ The client automatically reconnects every 5 seconds. If the connection persists 
 
 ### Sessions are empty after restart
 
-Sessions and characters are saved in the local SQLite database. If the database file is lost or corrupted, data is gone. Keep backups of `~/.ttrpg`.
+Sessions and characters are saved in the local SQLite database. Keep protected backups and follow [data backup and recovery](docs/data-recovery.md) to validate or restore a copied database safely.
 
 ---
 
@@ -892,10 +893,10 @@ Tests cover the database layer, API handlers, automation goroutines, and AI inte
 Run the browser smoke, security, and reliability suite with:
 
 ```bash
-make e2e
+make verify-e2e
 ```
 
-The E2E suite requires Playwright Chromium and the `openssl` executable. `make e2e` builds the current embedded frontend/server binary first. Its lifecycle runner creates a unique temporary directory for the smoke database, sidecars, backups, and uploaded assets; starts the exact test server; runs Playwright; terminates and reaps the test and server processes; and only then recursively removes that directory. The security scenarios separately own and remove another unique directory containing their databases and generated one-day TLS key pair. Reliability scenarios own an additional disposable server and local provider stub on dynamic loopback ports; they never use inherited provider credentials or a paid external provider.
+The E2E suite requires Playwright Chromium and the `openssl` executable. `make verify-e2e` performs a lockfile-clean E2E install, builds a disposable binary under `/tmp`, allocates an isolated database and loopback port, and terminates the exact child process through its lifecycle trap. See the [coverage matrix](docs/testing/e2e-coverage-matrix.md) for the browser/API coverage boundary.
 
 ---
 

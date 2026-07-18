@@ -49,7 +49,7 @@ func TestStartCombat(t *testing.T) {
 	assert.Equal(t, "Goblin", combatants[0].Name)
 	assert.Equal(t, "Hero", combatants[1].Name)
 	event := <-events
-	require.Equal(t, sessID, event.Payload.(map[string]any)["session_id"])
+	require.EqualValues(t, sessID, eventPayload(t, event)["session_id"])
 }
 
 func TestUpdateCombatant(t *testing.T) {
@@ -78,7 +78,7 @@ func TestUpdateCombatant(t *testing.T) {
 	assert.Equal(t, 8, combatants[0].HPCurrent)
 	assert.Equal(t, `["poisoned"]`, combatants[0].ConditionsJSON)
 	event := <-events
-	require.Equal(t, sessID, event.Payload.(map[string]any)["session_id"])
+	require.EqualValues(t, sessID, eventPayload(t, event)["session_id"])
 }
 
 func TestUpdateCombatant_missingHP(t *testing.T) {
@@ -114,5 +114,5 @@ func TestEndCombat(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, enc)
 	event := <-events
-	require.Equal(t, sessID, event.Payload.(map[string]any)["session_id"])
+	require.EqualValues(t, sessID, eventPayload(t, event)["session_id"])
 }

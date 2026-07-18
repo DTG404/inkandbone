@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWebSocket, webSocketURL } from './useWebSocket'
-import { fetchContext, fetchMessages, sendMessage, gmRespondStream, generateMap, fetchRuleset, suggestAdvances } from './api'
-import type { GameContext, Message, XPSpendSuggestionsEvent } from './types'
+import { fetchContext, fetchMessages, sendMessage, gmRespondStream, generateMap, fetchRuleset, fetchAdvancementConfig, suggestAdvances, type AdvancementConfig } from './api'
+import type { GameContext, Message, XPSuggestion, XPSpendSuggestionsEvent } from './types'
+import type { RealtimeEvent } from './realtime.gen'
 import { ManagePanel } from './ManagePanel'
 import { GMScreenPanel } from './GMScreenPanel'
 import AudioControls, { getAudioMuted } from './AudioControls'
@@ -13,12 +14,7 @@ import { LoginScreen } from './LoginScreen'
 import type { PanelID } from './navigation/panelRegistry'
 import { ToastProvider, useToast } from './ui/ToastProvider'
 import { fetchSessionInfo, request, setCSRFToken, type SessionInfo } from './transport'
-import './styles/tokens.css'
 import './App.css'
-import './styles/primitives.css'
-import './styles/layout.css'
-import './styles/navigation.css'
-import './styles/responsive.css'
 
 const appOwnedContextEvents = new Set([
   'campaign_updated', 'campaign_config_updated', 'context_updated',
@@ -37,20 +33,32 @@ const locallyOwnedEvents = new Set([
   'resync_required',
 ])
 
-// Minimum XP required to afford any advancement per ruleset.
-// Derived from XPCostFor minimums in internal/ruleset/advancement.go.
-const MIN_XP_TO_ADVANCE: Record<string, number> = {
-  vtm: 3,           // skill dot 1 costs 3
-  wrath_glory: 8,   // skill/attr to rating 2 costs 8
-  shadowrun: 5,     // specialization costs 5
-  wfrp: 10,         // flat 10 per advance
-  cyberpunk_red: 10, // skill to rating 1 costs 10
-  starwars: 5,      // skill to rating 1 costs 5
-  l5r: 2,           // skill rank 1 costs 2
-  theonering: 1,    // skill rank 1 costs 1
-  blades: 8,        // action advance threshold is 8
-  ironsworn: 1,     // asset upgrade costs 1
-  dnd5e: 300,       // level 2 threshold
+function xpSuggestion(value: unknown): XPSuggestion | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const field = Reflect.get(value, 'field')
+  const displayName = Reflect.get(value, 'display_name')
+  const currentValue = Reflect.get(value, 'current_value')
+  const newValue = Reflect.get(value, 'new_value')
+  const xpCost = Reflect.get(value, 'xp_cost')
+  const reasoning = Reflect.get(value, 'reasoning')
+  if (typeof field !== 'string' || typeof displayName !== 'string' || typeof currentValue !== 'number' ||
+      typeof newValue !== 'number' || typeof xpCost !== 'number' || typeof reasoning !== 'string') return null
+  return { field, display_name: displayName, current_value: currentValue, new_value: newValue, xp_cost: xpCost, reasoning }
+}
+
+function parseXPSuggestionsEvent(event: Extract<RealtimeEvent, { type: 'xp_spend_suggestions' }>): XPSpendSuggestionsEvent | null {
+  const { payload } = event
+  if (typeof payload.character_id !== 'number' || typeof payload.character_name !== 'string' ||
+      typeof payload.current_xp !== 'number' || typeof payload.xp_label !== 'string' || !Array.isArray(payload.suggestions)) return null
+  const suggestions = payload.suggestions.map(xpSuggestion)
+  if (suggestions.some((suggestion) => suggestion === null)) return null
+  return {
+    character_id: payload.character_id,
+    character_name: payload.character_name,
+    current_xp: payload.current_xp,
+    xp_label: payload.xp_label,
+    suggestions: suggestions.filter((suggestion): suggestion is XPSuggestion => suggestion !== null),
+  }
 }
 
 // ── Chronicle Night Tracker ───────────────────────────────
@@ -152,6 +160,7 @@ function GameApp() {
   const [showTalentsPanel, setShowTalentsPanel] = useState(false)
   const [aiTalentDescs, setAiTalentDescs] = useState<Record<string, string>>({})
   const [rulesetName, setRulesetName] = useState<string | null>(null)
+  const [advancementConfig, setAdvancementConfig] = useState<AdvancementConfig | null>(null)
   const [typingNames, setTypingNames] = useState<string[]>([])
   const typingTimeouts = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(() => {
@@ -190,11 +199,16 @@ function GameApp() {
     const rulesetId = ctx?.campaign?.ruleset_id
     if (rulesetId == null) {
       setRulesetName(null)
+      setAdvancementConfig(null)
       return
     }
+    setAdvancementConfig(null)
     fetchRuleset(rulesetId)
       .then((rs) => setRulesetName(rs.name.toLowerCase()))
       .catch(() => setRulesetName(null))
+    fetchAdvancementConfig(rulesetId)
+      .then(setAdvancementConfig)
+      .catch(() => setAdvancementConfig(null))
   }, [ctx?.campaign?.ruleset_id])
 
   useEffect(() => {
@@ -289,8 +303,7 @@ function GameApp() {
     loadContext(true)
   }, [loadContext])
 
-  const handleEvent = useCallback((data: unknown) => {
-    const event = data as { type?: string }
+  const handleEvent = useCallback((event: RealtimeEvent) => {
     if (event.type === 'message_created') {
       void refreshTranscript()
     } else if (event.type && appOwnedContextEvents.has(event.type)) {
@@ -303,12 +316,15 @@ function GameApp() {
       else if (event?.type === 'message_created') playNotification()
       else if (event?.type === 'combat_started') playCombatStart()
     }
-    if (event?.type === 'xp_spend_suggestions') {
-      setXPSuggestionsEvent((data as { payload: XPSpendSuggestionsEvent }).payload)
-      setXpPanelDismissed(false)
+    if (event.type === 'xp_spend_suggestions') {
+      const parsed = parseXPSuggestionsEvent(event)
+      if (parsed) {
+        setXPSuggestionsEvent(parsed)
+        setXpPanelDismissed(false)
+      }
     }
-    if (event?.type === 'campaign_updated') {
-      const p = (data as { payload?: { chronicle_night?: number; chronicle_night_start_dow?: number } }).payload
+    if (event.type === 'campaign_updated') {
+      const p = event.payload
       if (p?.chronicle_night !== undefined || p?.chronicle_night_start_dow !== undefined) {
         setCtx(prev => prev && prev.campaign
           ? { ...prev, campaign: { ...prev.campaign, ...p } }
@@ -316,8 +332,8 @@ function GameApp() {
         )
       }
     }
-    if (event?.type === 'typing') {
-      const p = (data as { payload?: { character_name?: string; status?: string; character_id?: number } }).payload
+    if (event.type === 'typing') {
+      const p = event.payload
       if (!p?.character_name) return
       const name = p.character_name
       if (p.status === 'thinking') {
@@ -515,6 +531,7 @@ function GameApp() {
         <button
           className={`h-actions-btn${showPlayerHistory ? ' active' : ''}`}
           onClick={() => setShowPlayerHistory((v) => !v)}
+          aria-label="Your actions"
           title="Your actions"
         >
           ⚔ Actions
@@ -523,17 +540,19 @@ function GameApp() {
           <button
             className={`h-actions-btn${showTalentsPanel ? ' active' : ''}`}
             onClick={() => setShowTalentsPanel((v) => !v)}
+            aria-label={rulesetName === 'vtm' ? 'Disciplines, Merits & Flaws' : 'Character talents & psychic powers'}
             title={rulesetName === 'vtm' ? 'Disciplines, Merits & Flaws' : 'Character talents & psychic powers'}
           >
             {rulesetName === 'vtm' ? '✦ Disciplines' : '✦ Talents'}
           </button>
         )}
-        <button className="h-export" onClick={handleExport} title="Export session">
+        <button className="h-export" onClick={handleExport} aria-label="Export session" title="Export session">
           ↓ Export
         </button>
         <button
           className="h-manage"
           onClick={() => setGmScreenOpen(true)}
+          aria-label="GM Screen"
           title="GM Screen — campaign config, notes, and tools"
         >
           🎭 GM Screen
@@ -541,11 +560,12 @@ function GameApp() {
         <button
           className="h-manage"
           onClick={() => setManageOpen(true)}
+          aria-label="Manage"
           title="Manage campaigns, characters, sessions"
         >
           ⚙ Manage
         </button>
-        {ctx?.character && aiEnabled && charXPBalance >= (MIN_XP_TO_ADVANCE[rulesetName ?? ''] ?? 1) && (
+        {ctx?.character && aiEnabled && advancementConfig?.supported === true && charXPBalance >= advancementConfig.minimum_xp && (
           <button
             className={`xp-available-badge${suggestingXP ? ' xp-loading' : ''}`}
             disabled={suggestingXP}

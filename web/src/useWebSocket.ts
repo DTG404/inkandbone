@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { parseRealtimeEvent, type RealtimeEvent } from './realtime.gen'
 
 export type WebSocketStatus = 'connecting' | 'open' | 'reconnecting' | 'offline'
 
 export interface WebSocketOptions {
   jitter?: () => number
-}
-
-interface SequencedEvent {
-  type?: string
-  sequence?: number
 }
 
 export function webSocketURL(page: Pick<Location, 'protocol' | 'host'>): string {
@@ -18,17 +14,17 @@ export function webSocketURL(page: Pick<Location, 'protocol' | 'host'>): string 
 
 export function useWebSocket(
   url: string,
-  onMessage: (data: unknown) => void,
+  onMessage: (data: RealtimeEvent) => void,
   enabled = true,
   options: WebSocketOptions = {},
 ): {
-  lastEvent: unknown
+  lastEvent: RealtimeEvent | null
   status: WebSocketStatus
   needsReconcile: boolean
   reconcileGeneration: number
   acknowledgeReconcile: (generation: number) => void
 } {
-  const [lastEvent, setLastEvent] = useState<unknown>(null)
+  const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null)
   const [status, setStatus] = useState<WebSocketStatus>(enabled ? 'connecting' : 'offline')
   const [reconcileGeneration, setReconcileGeneration] = useState(0)
   const [acknowledgedGeneration, setAcknowledgedGeneration] = useState(0)
@@ -83,7 +79,8 @@ export function useWebSocket(
       socket.onmessage = (e) => {
         if (cancelled || ws !== socket || generation !== socketGeneration) return
         try {
-          const parsed = JSON.parse(e.data as string) as SequencedEvent
+          const parsed = parseRealtimeEvent(JSON.parse(String(e.data)))
+          if (!parsed) return
           let reconcile = parsed.type === 'resync_required'
           if (typeof parsed.sequence === 'number') {
             if (lastSequenceRef.current !== null && parsed.sequence !== lastSequenceRef.current + 1) reconcile = true

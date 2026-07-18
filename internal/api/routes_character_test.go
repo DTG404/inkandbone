@@ -76,9 +76,8 @@ func TestPatchCharacter(t *testing.T) {
 		t.Fatal("expected character_updated event, got none")
 	}
 	assert.Equal(t, EventCharacterUpdated, got.Type)
-	payload, ok := got.Payload.(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, charID, payload["id"])
+	payload := eventPayload(t, got)
+	assert.EqualValues(t, charID, payload["id"])
 }
 
 func TestPatchCharacter_currency(t *testing.T) {
@@ -110,8 +109,8 @@ func TestPatchCharacter_currency(t *testing.T) {
 		t.Fatal("expected character_updated event")
 	}
 	assert.Equal(t, EventCharacterUpdated, got.Type)
-	payload := got.Payload.(map[string]any)
-	assert.Equal(t, charID, payload["id"])
+	payload := eventPayload(t, got)
+	assert.EqualValues(t, charID, payload["id"])
 }
 
 func TestPatchCharacter_currencyBalanceOnly(t *testing.T) {
@@ -182,9 +181,8 @@ func TestUploadPortrait(t *testing.T) {
 		t.Fatal("expected character_updated event, got none")
 	}
 	assert.Equal(t, EventCharacterUpdated, got.Type)
-	payload, ok := got.Payload.(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, charID, payload["id"])
+	payload := eventPayload(t, got)
+	assert.EqualValues(t, charID, payload["id"])
 	assert.Equal(t, resp.PortraitPath, payload["portrait_path"])
 }
 

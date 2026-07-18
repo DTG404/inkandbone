@@ -80,8 +80,8 @@ func TestBusOverflowEventuallyCoalescesLostSequenceRange(t *testing.T) {
 		require.Equal(t, EventResyncRequired, event.Type)
 		payload, ok := event.Payload.(ResyncRequiredPayload)
 		require.True(t, ok)
-		assert.Equal(t, uint64(cap(ch)+1), payload.FromSequence)
-		assert.Equal(t, uint64(cap(ch)+3), payload.ToSequence)
+		assert.Equal(t, int64(cap(ch)+1), payload.FromSequence)
+		assert.Equal(t, int64(cap(ch)+3), payload.ToSequence)
 	case <-time.After(time.Second):
 		t.Fatal("overflow reconciliation signal was not delivered after capacity returned")
 	}
@@ -149,8 +149,8 @@ func TestHubClientOverflowEventuallySignalsReconciliation(t *testing.T) {
 		case event := <-writes:
 			if event.Type == EventResyncRequired {
 				payload := event.Payload.(ResyncRequiredPayload)
-				assert.Equal(t, uint64(cap(client.send)+1), payload.FromSequence)
-				assert.Equal(t, uint64(cap(client.send)+2), payload.ToSequence)
+				assert.Equal(t, int64(cap(client.send)+1), payload.FromSequence)
+				assert.Equal(t, int64(cap(client.send)+2), payload.ToSequence)
 				return
 			}
 		case <-deadline:

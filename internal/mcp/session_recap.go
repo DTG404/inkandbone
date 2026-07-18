@@ -55,9 +55,6 @@ func (s *Server) handleGenerateSessionRecap(ctx context.Context, req mcplib.Call
 	if err := s.db.UpdateSessionSummary(sessID, summary); err != nil {
 		return mcplib.NewToolResultError("update session: " + err.Error()), nil
 	}
-	s.bus.Publish(api.Event{Type: api.EventSessionUpdated, Payload: map[string]any{
-		"session_id": sessID,
-		"summary":    summary,
-	}})
+	s.bus.Publish(api.Event{Type: api.EventSessionUpdated, Payload: &api.SessionUpdatedPayload{SessionID: api.RealtimeInt64(sessID), Summary: api.RealtimePtr(summary)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("session %d recap saved: %s", sessID, summary)), nil
 }

@@ -118,7 +118,7 @@ describe('JournalPanel', () => {
     rerender(
       <JournalPanel
         session={makeSession(3, 'Initial.')}
-        lastEvent={{ type: 'session_updated', payload: { session_id: 3, summary: 'WS updated summary.' } }}
+        lastEvent={{ type: 'session_updated', sequence: 1, payload: { session_id: 3, summary: 'WS updated summary.' } }}
         aiEnabled={false}
       />
     )
@@ -140,7 +140,7 @@ describe('JournalPanel', () => {
     rerender(
       <JournalPanel
         session={makeSession(3, 'Initial.')}
-        lastEvent={{ type: 'session_updated', payload: { session_id: 99, summary: 'Other session.' } }}
+        lastEvent={{ type: 'session_updated', sequence: 1, payload: { session_id: 99, summary: 'Other session.' } }}
         aiEnabled={false}
       />
     )

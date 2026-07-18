@@ -37,8 +37,8 @@ func TestNextTurn(t *testing.T) {
 		t.Fatal("expected turn_advanced event")
 	}
 	assert.Equal(t, EventTurnAdvanced, got.Type)
-	payload := got.Payload.(map[string]any)
-	assert.Equal(t, encID, payload["encounter_id"])
+	payload := eventPayload(t, got)
+	assert.EqualValues(t, encID, payload["encounter_id"])
 	assert.EqualValues(t, 1, payload["active_turn_index"])
 	assert.EqualValues(t, 1, payload["round_number"]) // first advance, no wrap — still round 1
 }

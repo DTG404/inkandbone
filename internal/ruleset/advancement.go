@@ -5,8 +5,16 @@ import (
 	"strings"
 )
 
+func canonicalAdvancementSystem(system string) string {
+	if system == "cyberpunk" {
+		return "cyberpunk_red"
+	}
+	return system
+}
+
 // XPKey returns the character stats JSON field that holds the XP currency for the given system.
 func XPKey(system string) string {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "shadowrun":
 		return "karma"
@@ -17,6 +25,7 @@ func XPKey(system string) string {
 
 // XPLabel returns the display label for the XP currency of the given system.
 func XPLabel(system string) string {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "shadowrun":
 		return "Karma"
@@ -26,6 +35,38 @@ func XPLabel(system string) string {
 		return "AP"
 	default:
 		return "XP"
+	}
+}
+
+// MinimumXPCost returns the cheapest legal advancement threshold for a system.
+// It is the shared eligibility floor; exact costs still come from XPCostFor.
+func MinimumXPCost(system string) (int, bool) {
+	system = canonicalAdvancementSystem(system)
+	switch system {
+	case "vtm":
+		return 3, true // first skill dot: 1 * 3
+	case "wrath_glory":
+		return 8, true // first practical attribute/skill advance: rating 2 * 4
+	case "shadowrun":
+		return 5, true // specialization, or first active skill/attribute rating: 1 * 5
+	case "wfrp":
+		return 10, true // flat advance cost
+	case "cyberpunk_red":
+		return 10, true // first skill rating: 1 * 10
+	case "starwars":
+		return 5, true // first skill rank: 1 * 5
+	case "l5r":
+		return 2, true // first skill rank: 1 * 2
+	case "theonering":
+		return 1, true // first skill rank: 1 * 1
+	case "blades":
+		return 8, true // full action XP track
+	case "ironsworn":
+		return 1, true // existing asset upgrade
+	case "dnd5e":
+		return 300, true // level 2 threshold; XP is not spent
+	default:
+		return 0, false
 	}
 }
 
@@ -59,6 +100,7 @@ var vtmInClanDisciplines = map[string][]string{
 // statsJSON is required only for VtM discipline in/out-of-clan determination; pass "" otherwise.
 // Returns 0 for systems where XP is threshold-based rather than spent (dnd5e level-up).
 func XPCostFor(system, field string, newVal int, statsJSON string) int {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "wrath_glory":
 		if strings.HasPrefix(field, "talent:") {
@@ -189,6 +231,7 @@ var wgSkills = []string{
 // For talent advances (wrath_glory), the prefix "talent:" is used but talents are not
 // enumerated here — use WGTalentExists to check a specific talent.
 func ValidFields(system string) []string {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "wrath_glory":
 		out := make([]string, 0, len(wgAttributes)+len(wgSkills))
@@ -294,6 +337,7 @@ func ValidFields(system string) []string {
 // for the system, given their current XP and stats. Pass statsJSON for VtM discipline checks.
 // Returns false for coc and paranoia (no XP advancement).
 func CanAffordAny(system string, currentXP int, statsJSON string) bool {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "coc", "paranoia":
 		return false
@@ -373,6 +417,7 @@ func VtMInClanDisciplinesFor(clan string) ([]string, bool) {
 
 // CostRulesDescription returns a brief human-readable summary of XP costs for a system.
 func CostRulesDescription(system string) string {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "wrath_glory":
 		return "Attribute advance: new_rating × 4 XP. Skill advance: new_rating × 4 XP. Talent: fixed XP cost per talent (10–60)."
@@ -405,6 +450,7 @@ func CostRulesDescription(system string) string {
 // injection into an AI prompt. This prevents the AI from guessing human-readable
 // names (e.g. "ballistic_skill") instead of the actual JSON stat keys (e.g. "bs").
 func FieldHints(system string) string {
+	system = canonicalAdvancementSystem(system)
 	switch system {
 	case "wrath_glory":
 		return `Valid field keys (use EXACTLY as shown):

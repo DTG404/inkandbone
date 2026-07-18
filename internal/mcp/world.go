@@ -46,11 +46,7 @@ func (s *Server) handleCreateWorldNote(_ context.Context, req mcplib.CallToolReq
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventWorldNoteCreated, Payload: map[string]any{
-		"campaign_id": campID,
-		"note_id":     noteID,
-		"title":       title,
-	}})
+	s.bus.Publish(api.Event{Type: api.EventWorldNoteCreated, Payload: &api.WorldNoteCreatedPayload{CampaignID: api.RealtimeInt64(campID), NoteID: api.RealtimeInt64(noteID), Title: api.RealtimePtr(title)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("world note %d created: %s", noteID, title)), nil
 }
 
@@ -91,10 +87,7 @@ func (s *Server) handleUpdateWorldNote(_ context.Context, req mcplib.CallToolReq
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventWorldNoteUpdated, Payload: map[string]any{
-		"campaign_id": note.CampaignID,
-		"note_id":     noteID,
-	}})
+	s.bus.Publish(api.Event{Type: api.EventWorldNoteUpdated, Payload: &api.WorldNoteUpdatedPayload{CampaignID: api.RealtimeInt64(note.CampaignID), NoteID: api.RealtimeInt64(noteID)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("world note %d updated", noteID)), nil
 }
 

@@ -2,18 +2,8 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import type { CampaignMap, MapPin, MapToken, MapZone } from './api'
 import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone, mapAssetURL } from './api'
 import type { SessionNPC, Character } from './types'
-import { isScopedEvent } from './wsEvents'
+import { isScopedEvent, wsEvent } from './wsEvents'
 import { useToast } from './ui/ToastProvider'
-
-function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id: number } } {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    (e as Record<string, unknown>)['type'] === 'map_pin_added' &&
-    typeof (e as Record<string, unknown>)['payload'] === 'object' &&
-    (e as Record<string, { map_id: unknown }>)['payload']['map_id'] !== undefined
-  )
-}
 
 interface MapPanelProps {
   campaignId: number | null
@@ -86,24 +76,22 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   }, [activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isMapPinAddedEvent(lastEvent) && activeMap && (lastEvent as { payload: { map_id: number } }).payload.map_id === activeMap.id) {
+    if (activeMap && isScopedEvent(lastEvent, 'map_pin_added', 'map_id', activeMap.id)) {
       fetchMapPins(activeMap.id).then(setPins).catch(() => {})
     }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!activeMap) return
-    const e = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
+    const e = wsEvent(lastEvent)
     if (!e) return
     if (e.type === 'token_placed' || e.type === 'token_moved' || e.type === 'token_removed') {
-      const payload = e.payload
-      if (payload && (payload['map_id'] as number) === activeMap.id) {
+      if (e.payload.map_id === activeMap.id) {
         loadTokens(activeMap.id)
       }
     }
     if (e.type === 'zone_revealed') {
-      const p = e.payload as { map_id: number }
-      if (p && p.map_id === activeMap.id) {
+      if (e.payload.map_id === activeMap.id) {
         fetchMapZones(activeMap.id).then(setZones).catch(() => {})
       }
     }
@@ -125,11 +113,10 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   }, [maps[activeMapIdx]?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
-    if (ev?.type !== 'map_fx' || !ev.payload) return
-    const { map_id, effect, x, y, duration_ms } = ev.payload as {
-      map_id: number; effect: string; x: number; y: number; duration_ms: number
-    }
+    const ev = wsEvent(lastEvent)
+    if (ev?.type !== 'map_fx') return
+    const { map_id, effect, x, y, duration_ms } = ev.payload
+    if (typeof map_id !== 'number' || typeof effect !== 'string' || typeof x !== 'number' || typeof y !== 'number' || typeof duration_ms !== 'number') return
     const activeMap2 = maps[activeMapIdx] ?? null
     if (!activeMap2 || activeMap2.id !== map_id) return
 

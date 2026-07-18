@@ -11,7 +11,7 @@ import { E2E_RUN_DIRECTORY_PREFIX } from './environment.mjs'
 
 const E2E_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const LIFECYCLE = path.join(E2E_ROOT, 'lifecycle.mjs')
-const BINARY = path.resolve(E2E_ROOT, '..', 'ttrpg')
+const BINARY = process.env.INKANDBONE_E2E_BINARY || path.resolve(E2E_ROOT, '..', 'ttrpg')
 
 function runRoots() {
   return fs.readdirSync(os.tmpdir())

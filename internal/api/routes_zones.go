@@ -115,12 +115,7 @@ func (s *Server) handlePatchZone(w http.ResponseWriter, r *http.Request) {
 			serverError(w, r, err)
 			return
 		}
-		s.bus.Publish(Event{Type: EventZoneRevealed, Payload: map[string]any{
-			"map_id":      existing.MapID,
-			"zone_id":     id,
-			"zone_name":   name,
-			"is_revealed": *body.IsRevealed,
-		}})
+		s.bus.Publish(Event{Type: EventZoneRevealed, Payload: &ZoneRevealedPayload{MapID: RealtimeInt64(existing.MapID), ZoneID: RealtimeInt64(id), ZoneName: RealtimePtr(name), IsRevealed: RealtimePtr(*body.IsRevealed)}})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -84,7 +84,7 @@ func (s *Server) handlePatchCalendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventCalendarUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventCalendarUpdated, Payload: &CalendarUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -128,7 +128,7 @@ func (s *Server) handleCreateCalendarEvent(w http.ResponseWriter, r *http.Reques
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventCalendarUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventCalendarUpdated, Payload: &CalendarUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{"id": id}) //nolint:errcheck

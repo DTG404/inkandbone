@@ -32,12 +32,6 @@ func (s *Server) handleTriggerMapFX(w http.ResponseWriter, r *http.Request) {
 	if body.DurationMS <= 0 {
 		body.DurationMS = 1000
 	}
-	s.bus.Publish(Event{Type: EventMapFX, Payload: map[string]any{
-		"map_id":      mapID,
-		"effect":      body.Effect,
-		"x":           body.X,
-		"y":           body.Y,
-		"duration_ms": body.DurationMS,
-	}})
+	s.bus.Publish(Event{Type: EventMapFX, Payload: &MapFXPayload{MapID: RealtimeInt64(mapID), Effect: RealtimePtr(body.Effect), X: RealtimeFloat64(body.X), Y: RealtimeFloat64(body.Y), DurationMs: RealtimeInt64(body.DurationMS)}})
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { fetchItems, createItem, patchItem, deleteItem, patchCurrency } from './api'
 import type { Item } from './types'
 import { useToast } from './ui/ToastProvider'
+import { wsEvent } from './wsEvents'
 
 interface InventoryPanelProps {
   characterId: number | null
@@ -65,19 +66,20 @@ export function InventoryPanel({
   }, [effectiveCharacterId])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
+    const ev = wsEvent(lastEvent)
     if (!ev) return
 
-    if (effectiveCharacterId !== null && ev.type === 'item_updated' && ev.payload?.character_id === effectiveCharacterId) {
+    if (effectiveCharacterId !== null && ev.type === 'item_updated' && ev.payload.character_id === effectiveCharacterId) {
       fetchItems(effectiveCharacterId).then(setItems).catch(() => {})
     }
 
-    if (ev.type === 'character_updated' && (ev.payload?.character_id === effectiveCharacterId || ev.payload?.id === effectiveCharacterId)) {
+    if (ev.type === 'character_updated' && (ev.payload.character_id === effectiveCharacterId || ev.payload.id === effectiveCharacterId)) {
       const p = ev.payload
-      if (p && typeof p.currency_delta === 'number' && p.currency_delta !== 0) {
-        const delta = p.currency_delta as number
-        const newBal = p.currency_balance as number
-        const lbl = (p.currency_label as string) ?? label
+      if (typeof p.currency_delta === 'number' && p.currency_delta !== 0) {
+        if (typeof p.currency_balance !== 'number' || typeof p.currency_label !== 'string') return
+        const delta = p.currency_delta
+        const newBal = p.currency_balance
+        const lbl = p.currency_label
 
         // Clear any existing timer
         if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -98,7 +100,7 @@ export function InventoryPanel({
         if (typeof p.currency_label === 'string') setLabel(p.currency_label as string)
       }
     }
-  }, [lastEvent, effectiveCharacterId, label])
+  }, [lastEvent, effectiveCharacterId])
 
   async function handleUndoToast() {
     if (!toast || effectiveCharacterId === null) return

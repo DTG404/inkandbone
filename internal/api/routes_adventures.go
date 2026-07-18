@@ -40,7 +40,7 @@ func (s *Server) handleCreateAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: &AdventureUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -120,7 +120,7 @@ func (s *Server) handleUpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": adventure.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: &AdventureUpdatedPayload{CampaignID: RealtimeInt64(adventure.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -144,7 +144,7 @@ func (s *Server) handleDeleteAdventure(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": adventure.CampaignID, "id": id}})
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: &AdventureUpdatedPayload{CampaignID: RealtimeInt64(adventure.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -175,6 +175,6 @@ func (s *Server) handleSetSessionAdventure(w http.ResponseWriter, r *http.Reques
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": session.CampaignID, "session_id": sessionID}})
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: &AdventureUpdatedPayload{CampaignID: RealtimeInt64(session.CampaignID), SessionID: RealtimeInt64(sessionID)}})
 	w.WriteHeader(http.StatusOK)
 }

@@ -60,12 +60,14 @@ describe('useWebSocket', () => {
     expect(instances).toHaveLength(0)
   })
 
-  it('calls onMessage with parsed JSON when a message arrives', () => {
+  it('calls onMessage only with structurally valid generated events', () => {
     const onMessage = vi.fn()
     renderHook(() => useWebSocket('/ws', onMessage))
     act(() => instances[0].open())
     act(() => instances[0].receive({ type: 'ping', sequence: 1 }))
-    expect(onMessage).toHaveBeenCalledWith({ type: 'ping', sequence: 1 })
+    expect(onMessage).not.toHaveBeenCalled()
+    act(() => instances[0].receive({ type: 'message_created', sequence: 1, payload: { session_id: 2 } }))
+    expect(onMessage).toHaveBeenCalledWith({ type: 'message_created', sequence: 1, payload: { session_id: 2 } })
   })
 
   it('reports statuses, reconnects with capped deterministic backoff, and resets after open', () => {
@@ -132,28 +134,28 @@ describe('useWebSocket', () => {
   it('requires reconciliation after a sequence gap, resync signal, or reconnect', () => {
     const { result } = renderHook(() => useWebSocket('/ws', vi.fn(), true, { jitter: () => 1 }))
     act(() => instances[0].open())
-    act(() => instances[0].receive({ type: 'dice_rolled', sequence: 4 }))
+    act(() => instances[0].receive({ type: 'dice_rolled', sequence: 4, payload: {} }))
     expect(result.current.needsReconcile).toBe(false)
-    act(() => instances[0].receive({ type: 'typing', sequence: 6 }))
+    act(() => instances[0].receive({ type: 'typing', sequence: 6, payload: {} }))
     expect(result.current.needsReconcile).toBe(true)
     act(() => result.current.acknowledgeReconcile(result.current.reconcileGeneration))
     expect(result.current.needsReconcile).toBe(false)
-    act(() => instances[0].receive({ type: 'dice_rolled', sequence: 8 }))
+    act(() => instances[0].receive({ type: 'dice_rolled', sequence: 8, payload: {} }))
     expect(result.current.needsReconcile).toBe(true)
     act(() => result.current.acknowledgeReconcile(result.current.reconcileGeneration))
-    act(() => instances[0].receive({ type: 'resync_required', sequence: 9 }))
+    act(() => instances[0].receive({ type: 'resync_required', sequence: 9, payload: { from_sequence: 7, to_sequence: 8 } }))
     expect(result.current.needsReconcile).toBe(true)
   })
 
   it('does not let an older reconciliation acknowledge a newer sequence gap', () => {
     const { result } = renderHook(() => useWebSocket('/ws', vi.fn()))
     act(() => instances[0].open())
-    act(() => instances[0].receive({ type: 'typing', sequence: 1 }))
-    act(() => instances[0].receive({ type: 'typing', sequence: 3 }))
+    act(() => instances[0].receive({ type: 'typing', sequence: 1, payload: {} }))
+    act(() => instances[0].receive({ type: 'typing', sequence: 3, payload: {} }))
     const firstGeneration = result.current.reconcileGeneration
     expect(result.current.needsReconcile).toBe(true)
 
-    act(() => instances[0].receive({ type: 'typing', sequence: 5 }))
+    act(() => instances[0].receive({ type: 'typing', sequence: 5, payload: {} }))
     const secondGeneration = result.current.reconcileGeneration
     expect(secondGeneration).toBeGreaterThan(firstGeneration)
     act(() => result.current.acknowledgeReconcile(firstGeneration))

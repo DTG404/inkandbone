@@ -29,13 +29,19 @@ describe('parseSSE', () => {
     ])
   })
 
-  it('flushes a final frame at EOF and dispatches errors', async () => {
+	it('flushes a final frame at EOF and dispatches errors', async () => {
     const events: SSEEvent[] = []
     await parseSSE(responseFrom([
       new TextEncoder().encode('data: {"type":"error","code":"gm_failed","request_id":"req-1"}'),
     ]), (event) => events.push(event))
     expect(events).toEqual([{ type: 'error', code: 'gm_failed', request_id: 'req-1' }])
-  })
+	})
+
+	it('rejects error frames without the contract-required request id', async () => {
+		await expect(parseSSE(responseFrom([
+			new TextEncoder().encode('data: {"type":"error","code":"gm_failed"}'),
+		]), () => undefined)).rejects.toThrow('Invalid SSE event')
+	})
 
   it('preserves a trailing CR until the next chunk resolves the CRLF boundary', async () => {
     const encode = (value: string) => new TextEncoder().encode(value)

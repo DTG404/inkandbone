@@ -414,6 +414,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/settings/automations", s.handleListAutomationSettings)
 	s.mux.HandleFunc("PATCH /api/settings/automations", s.handlePatchAutomationSetting)
 	// XP advancement
+	s.mux.HandleFunc("GET /api/rulesets/{id}/advancement-config", s.handleAdvancementConfig)
 	s.mux.HandleFunc("POST /api/characters/{id}/advance", s.handleAdvanceCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/suggest-advances", s.handleSuggestAdvances)
 	s.mux.HandleFunc("GET /api/talent-description", s.handleTalentDescription)

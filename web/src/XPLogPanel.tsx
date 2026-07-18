@@ -68,13 +68,22 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
         <div key={e.id} className="xp-log-entry">
           <span className="xp-log-note">{e.note}</span>
           {e.amount != null && <span className="xp-log-amount">+{e.amount}</span>}
-          <button className="xp-log-delete" onClick={() => handleDelete(e.id)}>×</button>
+          <button
+            className="xp-log-delete"
+            aria-label={`Delete XP entry: ${e.note}`}
+            onClick={() => handleDelete(e.id)}
+          >×</button>
         </div>
       ))}
       <div className="xp-log-add">
         <input className="xp-log-input" placeholder="Note…" value={note} onChange={e => setNote(e.target.value)} />
         <input className="xp-log-amount-input" placeholder="XP" type="text" inputMode="numeric" pattern="[0-9]*" value={amount} onChange={e => setAmount(e.target.value)} />
-        <button className="xp-log-btn" onClick={handleAdd} disabled={adding || !note.trim()}>+</button>
+        <button
+          className="xp-log-btn"
+          aria-label="Add XP entry"
+          onClick={handleAdd}
+          disabled={adding || !note.trim()}
+        >+</button>
       </div>
     </div>
   )

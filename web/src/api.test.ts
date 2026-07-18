@@ -45,7 +45,7 @@ describe('gmRespondStream', () => {
   it('rejects duplicate or conflicting terminal events', async () => {
     for (const payload of [
       'data: {"type":"done"}\n\ndata: {"type":"done"}\n\n',
-      'data: {"type":"error","code":"gm_failed"}\n\ndata: {"type":"done"}\n\n',
+      'data: {"type":"error","code":"gm_failed","request_id":"req-1"}\n\ndata: {"type":"done"}\n\n',
     ]) {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [11])))
       await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream sent multiple terminal events')

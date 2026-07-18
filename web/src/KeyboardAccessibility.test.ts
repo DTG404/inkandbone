@@ -7,7 +7,7 @@ const source = (file: string) => readFileSync(join(process.cwd(), 'src', file), 
 
 describe('keyboard accessibility source gates', () => {
   it('contains no clickable div actions', () => {
-    for (const file of ['ManagePanel.tsx', 'GMScreenPanel.tsx', 'SessionView.tsx', 'SecretsPanel.tsx', 'FactionsPanel.tsx', 'NPCStatBlockPanel.tsx', 'AdventuresPanel.tsx']) {
+    for (const file of ['ManagePanel.tsx', 'GMScreenPanel.tsx', 'SessionView.tsx', 'session/NarrativeStream.tsx', 'session/PlayerComposer.tsx', 'session/RightWorkspace.tsx', 'SecretsPanel.tsx', 'FactionsPanel.tsx', 'NPCStatBlockPanel.tsx', 'AdventuresPanel.tsx']) {
       expect(source(file).match(/<div\b[^>]*\bonClick=/gs) ?? [], file).toEqual([])
     }
   })
@@ -15,17 +15,22 @@ describe('keyboard accessibility source gates', () => {
   it('uses the shared dialog primitive for every owned overlay', () => {
     expect(source('ManagePanel.tsx')).toContain('<Dialog')
     expect(source('GMScreenPanel.tsx')).toContain('<Dialog')
-    expect(source('SessionView.tsx').match(/<Dialog/g)?.length ?? 0).toBeGreaterThanOrEqual(4)
+    const sessionDialogs = source('SessionView.tsx') + source('session/NarrativeStream.tsx')
+    expect(sessionDialogs.match(/<Dialog/g)?.length ?? 0).toBeGreaterThanOrEqual(4)
   })
 
   it('does not remove focus outlines without replacement', () => {
-    expect(source('App.css')).not.toMatch(/outline:\s*none/)
-    expect(source('App.css')).toContain(':focus-visible')
+    const styles = ['App.css', 'styles/base.css', 'styles/primitives.css', 'styles/layout.css', 'styles/navigation.css', 'styles/narrative.css', 'styles/panels.css', 'styles/responsive.css']
+      .map(source)
+      .join('\n')
+    expect(styles).not.toMatch(/outline:\s*none/)
+    expect(styles).toContain(':focus-visible')
   })
 
   it('does not declare ordinary labels or actionable text below 12px', () => {
     const files = [
-      'App.css', 'CharacterSheetPanel.tsx', 'CombatPanel.tsx', 'SessionView.tsx',
+      'App.css', 'styles/base.css', 'styles/narrative.css', 'styles/panels.css',
+      'CharacterSheetPanel.tsx', 'CombatPanel.tsx', 'SessionView.tsx',
       'FactionsPanel.tsx', 'CalendarPanel.tsx', 'NPCStatBlockPanel.tsx', 'SecretsPanel.tsx',
       'MapPanel.tsx',
     ]

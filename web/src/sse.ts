@@ -1,7 +1,6 @@
-export type SSEEvent =
-  | { type: 'delta'; delta: string }
-  | { type: 'done' }
-  | { type: 'error'; code: string; request_id?: string }
+import type { RealtimeSSEEvent } from './realtime.gen'
+
+export type SSEEvent = RealtimeSSEEvent
 
 function dispatchFrame(frame: string, onEvent: (event: SSEEvent) => void): void {
   const data = frame
@@ -21,11 +20,11 @@ function dispatchFrame(frame: string, onEvent: (event: SSEEvent) => void): void 
     onEvent({ type: 'done' })
     return
   }
-  if (event.type === 'error' && typeof event.code === 'string') {
+  if (event.type === 'error' && typeof event.code === 'string' && typeof event.request_id === 'string') {
     onEvent({
       type: 'error',
       code: event.code,
-      ...(typeof event.request_id === 'string' ? { request_id: event.request_id } : {}),
+      request_id: event.request_id,
     })
     return
   }

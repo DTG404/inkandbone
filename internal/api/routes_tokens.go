@@ -66,10 +66,7 @@ func (s *Server) handlePlaceToken(w http.ResponseWriter, r *http.Request) {
 		serverErrorText(w, r, "fetch token")
 		return
 	}
-	s.bus.Publish(Event{Type: EventTokenPlaced, Payload: map[string]any{
-		"map_id": mapID,
-		"token":  token,
-	}})
+	s.bus.Publish(Event{Type: EventTokenPlaced, Payload: &TokenPlacedPayload{MapID: RealtimeInt64(mapID), Token: MustRealtimeObject(token)}})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, token)
@@ -102,12 +99,7 @@ func (s *Server) handleMoveToken(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventTokenMoved, Payload: map[string]any{
-		"map_id":   token.MapID,
-		"token_id": id,
-		"x":        body.X,
-		"y":        body.Y,
-	}})
+	s.bus.Publish(Event{Type: EventTokenMoved, Payload: &TokenMovedPayload{MapID: RealtimeInt64(token.MapID), TokenID: RealtimeInt64(id), X: RealtimeFloat64(body.X), Y: RealtimeFloat64(body.Y)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -126,9 +118,6 @@ func (s *Server) handleRemoveToken(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventTokenRemoved, Payload: map[string]any{
-		"map_id":   token.MapID,
-		"token_id": id,
-	}})
+	s.bus.Publish(Event{Type: EventTokenRemoved, Payload: &TokenRemovedPayload{MapID: RealtimeInt64(token.MapID), TokenID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

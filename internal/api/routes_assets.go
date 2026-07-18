@@ -1,9 +1,13 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -234,4 +238,76 @@ func serveOpenedAsset(w http.ResponseWriter, r *http.Request, f *os.File, filena
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", disposition)
 	http.ServeContent(w, r, filepath.Base(filename), info.ModTime(), f)
+}
+
+func (s *Server) handleUploadMap(w http.ResponseWriter, r *http.Request) {
+	id, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid campaign id", http.StatusBadRequest)
+		return
+	}
+	if err := parseMultipartForm(w, r, imageUploadLimit); err != nil {
+		respondBodyError(w, err)
+		return
+	}
+	name := r.FormValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "image is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(filepath.Base(header.Filename)))
+	if _, ok := mapAssetTypes[ext]; !ok {
+		http.Error(w, "unsupported image format", http.StatusBadRequest)
+		return
+	}
+	filename := randomHex(16) + ext
+	destDir := filepath.Join(s.dataDir, "maps")
+	if err := os.MkdirAll(destDir, 0750); err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if err := writeValidatedUpload(destDir, filename, file, mapAssetTypes); err != nil {
+		if err == errInvalidAsset {
+			http.Error(w, "image content does not match its format", http.StatusBadRequest)
+			return
+		}
+		serverError(w, r, err)
+		return
+	}
+
+	imagePath := "maps/" + filename
+	mapID, err := s.db.CreateMap(id, name, imagePath)
+	if err != nil {
+		if cleanupErr := removeStoredAsset(destDir, filename); cleanupErr != nil {
+			log.Printf("map upload cleanup failed: %v", cleanupErr)
+		}
+		serverError(w, r, err)
+		return
+	}
+	m, err := s.db.GetMap(mapID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if m == nil {
+		serverErrorText(w, r, "fetch created map")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(m) //nolint:errcheck
+}
+
+// randomHex returns n random hex bytes as a hex string.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	rand.Read(b) //nolint:errcheck // crypto/rand.Read never returns an error on supported platforms
+	return fmt.Sprintf("%x", b)
 }

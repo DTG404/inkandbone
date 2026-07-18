@@ -1,0 +1,234 @@
+/* ── Reset ──────────────────────────────────────────────── */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  min-height: 100dvh;
+}
+
+/* ── Root Layout ────────────────────────────────────────── */
+
+.grimoire {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+
+.grimoire-header {
+  flex-shrink: 0;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 1.25rem;
+  font-family: var(--serif);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.grimoire-header .h-campaign { color: var(--gold); }
+.grimoire-header .h-sep     { color: var(--gold-dim); }
+.grimoire-header .h-char,
+.grimoire-header .h-session { color: var(--text-dim); }
+
+/* ── Body ───────────────────────────────────────────────── */
+
+.grimoire-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left Sidebar ───────────────────────────────────────── */
+
+.sidebar-left {
+  width: 100%;
+  flex-shrink: 0;
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Portrait */
+
+.portrait-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  position: relative;
+}
+
+.portrait-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--gold);
+  display: block;
+}
+
+.portrait-placeholder-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.portrait-change {
+  font-family: var(--serif);
+  font-size: 12px;
+  color: var(--gold-dim);
+  text-decoration: underline;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.portrait-wrap:hover .portrait-change {
+  opacity: 1;
+}
+
+/* Attributes (pip dots) */
+
+.attr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.attr-label {
+  font-family: var(--serif);
+  font-size: 12px;
+  color: var(--gold-dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.attr-pips {
+  display: flex;
+  gap: 3px;
+}
+
+.pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pip.filled  { background: var(--gold); }
+.pip.empty   { background: var(--surface2); border: 1px solid var(--border); }
+
+.roll-hint-icon {
+  opacity: 0;
+  font-size: 12px;
+  transition: opacity 0.15s;
+}
+.attr-row:hover .roll-hint-icon,
+label:hover .roll-hint-icon {
+  opacity: 1;
+}
+
+/* Tracks (segmented bars) */
+
+.track-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.track-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.track-label {
+  font-family: var(--serif);
+  font-size: 12px;
+  color: var(--gold-dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.track-value {
+  font-size: 12px;
+  color: var(--gold);
+}
+
+.track-segments {
+  display: flex;
+  gap: 2px;
+}
+
+.track-seg {
+  flex: 1;
+  height: 5px;
+  border-radius: 1px;
+}
+
+.track-seg.filled-health   { background: var(--health); }
+.track-seg.filled-momentum { background: var(--gold); }
+.track-seg.empty-seg       { background: var(--surface2); border: 1px solid var(--border); }
+
+/* Sidebar rule */
+
+.sidebar-rule {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* Dice History (left sidebar) */
+
+.dice-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dice-compact-label {
+  font-family: var(--serif);
+  font-size: 12px;
+  color: var(--gold-dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+
+.dice-compact-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.dice-compact-expr { color: var(--text-dim); font-family: monospace; }
+.dice-compact-result { color: var(--gold); font-weight: 600; }

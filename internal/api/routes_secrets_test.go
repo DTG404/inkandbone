@@ -175,7 +175,7 @@ func TestRevealSecretPublishesHandoutEvent(t *testing.T) {
 		ev := <-ch
 		if ev.Type == EventSecretRevealed {
 			foundReveal = true
-			payload := ev.Payload.(map[string]any)
+			payload := eventPayload(t, ev)
 			assert.Equal(t, "Lost Map", payload["title"])
 			assert.Equal(t, "A map to the dungeon", payload["content"])
 		}

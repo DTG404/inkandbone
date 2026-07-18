@@ -21,11 +21,11 @@ describe('scoped reference panels', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url))
     fetchMock.mockClear()
 
-    rerender(<Panel campaignId={1} lastEvent={{ type, payload: { campaign_id: 2 } }} />)
+    rerender(<Panel campaignId={1} lastEvent={{ type, sequence: 1, payload: { campaign_id: 2 } }} />)
     await Promise.resolve()
     expect(fetchMock).not.toHaveBeenCalled()
 
-    rerender(<Panel campaignId={1} lastEvent={{ type, payload: { campaign_id: 1 } }} />)
+    rerender(<Panel campaignId={1} lastEvent={{ type, sequence: 2, payload: { campaign_id: 1 } }} />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url))
   })
 })

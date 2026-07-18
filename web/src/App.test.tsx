@@ -43,9 +43,16 @@ function requireSocket(socket: MockWebSocket | undefined): asserts socket is Moc
   if (!socket) throw new Error('expected WebSocket instance')
 }
 
+let nextWebSocketSequence = 1
+
+function wsFrame(type: string, payload: Record<string, unknown> = {}): string {
+  return JSON.stringify({ type, sequence: nextWebSocketSequence++, payload })
+}
+
 describe('App', () => {
   beforeEach(() => {
     MockWebSocket.instances = []
+    nextWebSocketSequence = 1
     vi.stubGlobal('WebSocket', MockWebSocket)
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (url === '/api/auth/session') {
@@ -134,6 +141,7 @@ describe('App', () => {
         })
       }
       if (url === '/api/rulesets/1') return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 1, name: 'dnd5e', schema_json: '[]' }) })
+      if (url === '/api/rulesets/1/advancement-config') return Promise.resolve({ ok: true, json: () => Promise.resolve({ minimum_xp: 300, supported: true }) })
       if (url === '/api/health') return Promise.resolve({ ok: true, json: () => Promise.resolve({ ai_enabled: true }) })
       if (url === '/api/characters/1/suggest-advances' && init?.method === 'POST') {
         return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({ detail: 'provider-secret' }) })
@@ -150,6 +158,26 @@ describe('App', () => {
     const alert = safeMessage.closest('[role="alert"]')
     expect(alert).not.toBeNull()
     expect(alert).not.toHaveTextContent(/provider-secret|502/)
+  })
+
+  it('uses backend advancement eligibility instead of a frontend ruleset table', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      if (url === '/api/context') return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        ...mockCtx,
+        character: { ...mockCtx.character!, data_json: JSON.stringify({ xp: 300 }) },
+      }) })
+      if (url === '/api/rulesets/1') return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 1, name: 'dnd5e', schema_json: '[]' }) })
+      if (url === '/api/rulesets/1/advancement-config') return Promise.resolve({ ok: true, json: () => Promise.resolve({ minimum_xp: 301, supported: true }) })
+      if (url === '/api/health') return Promise.resolve({ ok: true, json: () => Promise.resolve({ ai_enabled: true }) })
+      if (url === '/api/sessions/1/messages') return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/rulesets/1/advancement-config'))
+    expect(screen.queryByRole('button', { name: /advance/i })).not.toBeInTheDocument()
   })
 
   it('shows login without opening the API or WebSocket before authentication', async () => {
@@ -231,14 +259,14 @@ describe('App', () => {
     for (const type of ['combat_started', 'combatant_updated', 'combat_ended', 'turn_advanced', 'tension_updated']) {
       const expected = contextCalls + 1
       await act(async () => {
-        socket.onmessage?.({ data: JSON.stringify({ type, payload: { session_id: 1 } }) })
+        socket.onmessage?.({ data: wsFrame(type, { session_id: 1 }) })
       })
       await waitFor(() => expect(contextCalls).toBe(expected))
     }
 
     const beforeTyping = contextCalls
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: wsFrame('typing', { character_name: 'Zara', status: 'done' }) })
     })
     expect(contextCalls).toBe(beforeTyping)
   })
@@ -423,14 +451,14 @@ describe('App', () => {
     act(() => socket.open())
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+      socket.onmessage?.({ data: wsFrame('message_created') })
     })
     await waitFor(() => expect(messageCalls).toBe(2))
     expect(screen.getByText('ORIGINAL_PUBLIC')).toBeInTheDocument()
     expect(screen.queryByText('Could not load game state')).not.toBeInTheDocument()
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+      socket.onmessage?.({ data: wsFrame('message_created') })
     })
     const privateMessage = await screen.findByText('RECOVERED_PRIVATE')
     expect(privateMessage.closest('.prose-player')).toHaveClass('prose-player--whisper')
@@ -463,7 +491,7 @@ describe('App', () => {
     requireSocket(socket)
     act(() => socket.open())
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'future_event' }) })
+      socket.onmessage?.({ data: wsFrame('context_updated') })
     })
 
     expect(await screen.findByText('RECOVERED_PUBLIC')).toBeInTheDocument()
@@ -495,19 +523,19 @@ describe('App', () => {
     requireSocket(socket)
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: wsFrame('typing', { character_name: 'Zara', status: 'done' }) })
     })
     expect(contextCalls).toBe(1)
     expect(messageCalls).toBe(1)
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'dice_rolled' }) })
+      socket.onmessage?.({ data: wsFrame('dice_rolled') })
     })
     expect(contextCalls).toBe(1)
     expect(messageCalls).toBe(1)
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+      socket.onmessage?.({ data: wsFrame('message_created') })
     })
     await waitFor(() => expect(messageCalls).toBe(2))
     expect(contextCalls).toBe(1)
@@ -548,12 +576,12 @@ describe('App', () => {
     requireSocket(socket)
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
+      socket.onmessage?.({ data: wsFrame('message_created') })
     })
     await waitFor(() => expect(messageCalls).toBe(2))
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: wsFrame('typing', { character_name: 'Zara', status: 'done' }) })
     })
     expect(contextCalls).toBe(1)
     expect(messageCalls).toBe(2)
@@ -630,12 +658,12 @@ describe('App', () => {
     requireSocket(socket)
     act(() => socket.open())
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 1 }) })
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 3 }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 1, payload: {} }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 3, payload: {} }) })
     })
     await waitFor(() => expect(contextCalls).toBe(2))
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 5 }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 5, payload: {} }) })
     })
     await waitFor(() => expect(contextCalls).toBe(3))
 
@@ -721,7 +749,7 @@ describe('App', () => {
     const socket = MockWebSocket.instances.at(-1)
     requireSocket(socket)
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'future_event' }) })
+      socket.onmessage?.({ data: wsFrame('context_updated') })
     })
     expect(await screen.findByText('Session 2')).toBeInTheDocument()
     expect(await screen.findByText('SECOND_SESSION')).toBeInTheDocument()

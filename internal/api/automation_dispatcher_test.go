@@ -788,15 +788,16 @@ func TestAutomationManualXPUsesDispatcherDrainContext(t *testing.T) {
 }
 
 func TestAutomationLaunchSitesUseDispatcherAndOnlyRecapIsSnapshot(t *testing.T) {
-	for _, name := range []string{"routes.go", "routes_phase_c.go", "routes_advance.go"} {
+	routeFiles := []string{"routes.go", "routes_messages.go", "routes_phase_c.go", "routes_advance.go"}
+	var allRoutes strings.Builder
+	for _, name := range routeFiles {
 		contents, err := os.ReadFile(name)
 		require.NoError(t, err)
 		assert.NotContains(t, string(contents), "go s.auto", "%s still launches an unbounded automation goroutine", name)
+		allRoutes.Write(contents)
 	}
-	routes, err := os.ReadFile("routes.go")
-	require.NoError(t, err)
-	assert.Equal(t, 1, strings.Count(string(routes), "JobModeSnapshot"), "only recap regeneration may be submitted as a snapshot")
-	assert.Contains(t, string(routes), "settingAutoUpdateRecap")
+	assert.Equal(t, 1, strings.Count(allRoutes.String(), "JobModeSnapshot"), "only recap regeneration may be submitted as a snapshot")
+	assert.Contains(t, allRoutes.String(), "settingAutoUpdateRecap")
 }
 
 func dispatcherHealthByKind(items []AutomationDispatchHealth) map[string]AutomationDispatchHealth {

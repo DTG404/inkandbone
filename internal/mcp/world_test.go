@@ -44,7 +44,7 @@ func TestCreateWorldNote(t *testing.T) {
 	assert.Equal(t, "Mira", notes[0].Title)
 	event := <-events
 	require.Equal(t, "world_note_created", string(event.Type))
-	assert.Equal(t, campID, event.Payload.(map[string]any)["campaign_id"])
+	assert.EqualValues(t, campID, eventPayload(t, event)["campaign_id"])
 }
 
 func TestUpdateWorldNote(t *testing.T) {
@@ -71,7 +71,7 @@ func TestUpdateWorldNote(t *testing.T) {
 	assert.Equal(t, "New content", notes[0].Content)
 	event := <-events
 	require.Equal(t, "world_note_updated", string(event.Type))
-	assert.Equal(t, campID, event.Payload.(map[string]any)["campaign_id"])
+	assert.EqualValues(t, campID, eventPayload(t, event)["campaign_id"])
 }
 
 func TestUpdateWorldNote_missingNote(t *testing.T) {

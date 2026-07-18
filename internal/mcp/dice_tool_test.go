@@ -36,9 +36,9 @@ func TestRollDice(t *testing.T) {
 
 	event := <-events
 	require.Equal(t, "dice_rolled", string(event.Type))
-	payload := event.Payload.(map[string]any)
-	assert.Equal(t, sessID, payload["session_id"])
-	assert.Equal(t, rolls[0].Result, payload["result"])
+	payload := eventPayload(t, event)
+	assert.EqualValues(t, sessID, payload["session_id"])
+	assert.EqualValues(t, rolls[0].Result, payload["result"])
 	assert.Equal(t, "2d6+3", payload["expression"])
 	assert.Equal(t, rolls[0].BreakdownJSON, mustJSON(t, payload["breakdown"]))
 }

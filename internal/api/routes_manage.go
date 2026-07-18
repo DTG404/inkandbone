@@ -44,7 +44,7 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventCampaignCreated, Payload: map[string]any{"campaign_id": id, "name": body.Name}})
+	s.bus.Publish(Event{Type: EventCampaignCreated, Payload: &CampaignCreatedPayload{CampaignID: RealtimeInt64(id), Name: RealtimePtr(body.Name)}})
 	w.WriteHeader(http.StatusCreated)
 	respondJSON(w, map[string]any{"id": id})
 }
@@ -82,7 +82,7 @@ func (s *Server) handleDeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventCampaignDeleted, Payload: map[string]any{"campaign_id": id}})
+	s.bus.Publish(Event{Type: EventCampaignDeleted, Payload: &CampaignDeletedPayload{CampaignID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -172,7 +172,7 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 		serverErrorText(w, r, "db: could not retrieve character")
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterCreated, Payload: map[string]any{"character_id": id, "name": body.Name}})
+	s.bus.Publish(Event{Type: EventCharacterCreated, Payload: &CharacterCreatedPayload{CharacterID: RealtimeInt64(id), Name: RealtimePtr(body.Name)}})
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, char)
 }
@@ -233,7 +233,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		serverErrorText(w, r, "db: could not retrieve session")
 		return
 	}
-	s.bus.Publish(Event{Type: EventSessionStarted, Payload: map[string]any{"session_id": id, "title": body.Title}})
+	s.bus.Publish(Event{Type: EventSessionStarted, Payload: &SessionStartedPayload{SessionID: RealtimeInt64(id), Title: RealtimePtr(body.Title)}})
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, sess)
 }
@@ -254,7 +254,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSessionDeleted, Payload: map[string]any{"session_id": id}})
+	s.bus.Publish(Event{Type: EventSessionDeleted, Payload: &SessionDeletedPayload{SessionID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -285,7 +285,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 					serverError(w, r, err)
 					return
 				}
-				s.bus.Publish(Event{Type: EventCampaignReopened, Payload: map[string]any{"campaign_id": *body.CampaignID}})
+				s.bus.Publish(Event{Type: EventCampaignReopened, Payload: &CampaignReopenedPayload{CampaignID: RealtimeInt64(*body.CampaignID)}})
 			}
 		}
 		if err := s.db.SetSetting("active_campaign_id", val); err != nil {
@@ -313,15 +313,15 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ctxPayload := map[string]any{}
+	ctxPayload := &ContextUpdatedPayload{}
 	if body.CampaignID != nil {
-		ctxPayload["campaign_id"] = *body.CampaignID
+		ctxPayload.CampaignID = body.CampaignID
 	}
 	if body.CharacterID != nil {
-		ctxPayload["character_id"] = *body.CharacterID
+		ctxPayload.CharacterID = body.CharacterID
 	}
 	if body.SessionID != nil {
-		ctxPayload["session_id"] = *body.SessionID
+		ctxPayload.SessionID = body.SessionID
 	}
 	s.bus.Publish(Event{Type: EventContextUpdated, Payload: ctxPayload})
 	w.WriteHeader(http.StatusNoContent)

@@ -18,6 +18,14 @@ function parseDeckOrder(json: string): number[] {
   try { return JSON.parse(json) as number[] } catch { return [] }
 }
 
+function parseCard(value: unknown): DeckCard | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const front = Reflect.get(value, 'front')
+  const back = Reflect.get(value, 'back')
+  if (typeof front !== 'string' || (back !== undefined && typeof back !== 'string')) return null
+  return { front, ...(typeof back === 'string' ? { back } : {}) }
+}
+
 export function DecksPanel({ campaignId, sessionId, lastEvent }: Props) {
   const toast = useToast()
   const [decks, setDecks] = useState<Deck[]>([])
@@ -38,7 +46,8 @@ export function DecksPanel({ campaignId, sessionId, lastEvent }: Props) {
     if (isScopedEvent(lastEvent, 'card_drawn', 'session_id', sessionId)) {
       const e = lastEvent
       const p = e.payload
-      setLastCard({ card: p['card'] as DeckCard, deckName: p['deck_name'] as string })
+      const card = parseCard(p.card)
+      if (card && typeof p.deck_name === 'string') setLastCard({ card, deckName: p.deck_name })
       load()
     }
   }, [lastEvent, sessionId, load])

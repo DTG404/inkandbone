@@ -23,11 +23,7 @@ func (s *Server) handleNextTurn(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventTurnAdvanced, Payload: map[string]any{
-		"encounter_id":      id,
-		"active_turn_index": nextIdx,
-		"round_number":      roundNumber,
-	}})
+	s.bus.Publish(Event{Type: EventTurnAdvanced, Payload: &TurnAdvancedPayload{EncounterID: RealtimeInt64(id), ActiveTurnIndex: RealtimeInt64(nextIdx), RoundNumber: RealtimeInt64(roundNumber)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -77,12 +73,7 @@ func (s *Server) handleCreateXP(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventXPAdded, Payload: map[string]any{
-		"session_id": id,
-		"id":         entry.ID,
-		"note":       entry.Note,
-		"amount":     entry.Amount,
-	}})
+	s.bus.Publish(Event{Type: EventXPAdded, Payload: &XPAddedPayload{SessionID: RealtimeInt64(id), ID: RealtimeInt64(entry.ID), Note: RealtimePtr(entry.Note), Amount: entry.Amount}})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(entry) //nolint:errcheck

@@ -36,7 +36,7 @@
 
 .prose-gm {
   color: var(--text);
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
   font-size: 17px;
   line-height: 1.8;
   margin-bottom: 1rem;
@@ -84,7 +84,7 @@
   border-radius: 3px;
   padding: 0.1em 0.4em;
   font-size: 14px;
-  font-family: monospace;
+  font-family: var(--mono);
   color: var(--gold);
 }
 
@@ -118,7 +118,7 @@
 .prose-player-text {
   font-style: italic;
   color: var(--gold);
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
   font-size: 17px;
   line-height: 1.8;
 }
@@ -423,7 +423,7 @@
   font-size: 13px;
   padding: 0.25rem 0;
   outline: 2px solid transparent;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
 }
 
 .notes-search::placeholder { color: var(--text-dim); }
@@ -492,7 +492,7 @@
   border: none;
   color: var(--text);
   font-size: 13px;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
   line-height: 1.8;
   resize: none;
   outline: 2px solid transparent;
@@ -524,7 +524,7 @@
   border: none;
   color: var(--text);
   font-size: 12px;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
   font-style: italic;
   line-height: 1.7;
   resize: none;
@@ -985,7 +985,7 @@
   font-size: 13px;
   border-radius: 2px;
   outline: 2px solid transparent;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
 }
 
 .story-search-bar input:focus {

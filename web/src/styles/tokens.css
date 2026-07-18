@@ -10,6 +10,11 @@
   --health: #9ccd6a;
   --accent: #ff6478;
   --serif: 'Cormorant Garamond Variable', Georgia, serif;
+  --sans: 'Noto Sans Variable', sans-serif;
+  --mono: 'Noto Sans Mono Variable', monospace;
+  --font-body: var(--sans);
+  --font-display: var(--serif);
+  --font-ui: var(--sans);
 }
 
 [data-theme='parchment'] {

@@ -9,9 +9,16 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
   font-size: 13px;
   min-height: 100dvh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 /* ── Root Layout ────────────────────────────────────────── */
@@ -230,5 +237,5 @@ label:hover .roll-hint-icon {
   font-size: 12px;
 }
 
-.dice-compact-expr { color: var(--text-dim); font-family: monospace; }
+.dice-compact-expr { color: var(--text-dim); font-family: var(--mono); }
 .dice-compact-result { color: var(--gold); font-weight: 600; }

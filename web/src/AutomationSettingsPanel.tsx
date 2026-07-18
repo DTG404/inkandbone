@@ -48,7 +48,7 @@ export function AutomationSettingsPanel() {
           <div key={s.key} className="manage-row">
             <div className="manage-row-info">
               <span className="manage-row-name">{s.label}</span>
-              <span className="manage-row-meta" style={{ fontSize: '0.7rem', fontFamily: 'monospace', opacity: 0.5 }}>{s.key}</span>
+              <span className="manage-row-meta" style={{ fontSize: '0.7rem', fontFamily: 'var(--mono)', opacity: 0.5 }}>{s.key}</span>
               <span className="automation-health">
                 {s.cooling_down
                   ? 'Cooling down; a probe will run automatically after the cooldown.'

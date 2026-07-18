@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@fontsource-variable/cormorant-garamond": "5.2.6",
+    "@fontsource-variable/noto-sans": "5.2.10",
+    "@fontsource-variable/noto-sans-mono": "5.2.10",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0"

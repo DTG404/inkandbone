@@ -508,7 +508,7 @@
   padding: 0.35rem 0.6rem;
   font-size: 13px;
   outline: 2px solid transparent;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
 }
 
 .pin-modal-input:focus { border-color: var(--gold-dim); }
@@ -522,7 +522,7 @@
   font-size: 13px;
   resize: vertical;
   outline: 2px solid transparent;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
 }
 
 .pin-modal-textarea:focus { border-color: var(--gold-dim); }
@@ -599,7 +599,7 @@
   border-bottom: 1px solid var(--border);
   color: var(--text);
   font-size: 12px;
-  font-family: system-ui, sans-serif;
+  font-family: var(--sans);
   line-height: 1.5;
   resize: vertical;
   outline: 2px solid transparent;

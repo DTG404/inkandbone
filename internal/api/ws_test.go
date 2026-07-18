@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -19,7 +20,7 @@ import (
 func TestHubBroadcastsEvents(t *testing.T) {
 	bus := NewBus()
 	hub := NewHub(bus)
-	go hub.Run()
+	go hub.Run(t.Context())
 
 	srv := httptest.NewServer(http.HandlerFunc(hub.ServeWS))
 	defer srv.Close()
@@ -46,6 +47,90 @@ func TestHubBroadcastsEvents(t *testing.T) {
 	err = conn.ReadJSON(&received)
 	require.NoError(t, err)
 	assert.Equal(t, EventDiceRolled, received.Type)
+}
+
+func TestBusAssignsOneStrictlyIncreasingSequenceForAllSubscribers(t *testing.T) {
+	bus := NewBus()
+	first := bus.SubscribeContext(t.Context())
+	second := bus.SubscribeContext(t.Context())
+	bus.Publish(Event{Type: EventDiceRolled})
+	bus.Publish(Event{Type: EventMessageCreated})
+
+	a1, a2 := <-first, <-first
+	b1, b2 := <-second, <-second
+	assert.Equal(t, a1.Sequence, b1.Sequence)
+	assert.Equal(t, a2.Sequence, b2.Sequence)
+	assert.Equal(t, a1.Sequence+1, a2.Sequence)
+}
+
+func TestBusOverflowEventuallyCoalescesLostSequenceRange(t *testing.T) {
+	bus := NewBus()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ch := bus.SubscribeContext(ctx)
+	for i := 0; i < cap(ch)+3; i++ {
+		bus.Publish(Event{Type: EventDiceRolled})
+	}
+	for range cap(ch) {
+		<-ch
+	}
+
+	select {
+	case event := <-ch:
+		require.Equal(t, EventResyncRequired, event.Type)
+		payload, ok := event.Payload.(ResyncRequiredPayload)
+		require.True(t, ok)
+		assert.Equal(t, uint64(cap(ch)+1), payload.FromSequence)
+		assert.Equal(t, uint64(cap(ch)+3), payload.ToSequence)
+	case <-time.After(time.Second):
+		t.Fatal("overflow reconciliation signal was not delivered after capacity returned")
+	}
+}
+
+func TestBusSubscriptionStopsOnContextCancellation(t *testing.T) {
+	bus := NewBus()
+	ctx, cancel := context.WithCancel(t.Context())
+	ch := bus.SubscribeContext(ctx)
+	cancel()
+	select {
+	case _, ok := <-ch:
+		assert.False(t, ok)
+	case <-time.After(time.Second):
+		t.Fatal("subscription did not stop after cancellation")
+	}
+	require.Eventually(t, func() bool {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+		return len(bus.subscribers) == 0
+	}, time.Second, time.Millisecond)
+}
+
+func TestHubClientOverflowEventuallySignalsReconciliation(t *testing.T) {
+	writes := make(chan Event, 2)
+	client := newHubClientWithIO(func(value any) error {
+		writes <- value.(Event)
+		return nil
+	}, func() error { return nil })
+	for i := 1; i <= cap(client.send)+2; i++ {
+		require.True(t, client.enqueue(Event{Type: EventDiceRolled, Sequence: uint64(i)}))
+	}
+	go client.runWriter()
+	t.Cleanup(client.revoke)
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case event := <-writes:
+			if event.Type == EventResyncRequired {
+				payload := event.Payload.(ResyncRequiredPayload)
+				assert.Equal(t, uint64(cap(client.send)+1), payload.FromSequence)
+				assert.Equal(t, uint64(cap(client.send)+2), payload.ToSequence)
+				return
+			}
+		case <-deadline:
+			t.Fatal("client overflow reconciliation signal was not delivered")
+		}
+	}
 }
 
 func TestWebSocketHandshakeIncludesRequestID(t *testing.T) {

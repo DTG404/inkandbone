@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 )
@@ -32,7 +34,12 @@ type hubClient struct {
 	onClose      func()
 	writeJSON    func(any) error
 	closeConn    func() error
+	lostFrom     uint64
+	lostTo       uint64
+	id           uint64
 }
+
+var nextHubClientID atomic.Uint64
 
 func NewHub(bus *Bus) *Hub {
 	return &Hub{
@@ -58,10 +65,18 @@ func (h *Hub) SetAllowedOrigins(origins []string) {
 
 // Run subscribes to the event bus and broadcasts all events to connected clients.
 // Call in a goroutine.
-func (h *Hub) Run() {
-	ch := h.bus.Subscribe()
-	for event := range ch {
-		h.broadcast(event)
+func (h *Hub) Run(ctx context.Context) {
+	ch := h.bus.SubscribeContext(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-ch:
+			if !ok {
+				return
+			}
+			h.broadcast(event)
+		}
 	}
 }
 
@@ -167,6 +182,7 @@ func newHubClientWithIO(writeJSON func(any) error, closeConn func() error) *hubC
 		done:      make(chan struct{}),
 		writeJSON: writeJSON,
 		closeConn: closeConn,
+		id:        nextHubClientID.Add(1),
 	}
 }
 
@@ -186,9 +202,35 @@ func (c *hubClient) enqueue(event Event) bool {
 	select {
 	case c.send <- event:
 	default:
-		// Slow client; drop rather than block the broadcast goroutine.
+		if c.lostFrom == 0 {
+			c.lostFrom = event.Sequence
+		}
+		c.lostTo = event.Sequence
 	}
 	return true
+}
+
+func (c *hubClient) enqueuePendingResync() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.revoked || c.lostFrom == 0 {
+		return
+	}
+	event := Event{
+		Type:     EventResyncRequired,
+		Sequence: c.lostTo,
+		Payload: ResyncRequiredPayload{
+			FromSequence: c.lostFrom,
+			ToSequence:   c.lostTo,
+		},
+	}
+	select {
+	case c.send <- event:
+		log.Printf("ws client=%d resync_required lost_sequence=%d-%d", c.id, c.lostFrom, c.lostTo)
+		c.lostFrom = 0
+		c.lostTo = 0
+	default:
+	}
 }
 
 func (c *hubClient) revoke() {
@@ -209,6 +251,7 @@ func (c *hubClient) runWriter() {
 		case <-c.done:
 			return
 		case event := <-c.send:
+			c.enqueuePendingResync()
 			select {
 			case <-c.done:
 				return

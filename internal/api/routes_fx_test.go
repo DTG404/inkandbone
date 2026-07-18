@@ -19,7 +19,7 @@ func TestTriggerMapFX(t *testing.T) {
 	mapID, err := s.db.CreateMap(campID, "Dungeon", "dungeon.png")
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	body := `{"effect":"fire","x":0.3,"y":0.5,"duration_ms":1500}`
 	req := httptest.NewRequest(http.MethodPost,

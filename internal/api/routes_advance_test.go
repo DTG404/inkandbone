@@ -30,7 +30,7 @@ func TestAutoSuggestXPSpend_noopForCoC(t *testing.T) {
 	char, err := s.db.GetCharacter(charID)
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	// Should no-op immediately for CoC.
 	go s.autoSuggestXPSpend(context.Background(), 1, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
@@ -65,7 +65,7 @@ func TestAutoSuggestXPSpend_sessionCap(t *testing.T) {
 	char, err := s.db.GetCharacter(charID)
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	// Session cap reached — should no-op.
 	go s.autoSuggestXPSpend(context.Background(), sessionID, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
@@ -93,7 +93,7 @@ func TestHandleAdvanceCharacter_wgAttribute(t *testing.T) {
 	statsJSON := `{"archetype":"Imperial Guardsman","tier":1,"strength":2,"agility":2,"toughness":4,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0,"xp":20,"wounds":9,"resilience":5,"determination":4,"shock":3,"resolve":1,"conviction":2,"influence":1,"defence":1,"talents":""}`
 	require.NoError(t, s.db.UpdateCharacterData(charID, statsJSON))
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	body := `{"field":"toughness","new_value":5}`
 	req := httptest.NewRequest(http.MethodPost,

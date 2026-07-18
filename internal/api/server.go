@@ -94,7 +94,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 	}
 	hub.SetAllowedOrigins(options.Security.AllowedOrigins)
 	s.registerRoutes()
-	go hub.Run()
+	s.startLifecycleJob(func(ctx context.Context) { hub.Run(ctx) })
 	// Capture the ruleset list before launching the goroutine so that rulesets
 	// created after NewServer returns are not included in the startup backfill.
 	existingRulesets, _ := database.ListRulesets()

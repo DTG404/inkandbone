@@ -158,7 +158,7 @@ func TestRevealSecretPublishesHandoutEvent(t *testing.T) {
 	secretID, err := s.db.CreateSecret(campID, "Lost Map", "A map to the dungeon", "handout")
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	body := fmt.Sprintf(`{"session_id":%d}`, sessID)
 	req := httptest.NewRequest(http.MethodPatch,

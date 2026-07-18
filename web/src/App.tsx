@@ -13,6 +13,23 @@ import { LoginScreen } from './LoginScreen'
 import { fetchSessionInfo, request, setCSRFToken, type SessionInfo } from './transport'
 import './App.css'
 
+const appOwnedContextEvents = new Set([
+  'campaign_updated', 'campaign_config_updated', 'context_updated',
+  'session_started', 'session_ended', 'session_deleted', 'session_updated',
+  'campaign_created', 'campaign_closed', 'campaign_deleted', 'campaign_reopened',
+  'character_created', 'character_updated',
+])
+
+const knownPanelEvents = new Set([
+  'message_created', 'typing', 'dice_rolled', 'combat_started', 'combatant_updated', 'combat_ended',
+  'world_note_created', 'world_note_updated', 'world_note_revealed', 'map_pin_added', 'map_created',
+  'npc_updated', 'objective_updated', 'item_updated', 'turn_advanced', 'xp_added', 'oracle_rolled',
+  'tension_updated', 'relationship_updated', 'faction_updated', 'xp_spend_suggestions',
+  'adventure_updated', 'npc_stat_updated', 'secrets_updated', 'secret_revealed', 'calendar_updated',
+  'expected_action', 'card_drawn', 'token_placed', 'token_moved', 'token_removed', 'zone_revealed', 'map_fx',
+  'resync_required',
+])
+
 // Minimum XP required to afford any advancement per ruleset.
 // Derived from XPCostFor minimums in internal/ruleset/advancement.go.
 const MIN_XP_TO_ADVANCE: Record<string, number> = {
@@ -189,16 +206,16 @@ function GameApp() {
   const loadContext = useCallback((refreshTranscript = false) => {
     if (refreshTranscript) transcriptRefreshPendingRef.current = true
     const contextGen = ++contextGenRef.current
-    void (async () => {
+    return (async (): Promise<boolean> => {
       let data: GameContext
       try {
         data = await fetchContext()
       } catch {
-        if (contextGenRef.current !== contextGen) return
+        if (contextGenRef.current !== contextGen) return false
         setError('Could not load game state')
-        return
+        return false
       }
-      if (contextGenRef.current !== contextGen) return // stale — a newer context fetch already resolved
+      if (contextGenRef.current !== contextGen) return false // stale — a newer context fetch already resolved
       setCtx(data)
       setError(null)
       const sessionId = data.session?.id ?? null
@@ -207,7 +224,7 @@ function GameApp() {
         transcriptRefreshPendingRef.current = false
         transcriptGenRef.current++
         setMessages([])
-        return
+        return true
       }
       const sessionChanged = activeSessionRef.current !== sessionId
       if (sessionChanged) {
@@ -215,18 +232,33 @@ function GameApp() {
         transcriptGenRef.current++
         setMessages([])
       }
-      if (!sessionChanged && !transcriptRefreshPendingRef.current) return
+      if (!sessionChanged && !transcriptRefreshPendingRef.current) return true
       transcriptRefreshPendingRef.current = false
       const transcriptGen = ++transcriptGenRef.current
       try {
         const sessionMessages = await fetchMessages(sessionId)
-        if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return
+        if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return false
         setMessages(sessionMessages)
       } catch (err) {
-        if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return
+        if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return false
         console.error(err)
+        return false
       }
+      return true
     })()
+  }, [])
+
+  const refreshTranscript = useCallback(async () => {
+    const sessionId = activeSessionRef.current
+    if (sessionId === null) return
+    const transcriptGen = ++transcriptGenRef.current
+    try {
+      const sessionMessages = await fetchMessages(sessionId)
+      if (transcriptGenRef.current !== transcriptGen || activeSessionRef.current !== sessionId) return
+      setMessages(sessionMessages)
+    } catch (err) {
+      if (transcriptGenRef.current === transcriptGen && activeSessionRef.current === sessionId) console.error(err)
+    }
   }, [])
 
   useEffect(() => {
@@ -235,7 +267,13 @@ function GameApp() {
 
   const handleEvent = useCallback((data: unknown) => {
     const event = data as { type?: string }
-    loadContext(event?.type === 'message_created')
+    if (event.type === 'message_created') {
+      void refreshTranscript()
+    } else if (event.type && appOwnedContextEvents.has(event.type)) {
+      void loadContext(false)
+    } else if (event.type && !knownPanelEvents.has(event.type)) {
+      void loadContext(false)
+    }
     if (!getAudioMuted()) {
       if (event?.type === 'dice_rolled') playDiceRoll()
       else if (event?.type === 'message_created') playNotification()
@@ -274,8 +312,15 @@ function GameApp() {
         }
       }
     }
-  }, [loadContext])
-  const { lastEvent } = useWebSocket(webSocketURL(window.location), handleEvent)
+  }, [loadContext, refreshTranscript])
+  const { lastEvent, needsReconcile, acknowledgeReconcile } = useWebSocket(webSocketURL(window.location), handleEvent)
+
+  useEffect(() => {
+    if (!needsReconcile) return
+    void loadContext(true).then((loaded) => {
+      if (loaded) acknowledgeReconcile()
+    })
+  }, [needsReconcile, loadContext, acknowledgeReconcile])
 
   const handleSendText = useCallback(async (text: string) => {
     if (!text || !ctx?.session || sending) return

@@ -348,20 +348,20 @@ describe('App', () => {
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
     })
-    await waitFor(() => expect(contextCalls).toBe(2))
+    expect(contextCalls).toBe(1)
     expect(messageCalls).toBe(1)
 
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'dice_rolled' }) })
     })
-    await waitFor(() => expect(contextCalls).toBe(3))
+    expect(contextCalls).toBe(1)
     expect(messageCalls).toBe(1)
 
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
     })
     await waitFor(() => expect(messageCalls).toBe(2))
-    expect(contextCalls).toBe(4)
+    expect(contextCalls).toBe(1)
   })
 
   it('does not let a same-session non-message refresh cancel an in-flight transcript refresh', async () => {
@@ -406,7 +406,7 @@ describe('App', () => {
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
     })
-    await waitFor(() => expect(contextCalls).toBe(3))
+    expect(contextCalls).toBe(1)
     expect(messageCalls).toBe(2)
 
     await act(async () => {
@@ -416,6 +416,41 @@ describe('App', () => {
       })
     })
     expect(await screen.findByText('REALTIME_PUBLIC')).toBeInTheDocument()
+  })
+
+  it('performs one authoritative reconciliation for a sequence gap without context-fetch storms', async () => {
+    let contextCalls = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        contextCalls++
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByText('You enter the tavern.')).toBeInTheDocument()
+    expect(contextCalls).toBe(1)
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 1, payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 3, payload: { character_name: 'Zara', status: 'done' } }) })
+    })
+    await waitFor(() => expect(contextCalls).toBe(2))
+
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 100, payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 101, payload: { character_name: 'Zara', status: 'done' } }) })
+    })
+    expect(contextCalls).toBe(2)
   })
 
   it('ignores a stale transcript response after the active session changes', async () => {

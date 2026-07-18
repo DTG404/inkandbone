@@ -22,7 +22,7 @@ func TestNextTurn(t *testing.T) {
 	s.db.AddCombatant(encID, "Fighter", 16, 30, true, nil)
 	s.db.AddCombatant(encID, "Goblin", 10, 8, false, nil)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	req := httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/api/combat-encounters/%d/next-turn", encID), nil)
@@ -65,7 +65,7 @@ func TestListCreateDeleteXP(t *testing.T) {
 	assert.Empty(t, list)
 
 	// Create
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 	body := `{"note":"Solved the riddle","amount":100}`
 	req = httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/api/sessions/%d/xp", sessID),

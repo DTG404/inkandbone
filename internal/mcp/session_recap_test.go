@@ -41,7 +41,7 @@ func TestGenerateSessionRecap(t *testing.T) {
 	require.NoError(t, err)
 
 	// Collect WS events
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	req := mcplib.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"session_id": float64(sessID)}

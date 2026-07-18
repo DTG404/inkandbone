@@ -52,7 +52,7 @@ func TestPatchCharacter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Subscribe before the request so we capture the event
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	body := `{"data_json":"{\"hp\":10}"}`
 	req := httptest.NewRequest(http.MethodPatch,
@@ -87,7 +87,7 @@ func TestPatchCharacter_currency(t *testing.T) {
 	charID, err := s.db.CreateCharacter(campID, "Kael")
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	body := `{"currency_balance":75,"currency_label":"Coin"}`
 	req := httptest.NewRequest(http.MethodPatch,
@@ -143,7 +143,7 @@ func TestUploadPortrait(t *testing.T) {
 	require.NoError(t, err)
 
 	// Subscribe before the request so we capture the event
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	// Build multipart body
 	var body bytes.Buffer
@@ -285,7 +285,7 @@ func TestUploadPortraitRejectsMismatchedContentWithoutSideEffects(t *testing.T) 
 	campID, _ := seedCampaign(t, s.db)
 	charID, err := s.db.CreateCharacter(campID, "Mira")
 	require.NoError(t, err)
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)

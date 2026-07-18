@@ -36,7 +36,7 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
       .finally(() => setLoading(false))
   }, [campaignId])
 
-  const saveField = useCallback(async (field: 'description' | 'gm_notes' | 'system_prompt_override', value: string) => {
+  const saveField = useCallback(async (field: 'description' | 'gm_notes' | 'system_prompt_override' | 'content_boundaries' | 'narrative_locale', value: string) => {
     if (!campaignId) return
     const setSaving = field === 'description' ? setSavingDesc : field === 'gm_notes' ? setSavingNotes : setSavingPrompt
     setSaving(true)
@@ -154,16 +154,18 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
                 {savingNotes && <span className="gm-screen-saving">Saving…</span>}
               </div>
 
-              {/* System Prompt Override */}
+              {/* Campaign narration preferences */}
               <div className="manage-section">
-                <div className="manage-section-title">System Prompt Override</div>
+                <label className="manage-section-title" htmlFor="campaign-narration-guidance">Campaign Narration Guidance</label>
                 <p className="gm-tool-desc">
-                  Custom instructions injected into the AI's system prompt. Use this to set tone, house rules, or specific narrative directions.
+                  Sets tone, house rules, and narrative direction. This guidance cannot override privacy, provider, role, or streaming protocol constraints.
                 </p>
                 <textarea
+                  id="campaign-narration-guidance"
                   className="gm-screen-textarea gm-screen-textarea--tall"
                   defaultValue={config.system_prompt_override}
                   rows={6}
+                  maxLength={8192}
                   disabled={savingPrompt}
                   onBlur={(e) => {
                     const val = e.target.value.trim()
@@ -171,6 +173,41 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
                   }}
                 />
                 {savingPrompt && <span className="gm-screen-saving">Saving…</span>}
+              </div>
+
+              <div className="manage-section">
+                <label className="manage-section-title" htmlFor="campaign-content-boundaries">Content Boundaries</label>
+                <p className="gm-tool-desc">
+                  Describe topics to avoid, soften, or handle off-screen. Boundaries constrain narration but do not replace mandatory safety or protocol rules.
+                </p>
+                <textarea
+                  id="campaign-content-boundaries"
+                  className="gm-screen-textarea"
+                  defaultValue={config.content_boundaries}
+                  rows={4}
+                  maxLength={8192}
+                  disabled={savingPrompt}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim()
+                    if (val !== config.content_boundaries) saveField('content_boundaries', val)
+                  }}
+                />
+              </div>
+
+              <div className="manage-section">
+                <label className="manage-section-title" htmlFor="campaign-narrative-locale">Narrative Locale</label>
+                <p className="gm-tool-desc">A short language tag such as en, fr-CA, or pt-BR. Protocol labels remain stable.</p>
+                <input
+                  id="campaign-narrative-locale"
+                  className="gm-tool-input"
+                  defaultValue={config.narrative_locale}
+                  maxLength={32}
+                  disabled={savingPrompt}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim()
+                    if (val !== config.narrative_locale) saveField('narrative_locale', val)
+                  }}
+                />
               </div>
 
               {/* GM Tools */}

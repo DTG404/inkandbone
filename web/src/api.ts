@@ -963,6 +963,8 @@ export interface CampaignConfig {
   description: string
   gm_notes: string
   system_prompt_override: string
+  content_boundaries: string
+  narrative_locale: string
   character_count: number
   session_count: number
   ruleset_name: string
@@ -976,7 +978,7 @@ export async function fetchCampaignConfig(campaignId: number): Promise<CampaignC
 
 export async function patchCampaignConfig(
   campaignId: number,
-  updates: { description?: string; gm_notes?: string; system_prompt_override?: string },
+  updates: { description?: string; gm_notes?: string; system_prompt_override?: string; content_boundaries?: string; narrative_locale?: string },
 ): Promise<void> {
   const res = await request(`/api/campaigns/${campaignId}/config`, {
     method: 'PATCH',

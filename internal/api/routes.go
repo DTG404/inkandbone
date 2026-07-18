@@ -812,7 +812,7 @@ The base prompt above says "the player controls only their character" — that r
 - CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly.
 `, formatCharNames(charNameMap))
 	}
-	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
+	systemPrompt := s.buildGMSystemPrompt(id, worldCtx+multiPrompt, reminder)
 
 	response, err := gmResponder.Respond(r.Context(), systemPrompt, history, 2048)
 	if err != nil {
@@ -1050,7 +1050,7 @@ The base prompt above says "the player controls only their character" — that r
 - CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly.
 `, formatCharNames(charNameMap))
 	}
-	systemPrompt := gmSystemPrompt + "\n\n" + worldCtx + multiPrompt + "\n\n" + reminder
+	systemPrompt := s.buildGMSystemPrompt(id, worldCtx+multiPrompt, reminder)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

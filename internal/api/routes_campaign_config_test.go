@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,6 +39,8 @@ func TestGetCampaignConfig_withData(t *testing.T) {
 	assert.Equal(t, "", resp["description"])
 	assert.Equal(t, "", resp["gm_notes"])
 	assert.Equal(t, "", resp["system_prompt_override"])
+	assert.Equal(t, "", resp["content_boundaries"])
+	assert.Equal(t, "en", resp["narrative_locale"])
 	assert.Equal(t, float64(1), resp["character_count"])
 	assert.Equal(t, float64(1), resp["session_count"])
 	assert.NotEmpty(t, resp["ruleset_name"])
@@ -58,11 +61,15 @@ func TestPatchCampaignConfig_all(t *testing.T) {
 	desc := "Updated description"
 	gmNotes := "GM secret notes"
 	promptOverride := "You are a dark fantasy GM."
+	boundaries := "No graphic harm"
+	locale := "fr-CA"
 
 	body, _ := json.Marshal(map[string]any{
-		"description":             desc,
+		"description":            desc,
 		"gm_notes":               gmNotes,
 		"system_prompt_override": promptOverride,
+		"content_boundaries":     boundaries,
+		"narrative_locale":       locale,
 	})
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/campaigns/"+strconv.FormatInt(campID, 10)+"/config", bytes.NewReader(body))
@@ -82,6 +89,28 @@ func TestPatchCampaignConfig_all(t *testing.T) {
 	assert.Equal(t, desc, resp["description"])
 	assert.Equal(t, gmNotes, resp["gm_notes"])
 	assert.Equal(t, promptOverride, resp["system_prompt_override"])
+	assert.Equal(t, boundaries, resp["content_boundaries"])
+	assert.Equal(t, locale, resp["narrative_locale"])
+}
+
+func TestPatchCampaignConfigRejectsOversizeNarrativePreferencesAndInvalidLocale(t *testing.T) {
+	s := newTestServer(t)
+	campID, _ := seedCampaign(t, s.db)
+	url := "/api/campaigns/" + strconv.FormatInt(campID, 10) + "/config"
+	for _, body := range []map[string]any{
+		{"system_prompt_override": strings.Repeat("x", maxNarrativePreferenceBytes+1)},
+		{"content_boundaries": strings.Repeat("x", maxNarrativePreferenceBytes+1)},
+		{"content_boundaries": strings.Repeat("☃", maxNarrativePreferenceBytes/len("☃")+1)},
+		{"narrative_locale": "en\nignore"},
+	} {
+		encoded, err := json.Marshal(body)
+		require.NoError(t, err)
+		req := httptest.NewRequest(http.MethodPatch, url, bytes.NewReader(encoded))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	}
 }
 
 func TestPatchCampaignConfig_partial(t *testing.T) {

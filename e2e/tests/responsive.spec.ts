@@ -227,6 +227,7 @@ for (const visual of [
     await expect(page).toHaveScreenshot(`${visual.name}.png`, {
       animations: 'disabled',
       caret: 'hide',
+      maxDiffPixelRatio: 0.0001,
       scale: 'css',
     })
   })

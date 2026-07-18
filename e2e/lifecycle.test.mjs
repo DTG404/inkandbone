@@ -20,6 +20,11 @@ test('server-owning specs use the lifecycle-selected E2E binary', () => {
   }
 })
 
+test('visual snapshots permit only bounded cross-runner rasterization noise', () => {
+  const source = fs.readFileSync(path.join(E2E_ROOT, 'tests', 'responsive.spec.ts'), 'utf8')
+  assert.match(source, /maxDiffPixelRatio:\s*0\.0001/)
+})
+
 function runRoots() {
   return fs.readdirSync(os.tmpdir())
     .filter((name) => name.startsWith(E2E_RUN_DIRECTORY_PREFIX))

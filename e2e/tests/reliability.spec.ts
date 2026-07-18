@@ -411,7 +411,10 @@ test('recovers an open breaker through one half-open probe and resets health', a
   state.provider.release()
   const recovered = await eventually(
     () => automationHealth(state.api),
-    (items) => healthByKey(items, 'auto_detect_objectives').status === 'closed',
+    (items) => {
+      const item = healthByKey(items, 'auto_detect_objectives')
+      return item.status === 'closed' && item.running === 0
+    },
     'breaker recovery',
   )
   expect(healthByKey(recovered, 'auto_detect_objectives')).toMatchObject({

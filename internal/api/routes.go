@@ -612,24 +612,13 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 	} else {
 		svgPart = svgRaw
 	}
-	svgContent := extractSVG(svgPart)
-	if svgContent == "" {
-		serverErrorText(w, r, "AI did not return valid SVG")
-		return
-	}
-
-	destDir := filepath.Join(s.dataDir, "maps")
-	if err := os.MkdirAll(destDir, 0750); err != nil {
-		serverError(w, r, err)
-		return
-	}
-	filename := "map_" + randomHex(8) + ".svg"
-	if err := os.WriteFile(filepath.Join(destDir, filename), []byte(svgContent), 0640); err != nil {
+	svgContent, err := sanitizeGeneratedSVGResponse(svgPart)
+	if err != nil {
 		serverError(w, r, err)
 		return
 	}
 
-	mapID, err := s.db.CreateMap(id, body.Name, "maps/"+filename)
+	mapID, err := s.persistGeneratedSVG(id, body.Name, svgContent)
 	if err != nil {
 		serverError(w, r, err)
 		return
@@ -1308,34 +1297,20 @@ Story passage:
 		permit.Complete(err)
 		return
 	}
-	permit.Success()
-
-	svgContent := extractSVG(svgRaw)
-	if svgContent == "" {
-		preview := svgRaw
-		if len(preview) > 300 {
-			preview = preview[:300]
-		}
-		log.Printf("autoGenerateMap: no valid SVG in response for %q (session %d) — raw preview: %q", loc.Name, sessionID, preview)
-		return
-	}
-
-	destDir := filepath.Join(s.dataDir, "maps")
-	if err := os.MkdirAll(destDir, 0750); err != nil {
-		log.Printf("autoGenerateMap: failed to create maps dir: %v", err)
-		return
-	}
-	filename := "map_" + randomHex(8) + ".svg"
-	if err := os.WriteFile(filepath.Join(destDir, filename), []byte(svgContent), 0640); err != nil {
-		log.Printf("autoGenerateMap: failed to write %s: %v", filename, err)
-		return
-	}
-
-	mapID, err := s.db.CreateMap(sess.CampaignID, loc.Name, "maps/"+filename)
+	svgContent, err := sanitizeGeneratedSVGResponse(svgRaw)
 	if err != nil {
-		log.Printf("autoGenerateMap: failed to save map record for %q: %v", loc.Name, err)
+		log.Printf("autoGenerateMap: rejected generated SVG for %q (session %d): %v", loc.Name, sessionID, err)
+		permit.Failure(err)
 		return
 	}
+
+	mapID, err := s.persistGeneratedSVG(sess.CampaignID, loc.Name, svgContent)
+	if err != nil {
+		log.Printf("autoGenerateMap: rejected or failed generated map for %q (session %d): %v", loc.Name, sessionID, err)
+		permit.Failure(err)
+		return
+	}
+	permit.Success()
 	s.bus.Publish(Event{Type: EventMapCreated, Payload: map[string]any{
 		"campaign_id": sess.CampaignID,
 		"map_id":      mapID,

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import type { CampaignConfig } from './api'
 import { fetchCampaignConfig, patchCampaignConfig, postImprovise, postPreSessionBrief, postDetectThreads, postCampaignAsk } from './api'
 import ReactMarkdown from 'react-markdown'
+import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
 
 interface GMScreenPanelProps {
   campaignId: number | null
@@ -36,7 +38,7 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
       .finally(() => setLoading(false))
   }, [campaignId])
 
-  const saveField = useCallback(async (field: 'description' | 'gm_notes' | 'system_prompt_override', value: string) => {
+  const saveField = useCallback(async (field: 'description' | 'gm_notes' | 'system_prompt_override' | 'content_boundaries' | 'narrative_locale', value: string) => {
     if (!campaignId) return
     const setSaving = field === 'description' ? setSavingDesc : field === 'gm_notes' ? setSavingNotes : setSavingPrompt
     setSaving(true)
@@ -73,8 +75,9 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
           break
       }
       setToolsResult(text)
-    } catch (e) {
-      setToolsResult('Error: ' + (e instanceof Error ? e.message : 'Unknown error'))
+    } catch (cause) {
+      console.error(cause)
+      setToolsResult('The GM tool could not complete. Try again.')
     } finally {
       setToolsLoading(false)
     }
@@ -82,26 +85,23 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
 
   if (!campaignId) {
     return (
-      <div className="manage-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-        <div className="manage-panel">
+      <Dialog open title="GM Screen" onClose={onClose} className="manage-panel">
           <div className="manage-header">
             <span className="manage-title">GM Screen</span>
-            <button className="manage-close" onClick={onClose}>×</button>
+            <IconButton className="manage-close" label="Close GM Screen" icon="×" onClick={onClose} />
           </div>
           <div className="manage-content">
             <p className="gm-tool-disabled">No campaign selected.</p>
           </div>
-        </div>
-      </div>
+      </Dialog>
     )
   }
 
   return (
-    <div className="manage-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="manage-panel gm-screen-panel">
+    <Dialog open title="GM Screen" onClose={onClose} className="manage-panel gm-screen-panel">
         <div className="manage-header">
           <span className="manage-title">GM Screen</span>
-          <button className="manage-close" onClick={onClose}>×</button>
+          <IconButton className="manage-close" label="Close GM Screen" icon="×" onClick={onClose} />
         </div>
 
         {error && <div className="manage-error">{error}</div>}
@@ -154,16 +154,18 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
                 {savingNotes && <span className="gm-screen-saving">Saving…</span>}
               </div>
 
-              {/* System Prompt Override */}
+              {/* Campaign narration preferences */}
               <div className="manage-section">
-                <div className="manage-section-title">System Prompt Override</div>
+                <label className="manage-section-title" htmlFor="campaign-narration-guidance">Campaign Narration Guidance</label>
                 <p className="gm-tool-desc">
-                  Custom instructions injected into the AI's system prompt. Use this to set tone, house rules, or specific narrative directions.
+                  Sets tone, house rules, and narrative direction. This guidance cannot override privacy, provider, role, or streaming protocol constraints.
                 </p>
                 <textarea
+                  id="campaign-narration-guidance"
                   className="gm-screen-textarea gm-screen-textarea--tall"
                   defaultValue={config.system_prompt_override}
                   rows={6}
+                  maxLength={8192}
                   disabled={savingPrompt}
                   onBlur={(e) => {
                     const val = e.target.value.trim()
@@ -171,6 +173,41 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
                   }}
                 />
                 {savingPrompt && <span className="gm-screen-saving">Saving…</span>}
+              </div>
+
+              <div className="manage-section">
+                <label className="manage-section-title" htmlFor="campaign-content-boundaries">Content Boundaries</label>
+                <p className="gm-tool-desc">
+                  Describe topics to avoid, soften, or handle off-screen. Boundaries constrain narration but do not replace mandatory safety or protocol rules.
+                </p>
+                <textarea
+                  id="campaign-content-boundaries"
+                  className="gm-screen-textarea"
+                  defaultValue={config.content_boundaries}
+                  rows={4}
+                  maxLength={8192}
+                  disabled={savingPrompt}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim()
+                    if (val !== config.content_boundaries) saveField('content_boundaries', val)
+                  }}
+                />
+              </div>
+
+              <div className="manage-section">
+                <label className="manage-section-title" htmlFor="campaign-narrative-locale">Narrative Locale</label>
+                <p className="gm-tool-desc">A short language tag such as en, fr-CA, or pt-BR. Protocol labels remain stable.</p>
+                <input
+                  id="campaign-narrative-locale"
+                  className="gm-tool-input"
+                  defaultValue={config.narrative_locale}
+                  maxLength={32}
+                  disabled={savingPrompt}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim()
+                    if (val !== config.narrative_locale) saveField('narrative_locale', val)
+                  }}
+                />
               </div>
 
               {/* GM Tools */}
@@ -239,7 +276,6 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
             <p className="gm-tool-disabled">Could not load campaign data.</p>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }

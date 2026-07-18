@@ -1,258 +1,28 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { patchSession, createMapPin, fetchTalentDescription, reanalyzeSession, patchSettings, fetchNPCs } from './api'
+import { patchSession, fetchTalentDescription, fetchNPCs } from './api'
 import type { GameContext, Message, Session, XPSpendSuggestionsEvent, SessionNPC } from './types'
 import { CombatPanel } from './CombatPanel'
-import { WorldNotesPanel } from './WorldNotesPanel'
 import { DiceHistoryPanel } from './DiceHistoryPanel'
 import { DiceRoller } from './DiceRoller'
 import { MapPanel } from './MapPanel'
-import { JournalPanel } from './JournalPanel'
 import { CharacterSheetPanel } from './CharacterSheetPanel'
-import { NPCRosterPanel } from './NPCRosterPanel'
-import { ObjectivesPanel } from './ObjectivesPanel'
 import { InventoryPanel } from './InventoryPanel'
-import { OraclePanel } from './OraclePanel'
-import { RelationshipsPanel } from './RelationshipsPanel'
-import { FactionsPanel } from './FactionsPanel'
-import { SecretsPanel } from './SecretsPanel'
-import { NPCStatBlockPanel } from './NPCStatBlockPanel'
-import { AdventuresPanel } from './AdventuresPanel'
-import { CalendarPanel } from './CalendarPanel'
-import { GMToolsPanel } from './GMToolsPanel'
-import { HandoutsPanel } from './HandoutsPanel'
-import { CompendiumPanel } from './CompendiumPanel'
-import { DecksPanel } from './DecksPanel'
+import { wsEvent } from './wsEvents'
 import { XPSuggestionsPanel } from './XPSuggestionsPanel'
-import { SessionTimeline } from './SessionTimeline'
 import { XPLogPanel } from './XPLogPanel'
 import { CharacterSelector } from './CharacterSelector'
 import { setAmbientTrack } from './audio/ambient'
-import { MacroBar } from './MacroBar'
 import { wgTalentDescription } from './wgTalentData'
-import './App.css'
-
-// ── Turn Order Strip ────────────────────────────────────────
-
-interface TurnOrderStripProps {
-  combatants: GameContext['active_combat'] extends null ? never : NonNullable<GameContext['active_combat']>['combatants']
-}
-
-function TurnOrderStrip({ combatants }: TurnOrderStripProps) {
-  return (
-    <div className="turn-strip">
-      {combatants.map((c, idx) => {
-        const isDead = c.hp_current <= 0
-        const isActive = idx === 0
-        return (
-          <div
-            key={c.id}
-            className={`turn-chip${isActive ? ' active-turn' : ''}${isDead ? ' dead' : ''}`}
-          >
-            {c.name} ({c.initiative})
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Pin Placement Modal ─────────────────────────────────────
-
-interface PinPlacementModalProps {
-  mapId: number
-  mapImagePath: string
-  defaultLabel: string
-  onClose: () => void
-}
-
-function PinPlacementModal({ mapId, mapImagePath, defaultLabel, onClose }: PinPlacementModalProps) {
-  const [label, setLabel] = useState(defaultLabel.slice(0, 60))
-  const [note, setNote] = useState('')
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-  const [saving, setSaving] = useState(false)
-  const imgRef = useRef<HTMLImageElement>(null)
-
-  function handleImageClick(e: React.MouseEvent<HTMLImageElement>) {
-    const rect = imgRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setPos({
-      x: (e.clientX - rect.left) / rect.width,
-      y: (e.clientY - rect.top) / rect.height,
-    })
-  }
-
-  async function handleSubmit() {
-    if (!pos) return
-    setSaving(true)
-    try {
-      await createMapPin(mapId, { x: pos.x, y: pos.y, label, note, color: '#c9a84c' })
-      onClose()
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="pin-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="pin-modal">
-        <div className="pin-modal-header">
-          <span>Place Map Pin</span>
-          <button className="pin-modal-close" onClick={onClose}>×</button>
-        </div>
-        <p className="pin-modal-hint">Click on the map to place the pin</p>
-        <div className="pin-modal-map-wrap">
-          <img
-            ref={imgRef}
-            src={`/api/files/${mapImagePath}`}
-            alt="Map"
-            className="pin-modal-map"
-            onClick={handleImageClick}
-          />
-          {pos && (
-            <div
-              className="pin-modal-marker"
-              style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
-            >
-              ✦
-            </div>
-          )}
-        </div>
-        <input
-          className="pin-modal-input"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="Label…"
-        />
-        <textarea
-          className="pin-modal-textarea"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Note…"
-          rows={3}
-        />
-        <button
-          className="pin-modal-submit"
-          onClick={handleSubmit}
-          disabled={!pos || saving || !label.trim()}
-        >
-          {saving ? 'Saving…' : 'Place Pin'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Prose Journal ───────────────────────────────────────────
-
-function highlightText(text: string, query: string): ReactNode {
-  if (!query) return text
-  const lower = text.toLowerCase()
-  const lowerQ = query.toLowerCase()
-  const parts: ReactNode[] = []
-  let start = 0
-  let idx = lower.indexOf(lowerQ, start)
-  while (idx !== -1) {
-    if (idx > start) parts.push(text.slice(start, idx))
-    parts.push(<mark key={idx}>{text.slice(idx, idx + query.length)}</mark>)
-    start = idx + query.length
-    idx = lower.indexOf(lowerQ, start)
-  }
-  if (start < text.length) parts.push(text.slice(start))
-  return <>{parts}</>
-}
-
-interface ProseJournalProps {
-  messages: Message[]
-  characterName: string
-  searchQuery?: string
-  activeMapId: number | null
-  activeMapImagePath: string | null
-  charactersList: { id: number; name: string }[]
-}
-
-// Ensure "What do you do?" at the end of GM responses is always its own paragraph
-// and rendered bold+italic gold to stand out as the player prompt cue.
-function normalizeGMContent(text: string): string {
-  return text.replace(/\s*(\*\*)?What do you do\??(\*\*)?\s*$/, '\n\n**What do you do?**')
-}
-
-function ProseJournal({
-  messages,
-  characterName,
-  searchQuery = '',
-  activeMapId,
-  activeMapImagePath,
-  charactersList = [],
-}: ProseJournalProps) {
-  const [pinModal, setPinModal] = useState<{ content: string } | null>(null)
-  const charNameMap = useMemo(() => {
-    const map: Record<number, string> = {}
-    for (const c of charactersList) map[c.id] = c.name
-    return map
-  }, [charactersList])
-
-  if (messages.length === 0) {
-    return <p className="empty">The story has not yet begun.</p>
-  }
-
-  const nodes: ReactNode[] = []
-  messages.forEach((m, i) => {
-    if (m.role === 'assistant') {
-      nodes.push(
-        <div key={m.id} className="prose-gm prose-gm-wrap">
-          <ReactMarkdown>{normalizeGMContent(m.content)}</ReactMarkdown>
-          {activeMapId !== null && activeMapImagePath !== null && (
-            <button
-              className="prose-pin-btn"
-              title="Place as map pin"
-              onClick={() => setPinModal({ content: m.content.replace(/[#*_`[\]]/g, '').slice(0, 60) })}
-            >
-              📍
-            </button>
-          )}
-        </div>
-      )
-    } else {
-      const isWhisper = m.whisper === true
-      const speakerName = m.character_id != null && charNameMap[m.character_id]
-        ? charNameMap[m.character_id]
-        : characterName
-      nodes.push(
-        <div key={m.id} className={`prose-player${isWhisper ? ' prose-player--whisper' : ''}`}>
-          <div className="prose-player-label">{speakerName} speaks</div>
-          <p className="prose-player-text">
-            {searchQuery ? highlightText(m.content, searchQuery) : m.content}
-          </p>
-        </div>
-      )
-      if (i < messages.length - 1) {
-        nodes.push(
-          <div key={`div-${m.id}`} className="prose-divider">◆</div>
-        )
-      }
-    }
-  })
-
-  return (
-    <>
-      {nodes}
-      {pinModal && activeMapId !== null && activeMapImagePath !== null && (
-        <PinPlacementModal
-          mapId={activeMapId}
-          mapImagePath={activeMapImagePath}
-          defaultLabel={pinModal.content}
-          onClose={() => setPinModal(null)}
-        />
-      )}
-    </>
-  )
-}
-
-// ── Scene Tag Picker ────────────────────────────────────────
+import { WorkspaceShell } from './layout/WorkspaceShell'
+import { WorkspaceNavigation } from './navigation/WorkspaceNavigation'
+import { PANEL_DEFINITIONS, type MobileDestination, type PanelID } from './navigation/panelRegistry'
+import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
+import { useToast } from './ui/ToastProvider'
+import { NarrativeStream, TurnOrderStrip, normalizeGMContent } from './session/NarrativeStream'
+import { PlayerComposer } from './session/PlayerComposer'
+import { RightWorkspace } from './session/RightWorkspace'
 
 const SCENE_TAGS = ['tavern', 'dungeon', 'forest', 'city', 'ocean', 'cave', 'castle', 'rain', 'night', 'battle', 'market', 'temple', 'ruins']
 
@@ -262,6 +32,7 @@ interface SceneTagPickerProps {
 }
 
 function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
+  const toast = useToast()
   const activeTags = session.scene_tags ? session.scene_tags.split(',').filter(Boolean) : []
 
   async function toggleTag(tag: string) {
@@ -275,6 +46,7 @@ function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
       setAmbientTrack(newTags[0] ?? null)
     } catch (err) {
       console.error('Failed to update scene tags:', err)
+      toast.error('Could not update scene tags.')
     }
   }
 
@@ -312,8 +84,8 @@ export interface SessionViewProps {
   activeMapImagePath: string | null
   setActiveMapId: (id: number | null) => void
   setActiveMapImagePath: (path: string | null) => void
-  rightTab: string
-  setRightTab: React.Dispatch<React.SetStateAction<string>>
+  rightTab: PanelID
+  setRightTab: React.Dispatch<React.SetStateAction<PanelID>>
   showPlayerHistory: boolean
   setShowPlayerHistory: (show: boolean) => void
   showTalentsPanel: boolean
@@ -331,7 +103,7 @@ export interface SessionViewProps {
   aiTalentDescs: Record<string, string>
   setAiTalentDescs: React.Dispatch<React.SetStateAction<Record<string, string>>>
   handleSend: () => Promise<void>
-  onSendText: (text: string) => Promise<void>
+  onSendText: (text: string) => Promise<boolean>
   handleGenerateMap: () => Promise<void>
   handleSpendXP: (characterId: number, field: string, newValue: number) => Promise<void>
   lastEvent: unknown
@@ -388,12 +160,17 @@ export function SessionView({
   typingNames,
 }: SessionViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
+  const [mobileDestination, setMobileDestination] = useState<MobileDestination>('story')
   const [sessionNpcs, setSessionNpcs] = useState<SessionNPC[]>([])
+  const [pendingHandout, setPendingHandout] = useState<{
+    title: string
+    content: string
+    category: string
+  } | null>(null)
 
   useEffect(() => {
     if (!ctx.session) return
-    fetchNPCs(ctx.session.id).then(setSessionNpcs).catch(console.error)
+    fetchNPCs(ctx.session.id).then(setSessionNpcs).catch(() => setSessionNpcs([])) // Background roster load retries on session change.
   }, [ctx.session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -401,6 +178,15 @@ export function SessionView({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages, streamingText])
+
+  useEffect(() => {
+    const ev = wsEvent(lastEvent)
+    if (ev?.type !== 'secret_revealed') return
+    if (ev.payload.session_id !== ctx.session?.id) return
+    const { title, content, category } = ev.payload
+    if (typeof title !== 'string' || typeof content !== 'string' || typeof category !== 'string') return
+    setPendingHandout({ title, content, category })
+  }, [lastEvent, ctx.session?.id])
 
   // When the talents panel opens, fetch AI descriptions for any talent/power
   // that has no static description.
@@ -428,16 +214,32 @@ export function SessionView({
   const sessionDate = ctx.session?.date
     ? new Date(ctx.session.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     : ''
+  const changeMobileDestination = (destination: MobileDestination) => {
+    setMobileDestination(destination)
+    const currentGroup = PANEL_DEFINITIONS.find((panel) => panel.id === rightTab)?.group
+    if (destination === 'gm' && currentGroup !== 'GM') setRightTab('objectives')
+    if (destination === 'world' && currentGroup === 'GM') setRightTab('notes')
+  }
 
   return (
-    <div className="grimoire-body">
-
+    <>
+    {pendingHandout && (
+      <Dialog open title={pendingHandout.title} onClose={() => setPendingHandout(null)} className="handout-modal">
+          <div className="handout-modal-header">
+            <span className="handout-modal-category">{pendingHandout.category}</span>
+            <IconButton className="handout-modal-close" label="Close handout" icon="×" onClick={() => setPendingHandout(null)} />
+          </div>
+          <div className="handout-modal-body">
+            <p className="handout-modal-content">{pendingHandout.content}</p>
+          </div>
+      </Dialog>
+    )}
       {/* Player History Overlay */}
       {showPlayerHistory && (
-        <div className="player-history-overlay">
+        <Dialog open title="Your Actions" onClose={() => setShowPlayerHistory(false)} className="player-history-overlay">
           <div className="player-history-header">
             <span>Your Actions</span>
-            <button onClick={() => setShowPlayerHistory(false)}>×</button>
+            <IconButton label="Close action history" icon="×" onClick={() => setShowPlayerHistory(false)} />
           </div>
           <div className="player-history-list">
             {messages.filter(m => m.role === 'user' && !m.whisper).map(m => (
@@ -446,7 +248,7 @@ export function SessionView({
               </div>
             ))}
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Talents & Powers Overlay */}
@@ -482,10 +284,10 @@ export function SessionView({
           const bloodPotency = Number(charData.blood_potency ?? 1)
 
           return (
-            <div className="talents-overlay">
+            <Dialog open title={`Disciplines & Powers — ${ctx.character.name}`} onClose={() => setShowTalentsPanel(false)} className="talents-overlay">
               <div className="talents-overlay-header">
                 <span>Disciplines &amp; Powers — {ctx.character.name}</span>
-                <button onClick={() => setShowTalentsPanel(false)}>×</button>
+                <IconButton label="Close disciplines and powers" icon="×" onClick={() => setShowTalentsPanel(false)} />
               </div>
               <div className="talents-overlay-body">
                 <div className="talents-section">
@@ -541,7 +343,7 @@ export function SessionView({
                   </div>
                 )}
               </div>
-            </div>
+            </Dialog>
           )
         }
 
@@ -550,10 +352,10 @@ export function SessionView({
         const powers = String(charData.powers ?? '').trim()
         const talentRanks = (charData.talent_ranks ?? {}) as Record<string, number>
         return (
-          <div className="talents-overlay">
+          <Dialog open title={`Talents & Powers — ${ctx.character.name}`} onClose={() => setShowTalentsPanel(false)} className="talents-overlay">
             <div className="talents-overlay-header">
               <span>Talents &amp; Powers — {ctx.character.name}</span>
-              <button onClick={() => setShowTalentsPanel(false)}>×</button>
+              <IconButton label="Close talents and powers" icon="×" onClick={() => setShowTalentsPanel(false)} />
             </div>
             <div className="talents-overlay-body">
               <div className="talents-section">
@@ -597,12 +399,23 @@ export function SessionView({
                 </div>
               )}
             </div>
-          </div>
+          </Dialog>
         )
       })()}
 
-      {/* Left Sidebar */}
-      <aside className="sidebar-left">
+      <WorkspaceShell
+        mobileDestination={mobileDestination}
+        mobileNav={(
+          <WorkspaceNavigation
+            activePanel={rightTab}
+            onPanelChange={setRightTab}
+            mobileDestination={mobileDestination}
+            onMobileDestinationChange={changeMobileDestination}
+            mobile
+          />
+        )}
+        left={(
+          <aside className="sidebar-left">
         <CharacterSelector
           characters={charactersList}
           selectedId={selectedCharacterId}
@@ -635,10 +448,12 @@ export function SessionView({
         )}
         <hr className="sidebar-rule" />
         <XPLogPanel sessionId={ctx?.session?.id ?? null} lastEvent={lastEvent} />
-      </aside>
+          </aside>
+        )}
 
-      {/* Center Column */}
-      <main className="story-center">
+        story={(
+          <>
+            <main className="story-center">
         {ctx.active_combat && (
           <TurnOrderStrip combatants={ctx.active_combat.combatants} />
         )}
@@ -674,7 +489,7 @@ export function SessionView({
             </>
           )}
           {ctx.active_combat && <CombatPanel combat={ctx.active_combat} />}
-          <ProseJournal
+          <NarrativeStream
             messages={displayMessages}
             characterName={ctx.character?.name ?? 'Player'}
             searchQuery={searchQuery}
@@ -696,44 +511,17 @@ export function SessionView({
           <p className="typing-indicator">⏳ {typingNames.join(' & ')} {typingNames.length === 1 ? 'is' : 'are'} thinking…</p>
         )}
 
-        <MacroBar
+        <PlayerComposer
           characterId={ctx.character?.id ?? null}
-          onFire={(text) => { void onSendText(text) }}
-          disabled={sending || !ctx.session}
+          hasSession={ctx.session != null}
+          input={input}
+          onInputChange={setInput}
+          onSend={handleSend}
+          onSendText={onSendText}
+          sending={sending}
+          whisperMode={whisperMode}
+          setWhisperMode={setWhisperMode}
         />
-
-        <div className="player-input-bar">
-          <button
-            type="button"
-            className={`whisper-toggle${whisperMode ? ' active' : ''}`}
-            onClick={() => setWhisperMode((v) => !v)}
-            title={whisperMode ? 'Whisper mode on — GM will not respond' : 'Enable whisper mode'}
-          >
-            🔒
-          </button>
-          <textarea
-            className={`player-input-field${whisperMode ? ' whisper-active' : ''}`}
-            placeholder={whisperMode ? 'Whisper (private, no GM response)…' : 'What do you do?'}
-            value={input}
-            disabled={sending || !ctx.session}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            rows={3}
-          />
-          <button
-            type="button"
-            className="player-input-send"
-            disabled={sending || !input.trim() || !ctx.session}
-            onClick={handleSend}
-          >
-            {sending ? '…' : '↵'}
-          </button>
-        </div>
 
         <div className="map-drawer">
           <div className="map-drawer-handle-row">
@@ -773,212 +561,29 @@ export function SessionView({
             </div>
           </div>
         </div>
-      </main>
+            </main>
 
-      <XPSuggestionsPanel
-        event={xpPanelDismissed ? null : xpSuggestionsEvent}
-        onDismiss={() => { setXPSuggestionsEvent(null); setXpPanelDismissed(false) }}
-        onHide={() => setXpPanelDismissed(true)}
-        onSpend={handleSpendXP}
+            <XPSuggestionsPanel
+              event={xpPanelDismissed ? null : xpSuggestionsEvent}
+              onDismiss={() => { setXPSuggestionsEvent(null); setXpPanelDismissed(false) }}
+              onHide={() => setXpPanelDismissed(true)}
+              onSpend={handleSpendXP}
+            />
+          </>
+        )}
+
+        right={(
+          <RightWorkspace
+            aiEnabled={aiEnabled}
+            ctx={ctx}
+            lastEvent={lastEvent}
+            mobileDestination={mobileDestination}
+            onMobileDestinationChange={changeMobileDestination}
+            rightTab={rightTab}
+            setRightTab={setRightTab}
+          />
+        )}
       />
-
-      {/* Right Sidebar */}
-      <aside className="sidebar-right">
-        <div className="tab-bar">
-          <button
-            className={`tab-btn${rightTab === 'handouts' ? ' active' : ''}`}
-            onClick={() => setRightTab('handouts')}
-          >
-            Handouts
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'compendium' ? ' active' : ''}`}
-            onClick={() => setRightTab('compendium')}
-          >
-            Compendium
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'decks' ? ' active' : ''}`}
-            onClick={() => setRightTab('decks')}
-          >
-            Decks
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'notes' ? ' active' : ''}`}
-            onClick={() => setRightTab('notes')}
-          >
-            Notes
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'journal' ? ' active' : ''}`}
-            onClick={() => setRightTab('journal')}
-          >
-            Journal
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'npcs' ? ' active' : ''}`}
-            onClick={() => setRightTab('npcs')}
-          >
-            NPCs
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'objectives' ? ' active' : ''}`}
-            onClick={() => setRightTab('objectives')}
-          >
-            Objectives
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'oracle' ? ' active' : ''}`}
-            onClick={() => setRightTab('oracle')}
-          >
-            Oracle
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'relationships' ? ' active' : ''}`}
-            onClick={() => setRightTab('relationships')}
-          >
-            Relations
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'factions' ? ' active' : ''}`}
-            onClick={() => setRightTab('factions')}
-          >
-            Factions
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'calendar' ? ' active' : ''}`}
-            onClick={() => setRightTab('calendar')}
-          >
-            Calendar
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'npcstats' ? ' active' : ''}`}
-            onClick={() => setRightTab('npcstats')}
-          >
-            Stat Blocks
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'adventures' ? ' active' : ''}`}
-            onClick={() => setRightTab('adventures')}
-          >
-            Adventures
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'secrets' ? ' active' : ''}`}
-            onClick={() => setRightTab('secrets')}
-          >
-            Secrets
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'gmtools' ? ' active' : ''}`}
-            onClick={() => setRightTab('gmtools')}
-          >
-            GM Tools
-          </button>
-        </div>
-        <div className="tab-content">
-          {rightTab === 'handouts' && ctx.campaign && (
-            <HandoutsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'compendium' && ctx.campaign && (
-            <CompendiumPanel rulesetId={ctx.campaign.ruleset_id} />
-          )}
-          {rightTab === 'decks' && ctx.campaign && ctx.session && (
-            <DecksPanel campaignId={ctx.campaign.id} sessionId={ctx.session.id} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'notes' && ctx.campaign && (
-            <WorldNotesPanel
-              campaignId={ctx.campaign.id}
-              lastEvent={lastEvent}
-              aiEnabled={aiEnabled}
-            />
-          )}
-          {rightTab === 'journal' && (
-            <div className="journal-container">
-              <div className="journal-subtabs">
-                <button className={`journal-subtab${journalSubTab === 'notes' ? ' active' : ''}`} onClick={() => setJournalSubTab('notes')}>Notes</button>
-                <button className={`journal-subtab${journalSubTab === 'timeline' ? ' active' : ''}`} onClick={() => setJournalSubTab('timeline')}>Timeline</button>
-              </div>
-              <button
-                className="journal-reanalyze-btn"
-                onClick={async () => {
-                  if (!ctx?.session?.id) return
-                  try {
-                    await reanalyzeSession(ctx.session.id)
-                  } catch (e) {
-                    console.error(e)
-                  }
-                }}
-                title="Re-analyze session for objectives and NPCs"
-              >
-                ↻ Reanalyze
-              </button>
-              {journalSubTab === 'notes' ? (
-                <JournalPanel
-                  session={ctx?.session ?? null}
-                  campaignId={ctx?.campaign?.id ?? null}
-                  lastEvent={lastEvent}
-                  aiEnabled={aiEnabled}
-                />
-              ) : ctx?.session?.id != null ? (
-                <SessionTimeline sessionId={ctx.session.id} lastEvent={lastEvent} />
-              ) : null}
-            </div>
-          )}
-          {rightTab === 'npcs' && (
-            <NPCRosterPanel
-              sessionId={ctx?.session?.id ?? null}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'objectives' && (
-            <ObjectivesPanel campaignId={ctx?.campaign?.id ?? null} sessionId={ctx?.session?.id ?? null} lastEvent={lastEvent} />
-          )}
-          {rightTab === 'oracle' && ctx.session && (
-            <OraclePanel sessionId={ctx.session.id} />
-          )}
-          {rightTab === 'relationships' && ctx.campaign && (
-            <RelationshipsPanel campaignId={ctx.campaign.id} />
-          )}
-          {rightTab === 'factions' && ctx.campaign && (
-            <FactionsPanel campaignId={ctx.campaign.id} />
-          )}
-          {rightTab === 'calendar' && ctx.campaign && (
-            <CalendarPanel
-              campaignId={ctx.campaign.id}
-              sessionId={ctx.session?.id ?? null}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'npcstats' && ctx.campaign && (
-            <NPCStatBlockPanel campaignId={ctx.campaign.id} />
-          )}
-          {rightTab === 'adventures' && ctx.campaign && (
-            <AdventuresPanel
-              campaignId={ctx.campaign.id}
-              onSessionClick={async (sessionId: number) => {
-                await patchSettings({ session_id: sessionId })
-              }}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'secrets' && ctx.campaign && (
-            <SecretsPanel
-              campaignId={ctx.campaign.id}
-              sessionId={ctx?.session?.id ?? null}
-              lastEvent={lastEvent}
-            />
-          )}
-          {rightTab === 'gmtools' && (
-            <GMToolsPanel
-              sessionId={ctx?.session?.id ?? null}
-              campaignId={ctx?.campaign?.id ?? null}
-              aiEnabled={aiEnabled}
-            />
-          )}
-        </div>
-      </aside>
-
-    </div>
+    </>
   )
 }

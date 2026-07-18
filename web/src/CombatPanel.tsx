@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { CombatSnapshot, Combatant } from './types'
 import { patchCombatant, advanceTurn, reorderCombatants } from './api'
+import { useToast } from './ui/ToastProvider'
 
 interface Props {
   combat: CombatSnapshot
@@ -19,9 +20,16 @@ function hpBarClass(current: number, max: number): string {
   return 'hp-bar-red'
 }
 
-function parseConditions(json: string): string[] {
+type Condition = { name: string; rounds: number | null }
+
+function parseConditions(json: string): Condition[] {
   try {
-    return JSON.parse(json) as string[]
+    const raw = JSON.parse(json) as (string | { name: string; rounds?: number })[]
+    return raw.map((item) =>
+      typeof item === 'string'
+        ? { name: item, rounds: null }
+        : { name: item.name, rounds: item.rounds ?? null }
+    )
   } catch {
     return []
   }
@@ -42,7 +50,11 @@ function CombatantRow({
   isFirst: boolean
   isLast: boolean
 }) {
-  const [conditions, setConditions] = useState<string[]>(() => parseConditions(c.conditions_json))
+  const toast = useToast()
+  const [conditions, setConditions] = useState<Condition[]>(() => parseConditions(c.conditions_json))
+  useEffect(() => {
+    setConditions(parseConditions(c.conditions_json))
+  }, [c.conditions_json])
   const [showDropdown, setShowDropdown] = useState(false)
   const [editingInit, setEditingInit] = useState(false)
   const [initInput, setInitInput] = useState(String(c.initiative))
@@ -50,29 +62,43 @@ function CombatantRow({
   const pct = c.hp_max > 0 ? Math.max(0, Math.round((c.hp_current / c.hp_max) * 100)) : 0
   const colorClass = hpBarClass(c.hp_current, c.hp_max)
 
-  function removeCondition(cond: string) {
-    const next = conditions.filter((x) => x !== cond)
+  function removeCondition(name: string) {
+    const previous = conditions
+    const next = conditions.filter((x) => x.name !== name)
     setConditions(next)
-    patchCombatant(c.id, { conditions_json: JSON.stringify(next) }).catch(console.error)
+    patchCombatant(c.id, { conditions_json: JSON.stringify(next.map(c2 => c2.rounds === null ? c2.name : c2)) }).catch((cause) => {
+      console.error(cause)
+      setConditions(previous)
+      toast.error(`Could not remove ${name}.`)
+    })
   }
 
-  function addCondition(cond: string) {
-    if (conditions.includes(cond)) return
-    const next = [...conditions, cond]
+  function addCondition(name: string) {
+    if (conditions.some(x => x.name === name)) return
+    const previous = conditions
+    const next = [...conditions, { name, rounds: null }]
     setConditions(next)
-    patchCombatant(c.id, { conditions_json: JSON.stringify(next) }).catch(console.error)
+    patchCombatant(c.id, { conditions_json: JSON.stringify(next.map(c2 => c2.rounds === null ? c2.name : c2)) }).catch((cause) => {
+      console.error(cause)
+      setConditions(previous)
+      toast.error(`Could not add ${name}.`)
+    })
     setShowDropdown(false)
   }
 
   function saveInitiative() {
     const val = parseInt(initInput, 10)
     if (!isNaN(val) && val !== c.initiative) {
-      patchCombatant(c.id, { initiative: val }).catch(console.error)
+      patchCombatant(c.id, { initiative: val }).catch((cause) => {
+        console.error(cause)
+        setInitInput(String(c.initiative))
+        toast.error('Could not update initiative.')
+      })
     }
     setEditingInit(false)
   }
 
-  const available = STANDARD_CONDITIONS.filter((s) => !conditions.includes(s))
+  const available = STANDARD_CONDITIONS.filter((s) => !conditions.some(c2 => c2.name === s))
 
   return (
     <div className={`combatant-card ${c.is_player ? 'player' : 'enemy'} ${isActive ? 'active-turn' : ''}`}>
@@ -87,7 +113,7 @@ function CombatantRow({
               onBlur={saveInitiative}
               onKeyDown={(e) => { if (e.key === 'Enter') saveInitiative() }}
               autoFocus
-              style={{ width: '48px', fontSize: '11px', padding: '1px 3px',
+              style={{ width: '48px', fontSize: '12px', padding: '1px 3px',
                        background: 'var(--surface)', border: '1px solid var(--gold)',
                        color: 'var(--text)' }}
             />
@@ -105,7 +131,7 @@ function CombatantRow({
             onClick={onMoveUp}
             disabled={isFirst}
             title="Move up"
-            style={{ padding: '0 3px', fontSize: '10px', lineHeight: 1,
+            style={{ padding: '0 3px', fontSize: '12px', lineHeight: 1,
                      opacity: isFirst ? 0.3 : 1, cursor: isFirst ? 'default' : 'pointer',
                      background: 'none', border: 'none', color: 'var(--gold-dim)' }}
           >↑</button>
@@ -113,7 +139,7 @@ function CombatantRow({
             onClick={onMoveDown}
             disabled={isLast}
             title="Move down"
-            style={{ padding: '0 3px', fontSize: '10px', lineHeight: 1,
+            style={{ padding: '0 3px', fontSize: '12px', lineHeight: 1,
                      opacity: isLast ? 0.3 : 1, cursor: isLast ? 'default' : 'pointer',
                      background: 'none', border: 'none', color: 'var(--gold-dim)' }}
           >↓</button>
@@ -127,12 +153,12 @@ function CombatantRow({
         <div className="conditions">
           {conditions.map((cond) => (
             <button
-              key={cond}
-              className="condition-badge condition-badge-btn"
-              onClick={() => removeCondition(cond)}
-              title={`Remove ${cond}`}
+              key={cond.name}
+              className={`condition-badge condition-badge-btn${cond.rounds === 1 ? ' condition-badge-expiring' : ''}`}
+              onClick={() => removeCondition(cond.name)}
+              title={`Remove ${cond.name}`}
             >
-              {cond} ×
+              {cond.name}{cond.rounds !== null ? ` (${cond.rounds})` : ''} ×
             </button>
           ))}
           <div className="condition-add-wrap">
@@ -157,6 +183,7 @@ function CombatantRow({
 }
 
 export function CombatPanel({ combat }: Props) {
+  const toast = useToast()
   const { encounter, combatants } = combat
 
   function move(index: number, direction: -1 | 1) {
@@ -164,12 +191,15 @@ export function CombatPanel({ combat }: Props) {
     if (swapIndex < 0 || swapIndex >= combatants.length) return
     const newOrder = combatants.map((c) => c.id)
     ;[newOrder[index], newOrder[swapIndex]] = [newOrder[swapIndex], newOrder[index]]
-    reorderCombatants(encounter.id, newOrder).catch(console.error)
+    reorderCombatants(encounter.id, newOrder).catch((cause) => {
+      console.error(cause)
+      toast.error('Could not reorder combatants.')
+    })
   }
 
   return (
     <div className="combat-grimoire">
-      <h2>⚔ {encounter.name}</h2>
+      <h2>⚔ {encounter.name} <span className="combat-round-badge">Round {encounter.round_number ?? 1}</span></h2>
       {combatants.map((c, idx) => (
         <CombatantRow
           key={c.id}
@@ -181,7 +211,10 @@ export function CombatPanel({ combat }: Props) {
           isLast={idx === combatants.length - 1}
         />
       ))}
-      <button className="next-turn-btn" onClick={() => advanceTurn(encounter.id).catch(console.error)}>
+      <button className="next-turn-btn" onClick={() => advanceTurn(encounter.id).catch((cause) => {
+        console.error(cause)
+        toast.error('Could not advance the turn.')
+      })}>
         Next Turn →
       </button>
     </div>

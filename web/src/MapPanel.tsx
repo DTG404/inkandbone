@@ -1,21 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { CampaignMap, MapPin, MapToken, MapZone } from './api'
-import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone } from './api'
+import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone, mapAssetURL } from './api'
 import type { SessionNPC, Character } from './types'
-
-function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id: number } } {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    (e as Record<string, unknown>)['type'] === 'map_pin_added' &&
-    typeof (e as Record<string, unknown>)['payload'] === 'object' &&
-    (e as Record<string, { map_id: unknown }>)['payload']['map_id'] !== undefined
-  )
-}
-
-function isMapCreatedEvent(e: unknown): boolean {
-  return typeof e === 'object' && e !== null && (e as Record<string, unknown>)['type'] === 'map_created'
-}
+import { isScopedEvent, wsEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface MapPanelProps {
   campaignId: number | null
@@ -26,6 +14,7 @@ interface MapPanelProps {
 }
 
 export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters, sessionNpcs }: MapPanelProps) {
+  const toast = useToast()
   const [maps, setMaps] = useState<CampaignMap[]>([])
   const [activeMapIdx, setActiveMapIdx] = useState(0)
   const [pins, setPins] = useState<MapPin[]>([])
@@ -40,6 +29,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const [pendingZoneName, setPendingZoneName] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [newZoneName, setNewZoneName] = useState('')
   const mapImgRef = useRef<HTMLImageElement>(null)
+  const fxCanvasRef = useRef<HTMLCanvasElement>(null)
 
   function loadMaps(goToLast = false) {
     if (campaignId === null) return
@@ -48,11 +38,11 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       if (goToLast && m.length > 0) {
         setActiveMapIdx(m.length - 1)
       }
-    }).catch(console.error)
+    }).catch(() => setMaps([])) // Background load retries on campaign or map events.
   }
 
   const loadTokens = useCallback((mapId: number) => {
-    fetchMapTokens(mapId).then(setTokens).catch(console.error)
+    fetchMapTokens(mapId).then(setTokens).catch(() => {}) // Background token refresh is event-driven best effort.
   }, [])
 
   useEffect(() => {
@@ -61,10 +51,10 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   }, [campaignId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isMapCreatedEvent(lastEvent)) {
+    if (isScopedEvent(lastEvent, 'map_created', 'campaign_id', campaignId)) {
       loadMaps(true)
     }
-  }, [lastEvent]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastEvent, campaignId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeMap = maps[activeMapIdx] ?? null
 
@@ -79,35 +69,125 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       onActiveMapChange?.(null, null)
       return
     }
-    fetchMapPins(activeMap.id).then(setPins).catch(console.error)
+    fetchMapPins(activeMap.id).then(setPins).catch(() => setPins([]))
     loadTokens(activeMap.id)
-    fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+    fetchMapZones(activeMap.id).then(setZones).catch(() => setZones([]))
     onActiveMapChange?.(activeMap.id, activeMap.image_path)
   }, [activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isMapPinAddedEvent(lastEvent) && activeMap && (lastEvent as { payload: { map_id: number } }).payload.map_id === activeMap.id) {
-      fetchMapPins(activeMap.id).then(setPins).catch(console.error)
+    if (activeMap && isScopedEvent(lastEvent, 'map_pin_added', 'map_id', activeMap.id)) {
+      fetchMapPins(activeMap.id).then(setPins).catch(() => {})
     }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!activeMap) return
-    const e = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
+    const e = wsEvent(lastEvent)
     if (!e) return
     if (e.type === 'token_placed' || e.type === 'token_moved' || e.type === 'token_removed') {
-      const payload = e.payload
-      if (payload && (payload['map_id'] as number) === activeMap.id) {
+      if (e.payload.map_id === activeMap.id) {
         loadTokens(activeMap.id)
       }
     }
     if (e.type === 'zone_revealed') {
-      const p = e.payload as { map_id: number }
-      if (p && p.map_id === activeMap.id) {
-        fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+      if (e.payload.map_id === activeMap.id) {
+        fetchMapZones(activeMap.id).then(setZones).catch(() => {})
       }
     }
   }, [lastEvent, activeMap?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const canvas = fxCanvasRef.current
+    const img = mapImgRef.current
+    if (!canvas || !img) return
+
+    const ro = new ResizeObserver(() => {
+      canvas.width = img.offsetWidth
+      canvas.height = img.offsetHeight
+    })
+    ro.observe(img)
+    canvas.width = img.offsetWidth
+    canvas.height = img.offsetHeight
+    return () => ro.disconnect()
+  }, [maps[activeMapIdx]?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const ev = wsEvent(lastEvent)
+    if (ev?.type !== 'map_fx') return
+    const { map_id, effect, x, y, duration_ms } = ev.payload
+    if (typeof map_id !== 'number' || typeof effect !== 'string' || typeof x !== 'number' || typeof y !== 'number' || typeof duration_ms !== 'number') return
+    const activeMap2 = maps[activeMapIdx] ?? null
+    if (!activeMap2 || activeMap2.id !== map_id) return
+
+    const canvas = fxCanvasRef.current
+    if (!canvas) return
+    const ctx2d: CanvasRenderingContext2D = canvas.getContext('2d')!
+    if (!ctx2d) return
+
+    type Particle = {
+      x: number; y: number; vx: number; vy: number
+      size: number; color: string; born: number; lifespan: number
+    }
+
+    const presets: Record<string, { colors: string[]; count: number; vxRange: [number,number]; vyRange: [number,number]; sizeRange: [number,number]; lifespan: number }> = {
+      fire:      { colors: ['#e75f00','#ff8800','#ffdd00'], count: 40, vxRange: [-0.3,0.3], vyRange: [-0.8,0],   sizeRange: [4,8],  lifespan: 700  },
+      frost:     { colors: ['#80c8ff','#c8e8ff','#ffffff'], count: 30, vxRange: [-0.4,0.4], vyRange: [-0.6,0.1], sizeRange: [3,6],  lifespan: 900  },
+      lightning: { colors: ['#d0e8ff'],                     count: 20, vxRange: [-1.0,1.0], vyRange: [-1.2,1.2], sizeRange: [2,4],  lifespan: 300  },
+      smoke:     { colors: ['#555555','#777777','#888888'], count: 25, vxRange: [-0.2,0.2], vyRange: [-0.3,0],   sizeRange: [6,12], lifespan: 1200 },
+      blood:     { colors: ['#8b0000','#aa0000','#cc0000'], count: 35, vxRange: [-0.5,0.5], vyRange: [0,0.8],    sizeRange: [3,7],  lifespan: 800  },
+      magic:     { colors: ['#8000ff','#cc00aa','#ff00cc'], count: 45, vxRange: [-0.5,0.5], vyRange: [-0.7,0.3], sizeRange: [3,7],  lifespan: 1000 },
+    }
+
+    const preset = presets[effect] ?? presets['magic']
+    const originX = x * canvas.width
+    const originY = y * canvas.height
+    const rng = (lo: number, hi: number) => lo + Math.random() * (hi - lo)
+
+    const particles: Particle[] = Array.from({ length: preset.count }, () => ({
+      x: originX,
+      y: originY,
+      vx: rng(...preset.vxRange) * canvas.width * 0.004,
+      vy: rng(...preset.vyRange) * canvas.height * 0.004,
+      size: rng(...preset.sizeRange),
+      color: preset.colors[Math.floor(Math.random() * preset.colors.length)],
+      born: performance.now(),
+      lifespan: preset.lifespan * rng(0.7, 1.3),
+    }))
+
+    let rafId: number
+    function draw() {
+      ctx2d.clearRect(0, 0, canvas!.width, canvas!.height)
+      const now = performance.now()
+      let alive = false
+      for (const p of particles) {
+        const age = now - p.born
+        if (age >= p.lifespan) continue
+        alive = true
+        const alpha = 1 - age / p.lifespan
+        p.x += p.vx
+        p.y += p.vy
+        ctx2d.globalAlpha = alpha
+        ctx2d.fillStyle = p.color
+        ctx2d.beginPath()
+        ctx2d.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2)
+        ctx2d.fill()
+      }
+      ctx2d.globalAlpha = 1
+      if (alive) rafId = requestAnimationFrame(draw)
+    }
+    rafId = requestAnimationFrame(draw)
+
+    const clearId = setTimeout(() => {
+      cancelAnimationFrame(rafId)
+      ctx2d.clearRect(0, 0, canvas.width, canvas.height)
+    }, duration_ms + 200)
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      clearTimeout(clearId)
+    }
+  }, [lastEvent, maps, activeMapIdx])
 
   function handleZoneMouseDown(e: React.MouseEvent<HTMLImageElement>) {
     if (!zoneEditMode || !mapImgRef.current) return
@@ -140,10 +220,15 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   async function handleCreateZone() {
     if (!pendingZoneName || !newZoneName.trim() || !activeMap) return
     const { x, y, w, h } = pendingZoneName
-    await createMapZone(activeMap.id, newZoneName.trim(), x, y, w, h)
-    setPendingZoneName(null)
-    setNewZoneName('')
-    fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+    try {
+      await createMapZone(activeMap.id, newZoneName.trim(), x, y, w, h)
+      setPendingZoneName(null)
+      setNewZoneName('')
+      fetchMapZones(activeMap.id).then(setZones).catch(() => {})
+    } catch (cause) {
+      console.error(cause)
+      toast.error('Could not create map zone.')
+    }
   }
 
   function handleMapMouseMove(e: React.MouseEvent<HTMLDivElement>) {
@@ -166,6 +251,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
     } catch (err) {
       console.error(err)
       if (activeMap) loadTokens(activeMap.id)
+      toast.error('Could not move map token.')
     }
   }
 
@@ -183,6 +269,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       loadTokens(activeMap.id)
     } catch (err) {
       console.error(err)
+      toast.error('Could not place map token.')
     }
   }
 
@@ -227,7 +314,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
           >
             <img
               ref={mapImgRef}
-              src={`/api/files/${activeMap.image_path}`}
+              src={mapAssetURL(activeMap.id)}
               alt={activeMap.name}
               style={{ width: '100%', display: 'block', minWidth: '400px' }}
               onDragOver={(e) => e.preventDefault()}
@@ -249,7 +336,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                   borderRadius: '50%',
                   width: '18px',
                   height: '18px',
-                  fontSize: '9px',
+                  fontSize: '12px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -313,8 +400,13 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={async (e) => {
                       e.stopPropagation()
-                      await removeToken(token.id)
-                      if (activeMap) loadTokens(activeMap.id)
+                      try {
+                        await removeToken(token.id)
+                        if (activeMap) loadTokens(activeMap.id)
+                      } catch (cause) {
+                        console.error(cause)
+                        toast.error('Could not remove map token.')
+                      }
                     }}
                   >
                     ×
@@ -381,6 +473,11 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                 <button className="map-pin-tooltip-close" onClick={() => setSelectedPin(null)}>×</button>
               </div>
             )}
+            <canvas
+              ref={fxCanvasRef}
+              className="map-fx-canvas"
+              style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 20 }}
+            />
           </div>
           <div className="token-palette-section">
             <button className="token-palette-toggle" onClick={() => setShowPalette(!showPalette)}>
@@ -429,15 +526,25 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                   <span>{zone.name}</span>
                   <button
                     onClick={async () => {
-                      await patchMapZone(zone.id, { is_revealed: !zone.is_revealed })
-                      if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+                      try {
+                        await patchMapZone(zone.id, { is_revealed: !zone.is_revealed })
+                        if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(() => {})
+                      } catch (cause) {
+                        console.error(cause)
+                        toast.error('Could not change zone visibility.')
+                      }
                     }}
                   >
                     {zone.is_revealed ? 'Hide' : 'Reveal'}
                   </button>
                   <button onClick={async () => {
-                    await deleteMapZone(zone.id)
-                    if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(console.error)
+                    try {
+                      await deleteMapZone(zone.id)
+                      if (activeMap) fetchMapZones(activeMap.id).then(setZones).catch(() => {})
+                    } catch (cause) {
+                      console.error(cause)
+                      toast.error('Could not delete map zone.')
+                    }
                   }}>
                     ×
                   </button>

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { patchSessionSummary, generateRecap, patchSessionNotes, fetchXP, createXP, deleteXP, postImprovise, postPreSessionBrief, postDetectThreads, postCampaignAsk } from './api'
 import type { XPEntry } from './types'
+import { StatusRegion } from './ui/StatusRegion'
+import { useToast } from './ui/ToastProvider'
+import { wsEvent } from './wsEvents'
 
 interface JournalPanelProps {
   session: { id: number; summary: string; notes: string } | null
@@ -9,50 +12,10 @@ interface JournalPanelProps {
   aiEnabled: boolean
 }
 
-interface SessionUpdatedPayload {
-  session_id: number
-  summary: string
-}
-
-interface SessionUpdatedEvent {
-  type: 'session_updated'
-  payload: SessionUpdatedPayload
-}
-
-interface XPAddedPayload {
-  session_id: number
-  id: number
-  note: string
-  amount: number | null
-}
-
-interface XPAddedEvent {
-  type: 'xp_added'
-  payload: XPAddedPayload
-}
-
-function isSessionUpdatedEvent(ev: unknown): ev is SessionUpdatedEvent {
-  if (typeof ev !== 'object' || ev === null) return false
-  const e = ev as Record<string, unknown>
-  if (e['type'] !== 'session_updated') return false
-  const payload = e['payload']
-  if (typeof payload !== 'object' || payload === null) return false
-  const p = payload as Record<string, unknown>
-  return typeof p['session_id'] === 'number' && typeof p['summary'] === 'string'
-}
-
-function isXPAddedEvent(ev: unknown): ev is XPAddedEvent {
-  if (typeof ev !== 'object' || ev === null) return false
-  const e = ev as Record<string, unknown>
-  if (e['type'] !== 'xp_added') return false
-  const payload = e['payload']
-  if (typeof payload !== 'object' || payload === null) return false
-  const p = payload as Record<string, unknown>
-  return typeof p['session_id'] === 'number' && typeof p['id'] === 'number' && typeof p['note'] === 'string'
-}
-
 export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: JournalPanelProps) {
+  const toast = useToast()
   const [draft, setDraft] = useState(session?.summary ?? '')
+  const [recapError, setRecapError] = useState('')
   const [notes, setNotes] = useState(session?.notes ?? '')
   const [xpEntries, setXpEntries] = useState<XPEntry[]>([])
   const [milestoneNote, setMilestoneNote] = useState('')
@@ -81,49 +44,66 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
 
   useEffect(() => {
     if (!session) return
-    fetchXP(session.id).then(setXpEntries).catch(console.error)
+    fetchXP(session.id).then(setXpEntries).catch(() => setXpEntries([])) // Background load retries when session changes.
   }, [session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isSessionUpdatedEvent(lastEvent)) return
-    if (lastEvent.payload.session_id !== session?.id) return
-    setDraft(lastEvent.payload.summary)
+    const event = wsEvent(lastEvent)
+    if (event?.type !== 'session_updated' || event.payload.session_id !== session?.id) return
+    if (typeof event.payload.summary === 'string') setDraft(event.payload.summary)
   }, [lastEvent, session?.id])
 
   useEffect(() => {
-    if (!isXPAddedEvent(lastEvent)) return
-    if (lastEvent.payload.session_id !== session?.id) return
-    const incoming = lastEvent.payload
+    const event = wsEvent(lastEvent)
+    if (event?.type !== 'xp_added' || event.payload.session_id !== session?.id) return
+    const incoming = event.payload
+    if (typeof incoming.id !== 'number' || typeof incoming.session_id !== 'number' || typeof incoming.note !== 'string') return
+    const { id, session_id: incomingSessionID, note, amount } = incoming
     setXpEntries(prev => {
-      if (prev.some(e => e.id === incoming.id)) return prev
+      if (prev.some(e => e.id === id)) return prev
       return [...prev, {
-        id: incoming.id,
-        session_id: incoming.session_id,
-        note: incoming.note,
-        amount: incoming.amount,
+        id,
+        session_id: incomingSessionID,
+        note,
+        amount: amount ?? null,
         created_at: new Date().toISOString(),
       }]
     })
   }, [lastEvent, session?.id])
 
   const handleNotesChange = useCallback((value: string) => {
+    const previous = notes
     setNotes(value)
     if (!session) return
     if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current)
     notesDebounceRef.current = setTimeout(() => {
-      patchSessionNotes(session.id, value).catch(console.error)
+      patchSessionNotes(session.id, value).catch((cause) => {
+        console.error(cause)
+        setNotes((current) => current === value ? previous : current)
+        toast.error('Could not save session notes.')
+      })
     }, 300)
-  }, [session])
+  }, [notes, session, toast])
 
   if (session === null) return null
 
   function handleBlur() {
-    patchSessionSummary(session!.id, draft).catch(console.error)
+    patchSessionSummary(session!.id, draft).catch((cause) => {
+      console.error(cause)
+      setDraft(session!.summary)
+      toast.error('Could not save session summary.')
+    })
   }
 
   async function handleGenerateRecap() {
-    const result = await generateRecap(session!.id)
-    setDraft(result.summary)
+    setRecapError('')
+    try {
+      const result = await generateRecap(session!.id)
+      setDraft(result.summary)
+    } catch (cause) {
+      console.error(cause)
+      setRecapError('The recap could not be generated. Try again.')
+    }
   }
 
   async function handleAddMilestone(e: React.FormEvent) {
@@ -137,10 +117,11 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
       setXpEntries(prev => [...prev, entry])
     } catch (err) {
       console.error('Failed to add milestone:', err)
-    } finally {
-      setMilestoneNote('')
-      setMilestoneXP('')
+      toast.error('Could not add milestone.')
+      return
     }
+    setMilestoneNote('')
+    setMilestoneXP('')
   }
 
   async function handleDeleteMilestone(id: number) {
@@ -149,6 +130,7 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
       setXpEntries(prev => prev.filter(e => e.id !== id))
     } catch (err) {
       console.error('Failed to delete milestone:', err)
+      toast.error('Could not delete milestone.')
     }
   }
 
@@ -179,6 +161,7 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
           Generate recap
         </button>
       )}
+      <StatusRegion message={recapError} priority="assertive" />
 
       <div className="scratchpad-section">
         <span className="scratchpad-label">Notes</span>
@@ -235,13 +218,15 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
 
       {aiEnabled && (
         <div className="gm-tools-section">
-          <div
+          <button
+            type="button"
             className="gm-tools-header"
             onClick={() => setGmToolsOpen(o => !o)}
+            aria-expanded={gmToolsOpen}
           >
             <span className="gm-tools-toggle">{gmToolsOpen ? '▼' : '▶'}</span>
             GM Tools
-          </div>
+          </button>
           {gmToolsOpen && (
             <div className="gm-tools-body">
               <div className="gm-tools-buttons">

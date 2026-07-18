@@ -1,0 +1,180 @@
+# Phase 1 Task 6 Implementation Report
+
+## Status
+
+DONE
+
+## Commit scope
+
+- Added incremental migration `056_integrity_repair.sql`; historical migrations, including `038_template_new_ruleset.sql`, remain unchanged.
+- Added the canonical contributor template at `docs/ruleset-template.sql` and routed `AGENTS.md` to it.
+- Declared all 34 SQLite foreign-key delete actions: ownership edges cascade, optional independent references set null, and campaigns restrict ruleset deletion.
+- Added backup-guarded parent-table rebuild support that disables FK enforcement only for the exact registered rebuild migration, on the held exclusive connection, around one transaction. Enforcement is verified off before execution, restored and verified on after success/script failure/ledger failure, and final `foreign_key_check` remains inside the exclusive startup boundary.
+- Added top-down orphan quarantine for every historical FK edge. Required orphans are removed after full-row JSON capture; optional-reference orphans are captured and preserved with the reference cleared. Every source column is represented, and rulebook embedding BLOBs are encoded as uppercase hex with an explicit `hex` encoding marker.
+- Added trigger-backed integrity for the polymorphic `map_tokens.entity_type/entity_id` reference: invalid insert/update rejection and delete cascades for character and session-NPC targets. Historical missing targets are quarantined.
+- Rewrote stored generated-map message links to typed map asset IDs before removing the legacy route. Every `/api/files` request now returns 404 before ServeMux canonical redirects.
+- Removed the temporary legacy map lookup/handler and its data-layer query.
+- Removed only an unreferenced `my_ruleset` seed. A referenced historical row is preserved to prevent campaign loss; similarly named real custom rulesets are untouched.
+- Added measured query indexes and `EXPLAIN QUERY PLAN` proofs. The existing map-token unique index is reused rather than duplicated.
+- Simplified campaign, character, session, adventure, and objective deletion to trust the tested relationship graph. Objective cascade covers arbitrary nesting.
+
+## TDD evidence
+
+### RED
+
+Command:
+
+`GOCACHE=/tmp/inkandbone-task6-gocache go test ./internal/db -run 'DeleteGraph|ForeignKeySchema|TemplateRuleset|IntegrityMigration|IntegrityIndexes|RepairMigrationTemporarily' -v`
+
+Observed failures before implementation:
+
+- 18 relationships reported `NO ACTION` instead of the required explicit action.
+- Character deletion failed with `FOREIGN KEY constraint failed`.
+- `my_ruleset` remained seeded and `docs/ruleset-template.sql` did not exist.
+- Three representative orphan fixtures survived and caused final `foreign_key_check` failure.
+- All nine query-plan cases scanned or sorted without the intended index.
+- The representative parent-table rebuild failed because foreign keys were still enabled.
+
+Additional RED after the recovery matrix was expanded:
+
+- Full recovery payload tests showed missing chronicle/calendar/GM fields and missing rulebook embedding encoding.
+- Referenced `my_ruleset` was initially removed, proving the data-loss edge.
+- Polymorphic token tests accepted missing character/NPC targets and left tokens after direct parent deletion.
+- Expanded historical orphan fixtures had no quarantine rows for missing polymorphic targets.
+
+### GREEN
+
+Focused integrity command:
+
+`GOCACHE=/tmp/inkandbone-task6-gocache go test ./internal/db -run 'MapTokenPolymorphic|IntegrityMigrationQuarantinesOrphans|DeleteObjectiveCascadesNested|DeleteGraph|DeleteCampaignCascadesComplete' -v -count=1 -timeout=30s`
+
+Result: PASS, 5 top-level tests, 0 failures, 0.262s.
+
+Broader migration/deletion command:
+
+`GOCACHE=/tmp/inkandbone-task6-gocache go test ./internal/db -run 'Migration|DeleteGraph|DeleteCampaignCascades|MapToken|TemplateRuleset|ForeignKey|Objective' -v -count=1 -timeout=60s`
+
+Result after the legacy token fixture was corrected to use a real character: PASS in the subsequent full DB run.
+
+## Verification evidence
+
+- `go test ./internal/db -count=1 -timeout=90s` — PASS, 0 failures, 4.677s.
+- `go test -race ./internal/db -run 'DeleteGraph|MapTokenPolymorphic|IntegrityMigrationQuarantinesOrphans|RepairMigration' -v -count=1 -timeout=60s` — PASS, 0 failures, 5.651s.
+- `go test ./internal/api -run 'AssetLegacyFileSurface|ServeFile|DeleteCampaign|DeleteCharacter|DeleteSession' -v -count=1 -timeout=60s` — PASS, 9 top-level tests, 0 failures, 0.445s.
+- `go vet ./...` — PASS before the later test-only polymorphic fixture additions; no production Go changed afterward except the tested objective simplification and migration SQL.
+- `GOOS=windows GOARCH=amd64 go test -c ./internal/db` — PASS; Windows test binary produced.
+- `go build -o /tmp/inkandbone-task6-bin ./cmd/ttrpg` — PASS; binary produced.
+- `npm test -- --run` — PASS, 16 files and 144 tests.
+- `npm run lint` — PASS.
+- `npm run build` — PASS, TypeScript and Vite production build completed.
+- `git diff --check` — PASS.
+- Source search after removal found no runtime `/api/files/` reference outside migration/test fixtures.
+
+## Environment-limited checks
+
+- A full sandboxed API/all-package run reaches existing `httptest` socket tests and panics because the sandbox cannot open loopback listeners. The bounded affected API suite above is green; controller verification should run the unrestricted full suite.
+- A later redundant post-frontend Go rebuild attempt failed because `/tmp` had only 170 MB free (`no space left on device`). This does not replace the earlier successful Go build evidence; controller verification should use a fresh cache location with available space.
+- `golangci-lint` could not initialize in the restricted environment because Go attempted to write its module stat cache under the read-only module cache. Frontend ESLint and Go vet were green; controller verification should rerun golangci-lint with its established unrestricted/cache setup.
+
+## Self-review
+
+- Confirmed migration `038_template_new_ruleset.sql` is unmodified.
+- Confirmed parent rebuilds use create/copy/drop/rename (not rename-old), avoiding SQLite rewriting child references to a temporary parent name.
+- Confirmed FK restoration is asserted after successful repair, script failure, and migration-ledger failure.
+- Confirmed campaign cascade and direct optional-parent deletion use separate fixtures.
+- Confirmed all required and optional historical relationship classes have quarantine fixtures, including both deck-draw parents and both polymorphic token targets.
+- Confirmed recovery payload assertions include late-added campaign/session/combat/calendar fields and deterministic BLOB encoding.
+
+## Reviewer-fix cycle
+
+The first task review returned four Important findings. Each was reproduced with a failing regression before changing migration 056:
+
+1. Rebuilt AUTOINCREMENT tables reset deleted high-water IDs. The upgrade fixture inserted and deleted explicit IDs 60001-60016, then showed all 16 rebuilt table sequences fell to their surviving maximum (or zero) and the next character reused ID 102.
+2. Objective cleanup quarantined only a missing root. A root/child/grandchild fixture left child row 9841 violating `foreign_key_check` after the root was removed.
+3. Global map-link rewriting mapped campaign B's duplicate filename to campaign A's lowest map ID and arbitrarily rewrote a same-campaign ambiguous filename. A follow-up prefix fixture also proved that replacing `maps/overlap` before `maps/overlap.svg` corrupted the longer URL.
+4. The speculative objectives status index was selected for the exact production list query but still emitted `USE TEMP B-TREE FOR ORDER BY`.
+
+Fixes:
+
+- Migration 056 snapshots `sqlite_sequence` for every rebuilt AUTOINCREMENT table before repair and transactionally restores `max(old,current)` after all renames. The test asserts all 16 high-water marks and proves the next generated ID exceeds the deleted high ID.
+- A recursive CTE identifies each missing-root objective and its complete descendant subtree. Every row retains its original full JSON payload before the subtree is deleted; final foreign-key validation is clean.
+- Rewrite candidates now join `messages -> sessions -> campaign`, include only unique `(campaign_id,image_path)` mappings, and leave same-campaign ambiguity unchanged. Each message can rewrite multiple distinct URLs; candidates are applied by descending path length and then map ID to protect prefix-overlapping filenames.
+- `idx_objectives_campaign_status` was replaced with `idx_objectives_campaign_created(campaign_id, created_at DESC, id)`. The query-plan test uses the exact `ListObjectives` SQL and rejects a temporary sort.
+
+Reviewer-fix verification:
+
+- RED command: `go test ./internal/db -run 'PreservesAutoincrement|RewritesLegacyMapURLsWithinCampaign|IntegrityMigrationQuarantinesOrphans|IntegrityIndexes' -v -count=1 -timeout=30s` — failed on all four findings as described above.
+- Prefix-overlap RED: `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` — failed with the longer URL rewritten as `/api/assets/maps/4.svg`.
+- GREEN focused command: same four-test command — PASS, 0 failures, 0.279s.
+- Full DB: `go test ./internal/db -count=1 -timeout=90s` — PASS, 0 failures, 5.055s.
+- Focused race: `go test -race ./internal/db -run 'PreservesAutoincrement|RewritesLegacyMapURLsWithinCampaign|IntegrityMigrationQuarantinesOrphans|IntegrityIndexes' -v -count=1 -timeout=60s` — PASS, 0 failures, 6.984s.
+- Affected API: legacy asset and campaign/character/session deletion focus — PASS, 0 failures, 0.463s.
+- Frontend: 16 files and 144 tests PASS; ESLint PASS; TypeScript/Vite production build PASS.
+
+## Final URL-boundary re-review fix
+
+The final re-review identified one remaining Important issue: when only the shorter path `maps/overlap` was registered, an unknown longer token `/api/files/maps/overlap.svg` was treated as a substring match and became the malformed `/api/assets/maps/<id>.svg`.
+
+RED:
+
+- `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` failed with expected unchanged `D /api/files/maps/overlap.svg` versus actual malformed `D /api/assets/maps/9.svg`.
+
+Fix:
+
+- Migration 056 now tokenizes legacy URLs instead of applying substring replacement. It enumerates complete tokens, ending only at EOS or a non-URL-continuation delimiter; alphanumerics, path separators, dot, hyphen, underscore, percent, query/fragment, and other reserved URL characters remain part of the token.
+- Each complete token is joined exactly to a unique map path in the message session's campaign. Unknown longer tokens, same-campaign ambiguity, and unsafe nested tokens remain unchanged.
+- Messages are reconstructed from ordered, non-overlapping token edits, preserving multiple distinct map URLs, cross-campaign duplicate filenames, and registered prefix-overlap cases.
+
+GREEN:
+
+- Focused URL test — PASS, 0 failures, 0.069s.
+- Repeated focused URL test (`-count=10`) — PASS, 10/10, 0.647s.
+- Full DB suite — PASS, 0 failures, 5.069s.
+- Focused race for URL migration and orphan repair — PASS, 0 failures, 4.173s.
+- API/frontend suites were not rerun because this final fix changes only embedded migration SQL and its DB regression fixture; their prior Task 6 verification remains applicable.
+
+## Punctuation-boundary re-review fix
+
+The final punctuation review found that conventional prose and Markdown suffixes were tokenized as part of otherwise valid legacy URLs. Registered map URLs followed by `),`, `.`, or a closing apostrophe therefore remained on the removed `/api/files/` surface, while a double-quoted URL happened to work because the double quote was already a hard token boundary.
+
+RED:
+
+- `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` failed: expected all four registered URLs in `[map](...), sentence .... quoted "..." apostrophe '...'` to rewrite, but the Markdown, sentence, and apostrophe forms remained unchanged. The double-quoted form alone rewrote.
+
+Fix:
+
+- Token matching now tries the complete token first, then recursively removes only conventional trailing prose/Markdown delimiters (`.,;:!?)]`, apostrophe, and backtick) one character at a time.
+- Exact campaign-local unambiguous map matches are ranked by candidate length, so the longest exact match wins. The trimmed suffix is appended verbatim to the asset URL.
+- Alphanumeric and path-extension characters are never trimmed. The regression therefore proves that a campaign registering only `maps/overlap` does not rewrite unknown `maps/overlap.svg` or `maps/overlap.svg.`.
+
+GREEN:
+
+- Focused punctuation/URL test — PASS, 0 failures, 0.070s.
+- Repeated focused punctuation/URL test (`-count=10`) — PASS, 10/10, 0.674s.
+- Full DB suite — PASS, 0 failures, 5.295s.
+- Focused race for URL migration and orphan repair — PASS, 0 failures, 4.340s.
+- `git diff --check` — PASS.
+- API/frontend suites were not rerun because this review fix changes only embedded migration SQL and its DB regression fixture; the prior Task 6 verification remains applicable.
+
+## Combined-link re-review fix
+
+The next re-review found that compact adjacent legacy links could be consumed as one raw token. Parentheses, brackets, comma, and apostrophe were classified as URL continuation characters, so the first token in compact Markdown or a comma-separated pair extended across the second `/api/files/` start. The nested-start filter then discarded that second start, leaving both links unchanged.
+
+RED:
+
+- `go test ./internal/db -run RewritesLegacyMapURLsWithinCampaignOnly -v -count=1 -timeout=15s` failed for both new fixtures. Expected `[A](/api/assets/maps/2),[B](/api/assets/maps/3)` and `/api/assets/maps/2,/api/assets/maps/3`; both actual strings retained both `/api/files/` URLs.
+
+Fix:
+
+- Markdown parentheses/brackets, comma, and quote delimiters are hard token boundaries rather than URL continuations. Dot, alphanumerics, slash, and other path/extension characters remain continuations, preserving the unknown-longer-token protection.
+- Every raw token is additionally bounded by the next legacy URL start. This prevents one edit from ever spanning another candidate, even when another retained URL character separates them.
+- Nested-start suppression was removed. Every legacy start is resolved independently, and ordered reconstruction applies the resulting non-overlapping edits while preserving all intervening punctuation and text.
+
+GREEN:
+
+- Focused combined-link URL test — PASS, 0 failures, 0.071s.
+- Repeated focused URL test (`-count=10`) — PASS, 10/10, 0.669s.
+- Full DB suite — PASS, 0 failures, 5.384s.
+- Focused race for URL migration and orphan repair — PASS, 0 failures, 4.504s.
+- `git diff --check` — PASS.
+- API/frontend suites were not rerun because this review fix changes only embedded migration SQL and its DB regression fixture; the prior Task 6 verification remains applicable.

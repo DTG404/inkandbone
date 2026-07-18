@@ -46,7 +46,10 @@ func (s *Server) handleGetContext(_ context.Context, _ mcplib.CallToolRequest) (
 		if sessID, err := strconv.ParseInt(sessIDStr, 10, 64); err == nil {
 			snap.Session, _ = s.db.GetSession(sessID)
 
-			if msgs, err := s.db.RecentMessages(sessID, 20); err == nil {
+			if msgs, err := s.db.ListAIVisibleMessages(sessID); err == nil {
+				if len(msgs) > 20 {
+					msgs = msgs[len(msgs)-20:]
+				}
 				snap.RecentMessages = msgs
 			}
 

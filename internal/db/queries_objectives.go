@@ -94,17 +94,14 @@ func (d *DB) DeduplicateObjectives(campaignID int64) (int, error) {
 	return int(n), nil
 }
 
-// DeleteObjective removes an objective and all its sub-tasks.
+// DeleteObjective removes an objective. Its descendants are owned rows and
+// cascade through the declared self-referential foreign key.
 func (d *DB) DeleteObjective(id int64) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	// Delete sub-tasks first
-	if _, err := tx.Exec("DELETE FROM objectives WHERE parent_id = ?", id); err != nil {
-		return err
-	}
 	if _, err := tx.Exec("DELETE FROM objectives WHERE id = ?", id); err != nil {
 		return err
 	}

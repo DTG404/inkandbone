@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { fetchXP, createXP, deleteXP } from './api'
 import type { XPEntry } from './types'
+import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface XPLogPanelProps {
   sessionId: number | null
@@ -8,6 +10,7 @@ interface XPLogPanelProps {
 }
 
 export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
+  const toast = useToast()
   const [entries, setEntries] = useState<XPEntry[]>([])
   const [note, setNote] = useState('')
   const [amount, setAmount] = useState('')
@@ -15,12 +18,12 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
 
   useEffect(() => {
     if (sessionId === null) return
-    fetchXP(sessionId).then(setEntries).catch(console.error)
+    fetchXP(sessionId).then(setEntries).catch(() => setEntries([])) // Background load retries when the session changes.
   }, [sessionId])
 
   useEffect(() => {
-    if (lastEvent && sessionId !== null) {
-      fetchXP(sessionId).then(setEntries).catch(console.error)
+    if (sessionId !== null && isScopedEvent(lastEvent, 'xp_added', 'session_id', sessionId)) {
+      fetchXP(sessionId).then(setEntries).catch(() => {}) // WebSocket refresh is best-effort; a later event retries it.
     }
   }, [lastEvent, sessionId])
 
@@ -36,6 +39,7 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
       setEntries(updated)
     } catch (e) {
       console.error(e)
+      toast.error('Could not add XP entry.')
     } finally {
       setAdding(false)
     }
@@ -50,6 +54,7 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
       }
     } catch (e) {
       console.error(e)
+      toast.error('Could not delete XP entry.')
     }
   }
 
@@ -63,13 +68,22 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
         <div key={e.id} className="xp-log-entry">
           <span className="xp-log-note">{e.note}</span>
           {e.amount != null && <span className="xp-log-amount">+{e.amount}</span>}
-          <button className="xp-log-delete" onClick={() => handleDelete(e.id)}>×</button>
+          <button
+            className="xp-log-delete"
+            aria-label={`Delete XP entry: ${e.note}`}
+            onClick={() => handleDelete(e.id)}
+          >×</button>
         </div>
       ))}
       <div className="xp-log-add">
         <input className="xp-log-input" placeholder="Note…" value={note} onChange={e => setNote(e.target.value)} />
         <input className="xp-log-amount-input" placeholder="XP" type="text" inputMode="numeric" pattern="[0-9]*" value={amount} onChange={e => setAmount(e.target.value)} />
-        <button className="xp-log-btn" onClick={handleAdd} disabled={adding || !note.trim()}>+</button>
+        <button
+          className="xp-log-btn"
+          aria-label="Add XP entry"
+          onClick={handleAdd}
+          disabled={adding || !note.trim()}
+        >+</button>
       </div>
     </div>
   )

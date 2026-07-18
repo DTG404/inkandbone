@@ -3,9 +3,9 @@ package db_test
 import (
 	"testing"
 
+	"github.com/digitalghost404/inkandbone/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/digitalghost404/inkandbone/internal/db"
 )
 
 func newTestDB(t *testing.T) *db.DB {

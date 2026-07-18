@@ -19,13 +19,15 @@ const (
 // OpenRouterClient calls the OpenRouter API using the OpenAI-compatible endpoint.
 // It implements Completer, Responder, and Streamer.
 type OpenRouterClient struct {
-	apiKey      string
-	model       string
-	http        *http.Client
-	think       bool // strip <think>...</think> blocks from responses
+	apiKey            string
+	model             string
+	http              *http.Client
+	think             bool // strip <think>...</think> blocks from responses
 	suppressReasoning bool // send "reasoning": {"exclude": true} to suppress server-side thinking tokens
-	options     map[string]any
+	options           map[string]any
 }
+
+func (*OpenRouterClient) ProviderName() string { return "openrouter" }
 
 // NewOpenRouterClient returns a GM client for DeepSeek V4 Flash:
 // reasoning suppressed server-side and tuned for prose quality.
@@ -33,7 +35,7 @@ func NewOpenRouterClient(apiKey string) *OpenRouterClient {
 	return &OpenRouterClient{
 		apiKey:            apiKey,
 		model:             OpenRouterModel,
-		http:              &http.Client{},
+		http:              NewHTTPClient(),
 		think:             true,
 		suppressReasoning: true,
 		options: map[string]any{
@@ -49,7 +51,7 @@ func newOpenRouterClientWithModel(apiKey, model string) *OpenRouterClient {
 	return &OpenRouterClient{
 		apiKey:            apiKey,
 		model:             model,
-		http:              &http.Client{},
+		http:              NewHTTPClient(),
 		think:             true,
 		suppressReasoning: true,
 	}
@@ -61,15 +63,19 @@ func newOpenRouterAutoClient(apiKey, model string) *OpenRouterClient {
 	return &OpenRouterClient{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 	}
 }
 
 func (c *OpenRouterClient) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
 	return c.chatOnce(ctx, "", []ChatMessage{{Role: "user", Content: prompt}}, maxTokens)
 }
 
 func (c *OpenRouterClient) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
 	text, err := c.chatOnce(ctx, system, history, maxTokens)
 	if err != nil {
 		return "", err
@@ -81,6 +87,9 @@ func (c *OpenRouterClient) Respond(ctx context.Context, system string, history [
 }
 
 func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	payload := map[string]any{
 		"model":      c.model,
 		"max_tokens": maxTokens,
@@ -118,7 +127,6 @@ func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, his
 		return "", fmt.Errorf("openrouter returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	flusher, canFlush := w.(http.Flusher)
 	var (
 		fullText     strings.Builder
 		thinkBuf     strings.Builder
@@ -160,9 +168,8 @@ func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, his
 				thinkBuf.Reset()
 				text := stripEmDash(buf)
 				fullText.WriteString(text)
-				fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-				if canFlush {
-					flusher.Flush()
+				if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+					return fullText.String(), fmt.Errorf("write stream: %w", err)
 				}
 				continue
 			}
@@ -174,9 +181,8 @@ func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, his
 				if after != "" {
 					after = stripEmDash(after)
 					fullText.WriteString(after)
-					fmt.Fprintf(w, "data: %s\n\n", after) //nolint:errcheck
-					if canFlush {
-						flusher.Flush()
+					if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: after}); err != nil {
+						return fullText.String(), fmt.Errorf("write stream: %w", err)
 					}
 				}
 			}
@@ -185,9 +191,8 @@ func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, his
 
 		text := stripEmDash(chunk)
 		fullText.WriteString(text)
-		fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-		if canFlush {
-			flusher.Flush()
+		if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+			return fullText.String(), fmt.Errorf("write stream: %w", err)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -198,11 +203,13 @@ func (c *OpenRouterClient) StreamRespond(ctx context.Context, system string, his
 		if !strings.HasPrefix(thinkBuf.String(), "<think>") {
 			text := stripEmDash(thinkBuf.String())
 			fullText.WriteString(text)
-			fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-			if canFlush {
-				flusher.Flush()
+			if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+				return fullText.String(), fmt.Errorf("write stream: %w", err)
 			}
 		}
+	}
+	if fullText.Len() == 0 {
+		return "", fmt.Errorf("empty response from OpenRouter")
 	}
 	return fullText.String(), nil
 }
@@ -267,6 +274,8 @@ type DualOpenRouterClient struct {
 	gm   *OpenRouterClient // NVIDIA nemotron — GM narration
 	auto *OpenRouterClient // small/fast model — structured automation tasks
 }
+
+func (*DualOpenRouterClient) ProviderName() string { return "openrouter" }
 
 // NewDualOpenRouterClient creates a client that sends GM calls to OpenRouter (NVIDIA)
 // and automation calls to a fast OpenRouter model specified by autoModel.

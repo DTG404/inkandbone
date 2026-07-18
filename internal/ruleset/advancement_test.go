@@ -1,6 +1,7 @@
 package ruleset
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -44,6 +45,74 @@ func TestXPLabel(t *testing.T) {
 		if got := XPLabel(tt.system); got != tt.want {
 			t.Errorf("XPLabel(%q) = %q, want %q", tt.system, got, tt.want)
 		}
+	}
+}
+
+func TestMinimumXPCost(t *testing.T) {
+	tests := []struct {
+		system    string
+		minimum   int
+		supported bool
+	}{
+		{"vtm", 3, true},
+		{"wrath_glory", 4, true},
+		{"shadowrun", 5, true},
+		{"wfrp", 10, true},
+		{"cyberpunk", 10, true},
+		{"cyberpunk_red", 10, true},
+		{"starwars", 5, true},
+		{"l5r", 2, true},
+		{"theonering", 1, true},
+		{"blades", 8, true},
+		{"ironsworn", 1, true},
+		{"dnd5e", 300, true},
+		{"coc", 0, false},
+		{"paranoia", 0, false},
+		{"dune", 0, false},
+		{"unknown", 0, false},
+	}
+	for _, test := range tests {
+		t.Run(test.system, func(t *testing.T) {
+			minimum, supported := MinimumXPCost(test.system)
+			if minimum != test.minimum || supported != test.supported {
+				t.Fatalf("MinimumXPCost(%q) = (%d, %t), want (%d, %t)", test.system, minimum, supported, test.minimum, test.supported)
+			}
+		})
+	}
+}
+
+func TestMinimumXPCostMatchesLegalCostRules(t *testing.T) {
+	tests := []struct {
+		system   string
+		field    string
+		newValue int
+	}{
+		{"vtm", "athletics", 1},
+		{"wrath_glory", "athletics", 1},
+		{"shadowrun", "specialization", 1},
+		{"wfrp", "ws", 1},
+		{"cyberpunk", "athletics", 1},
+		{"starwars", "athletics", 1},
+		{"l5r", "athletics", 1},
+		{"theonering", "athletics", 1},
+		{"blades", "action:Hunt", 1},
+		{"ironsworn", "asset:Shadow", 2},
+	}
+	for _, test := range tests {
+		t.Run(test.system, func(t *testing.T) {
+			minimum, supported := MinimumXPCost(test.system)
+			if !supported {
+				t.Fatalf("%s unexpectedly unsupported", test.system)
+			}
+			if cost := XPCostFor(test.system, test.field, test.newValue, ""); cost != minimum {
+				t.Fatalf("minimum %d does not match legal %s advance cost %d", minimum, test.field, cost)
+			}
+		})
+	}
+
+	minimum, supported := MinimumXPCost("dnd5e")
+	if !supported || minimum != 300 {
+		t.Fatalf("dnd5e threshold floor = (%d, %t), want (300, true)", minimum, supported)
 	}
 }
 
@@ -136,6 +205,24 @@ func TestXPCostFor_cyberpunkRed(t *testing.T) {
 	}
 }
 
+func TestCyberpunkSeededNameUsesAdvancementRules(t *testing.T) {
+	if got := XPLabel("cyberpunk"); got != "IP" {
+		t.Fatalf("XPLabel(cyberpunk) = %q, want IP", got)
+	}
+	if got := XPCostFor("cyberpunk", "athletics", 1, ""); got != 10 {
+		t.Fatalf("XPCostFor(cyberpunk) = %d, want 10", got)
+	}
+	if fields := ValidFields("cyberpunk"); len(fields) == 0 {
+		t.Fatal("ValidFields(cyberpunk) returned no fields")
+	}
+	if !CanAffordAny("cyberpunk", 10, `{"athletics":0}`) {
+		t.Fatal("CanAffordAny(cyberpunk) rejected the minimum legal skill advance")
+	}
+	if got := CostRulesDescription("cyberpunk"); !strings.Contains(got, "10 IP") {
+		t.Fatalf("CostRulesDescription(cyberpunk) = %q", got)
+	}
+}
+
 func TestXPCostFor_starwars(t *testing.T) {
 	// Skill: new_rating * 5
 	if got := XPCostFor("starwars", "athletics", 3, ""); got != 15 {
@@ -197,10 +284,10 @@ func TestVtMInClanDisciplinesSpacedName(t *testing.T) {
 }
 
 func TestCanAffordAny(t *testing.T) {
-	// W&G with 8 XP: can afford skill at rating 2 (cost 8)
-	statsJSON := `{"xp":8,"strength":2,"agility":2,"toughness":2,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0}`
-	if !CanAffordAny("wrath_glory", 8, statsJSON) {
-		t.Error("expected CanAffordAny=true for W&G with 8 XP and zero skills")
+	// W&G with 4 XP: can afford a zero-rated skill's first dot (cost 4).
+	statsJSON := `{"xp":4,"strength":2,"agility":2,"toughness":2,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0}`
+	if !CanAffordAny("wrath_glory", 4, statsJSON) {
+		t.Error("expected CanAffordAny=true for W&G with 4 XP and a zero-rated skill")
 	}
 	// W&G with 0 XP: cannot afford anything
 	if CanAffordAny("wrath_glory", 0, statsJSON) {

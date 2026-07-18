@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,10 +30,10 @@ func TestAutoSuggestXPSpend_noopForCoC(t *testing.T) {
 	char, err := s.db.GetCharacter(charID)
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	// Should no-op immediately for CoC.
-	go s.autoSuggestXPSpend(1, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
+	go s.autoSuggestXPSpend(context.Background(), 1, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
 
 	// Wait briefly — no xp_spend_suggestions event should arrive.
 	select {
@@ -41,6 +42,37 @@ func TestAutoSuggestXPSpend_noopForCoC(t *testing.T) {
 			"CoC should not emit xp_spend_suggestions")
 	case <-time.After(200 * time.Millisecond):
 		// correct: nothing emitted
+	}
+}
+
+func TestAdvancementConfig(t *testing.T) {
+	s := newTestServer(t)
+	for _, test := range []struct {
+		name    string
+		minimum int
+	}{
+		{"vtm", 3},
+		{"cyberpunk", 10},
+		{"wrath_glory", 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ruleset, err := s.db.GetRulesetByName(test.name)
+			require.NoError(t, err)
+			require.NotNil(t, ruleset)
+
+			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/rulesets/%d/advancement-config", ruleset.ID), nil)
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+			var response struct {
+				MinimumXP int  `json:"minimum_xp"`
+				Supported bool `json:"supported"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, test.minimum, response.MinimumXP)
+			assert.True(t, response.Supported)
+		})
 	}
 }
 
@@ -64,10 +96,10 @@ func TestAutoSuggestXPSpend_sessionCap(t *testing.T) {
 	char, err := s.db.GetCharacter(charID)
 	require.NoError(t, err)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	// Session cap reached — should no-op.
-	go s.autoSuggestXPSpend(sessionID, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
+	go s.autoSuggestXPSpend(context.Background(), sessionID, charID, char, rs, map[string]any{"xp": float64(50)}, 50)
 
 	select {
 	case ev := <-ch:
@@ -92,7 +124,7 @@ func TestHandleAdvanceCharacter_wgAttribute(t *testing.T) {
 	statsJSON := `{"archetype":"Imperial Guardsman","tier":1,"strength":2,"agility":2,"toughness":4,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0,"xp":20,"wounds":9,"resilience":5,"determination":4,"shock":3,"resolve":1,"conviction":2,"influence":1,"defence":1,"talents":""}`
 	require.NoError(t, s.db.UpdateCharacterData(charID, statsJSON))
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	body := `{"field":"toughness","new_value":5}`
 	req := httptest.NewRequest(http.MethodPost,
@@ -309,8 +341,8 @@ func TestHandleAdvanceCharacter_dnd5eLevel(t *testing.T) {
 	var stats map[string]any
 	require.NoError(t, json.Unmarshal([]byte(char.DataJSON), &stats))
 	assert.Equal(t, float64(2), stats["level"])
-	assert.Equal(t, float64(15), stats["hp"]) // +5
-	assert.Equal(t, float64(300), stats["xp"]) // XP NOT subtracted for dnd5e
+	assert.Equal(t, float64(15), stats["hp"])               // +5
+	assert.Equal(t, float64(300), stats["xp"])              // XP NOT subtracted for dnd5e
 	assert.Equal(t, float64(2), stats["proficiency_bonus"]) // floor((2-1)/4)+2 = 2
 }
 

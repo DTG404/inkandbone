@@ -13,8 +13,10 @@ func TestMapTokenCRUD(t *testing.T) {
 
 	mapID, err := d.CreateMap(campID, "Dungeon", "maps/a.svg")
 	require.NoError(t, err)
+	characterID, err := d.CreateCharacter(campID, "Token Hero")
+	require.NoError(t, err)
 
-	tokenID, err := d.PlaceToken(mapID, "character", 99, 0.5, 0.5)
+	tokenID, err := d.PlaceToken(mapID, "character", characterID, 0.5, 0.5)
 	require.NoError(t, err)
 	assert.Positive(t, tokenID)
 
@@ -24,7 +26,7 @@ func TestMapTokenCRUD(t *testing.T) {
 	assert.Equal(t, "character", tokens[0].EntityType)
 
 	// duplicate placement returns error
-	_, err = d.PlaceToken(mapID, "character", 99, 0.3, 0.3)
+	_, err = d.PlaceToken(mapID, "character", characterID, 0.3, 0.3)
 	assert.Error(t, err)
 
 	require.NoError(t, d.MoveToken(tokenID, 0.8, 0.2))

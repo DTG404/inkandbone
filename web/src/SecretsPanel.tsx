@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { listSecrets, createSecret, revealSecret, updateSecret, deleteSecret } from './api'
 import type { Secret } from './types'
+import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface SecretsPanelProps {
   campaignId: number
@@ -11,6 +13,7 @@ interface SecretsPanelProps {
 const CATEGORY_OPTIONS = ['secret', 'handout', 'clue']
 
 export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelProps) {
+  const toast = useToast()
   const [secrets, setSecrets] = useState<Secret[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -21,6 +24,11 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
   const [filter, setFilter] = useState<'all' | 'hidden' | 'revealed'>('all')
 
   useEffect(() => {
+    listSecrets(campaignId).then(setSecrets).catch(() => {})
+  }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'secrets_updated', 'campaign_id', campaignId)) return
     listSecrets(campaignId).then(setSecrets).catch(() => {})
   }, [campaignId, lastEvent])
 
@@ -53,6 +61,7 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
       resetForm()
     } catch (err) {
       console.error('Failed to save secret:', err)
+      toast.error('Could not save secret.')
     }
   }
 
@@ -64,6 +73,7 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
       setSecrets(updated)
     } catch (err) {
       console.error('Failed to reveal secret:', err)
+      toast.error('Could not reveal secret.')
     }
   }
 
@@ -73,6 +83,7 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
       setSecrets(secrets.filter(s => s.id !== id))
     } catch (err) {
       console.error('Failed to delete secret:', err)
+      toast.error('Could not delete secret.')
     }
   }
 
@@ -144,11 +155,11 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
           <ul className="secret-list">
             {hidden.map(s => (
               <li key={s.id} className={`secret-item secret-item--hidden`}>
-                <div className="secret-header" onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
+                <button type="button" className="secret-header" aria-label={`Toggle secret ${s.title}`} onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
                   <span className="secret-category-badge secret-category--{s.category}">{s.category}</span>
                   <span className="secret-title secret-title--dimmed">{s.title}</span>
                   <span className="secret-expand-icon">{expandedId === s.id ? '▴' : '▾'}</span>
-                </div>
+                </button>
                 {expandedId === s.id && (
                   <div className="secret-body">
                     <p className="secret-content-hidden">Content hidden — reveal to view</p>
@@ -173,15 +184,20 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
           <ul className="secret-list">
             {revealed.map(s => (
               <li key={s.id} className="secret-item secret-item--revealed">
-                <div className="secret-header" onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
+                <button type="button" className="secret-header" aria-label={`Toggle secret ${s.title}`} onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
                   <span className="secret-category-badge">{s.category}</span>
                   <span className="secret-title">{s.title}</span>
                   <span className="secret-expand-icon">{expandedId === s.id ? '▴' : '▾'}</span>
-                </div>
+                </button>
                 {expandedId === s.id && (
                   <div className="secret-body">
                     <p className="secret-content">{s.content}</p>
                     <div className="secret-actions">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleReveal(s.id) }}
+                        disabled={sessionId === null}
+                        title="Push to all players again"
+                      >Push</button>
                       <button onClick={(e) => { e.stopPropagation(); startEdit(s) }}>Edit</button>
                       <button onClick={(e) => { e.stopPropagation(); handleDelete(s.id) }}>Delete</button>
                     </div>

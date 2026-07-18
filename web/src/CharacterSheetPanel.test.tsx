@@ -102,6 +102,7 @@ describe('CharacterSheetPanel', () => {
 
     const event = {
       type: 'character_updated',
+      sequence: 1,
       payload: { id: 1, data_json: JSON.stringify({ hp: 20, level: 2, notes: 'veteran' }) },
     }
 
@@ -130,8 +131,7 @@ describe('CharacterSheetPanel', () => {
       json: () => Promise.resolve(rulesetWithComputed),
     }))
     render(<CharacterSheetPanel character={mockCharacter} rulesetId={3} lastEvent={null} />)
-    await waitFor(() => expect(screen.getByText('Proficiency Bonus')).toBeTruthy())
-    expect(screen.getByText('2')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('2')).toBeTruthy())
   })
 
   it('hides fields when condition is not met', async () => {

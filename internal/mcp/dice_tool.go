@@ -39,10 +39,6 @@ func (s *Server) handleRollDice(_ context.Context, req mcplib.CallToolRequest) (
 	summary := fmt.Sprintf("Rolled %s: **%d** [%s]", expr, total, strings.Join(parts, ", "))
 
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventDiceRolled, Payload: map[string]any{
-		"expression": expr,
-		"total":      total,
-		"breakdown":  breakdown,
-	}})
+	s.bus.Publish(api.Event{Type: api.EventDiceRolled, Payload: &api.DiceRolledPayload{SessionID: api.RealtimeInt64(sessID), Expression: api.RealtimePtr(expr), Result: api.RealtimeInt64(total), Breakdown: api.RealtimeArray(breakdown)}})
 	return mcplib.NewToolResultText(summary), nil
 }

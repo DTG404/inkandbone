@@ -46,7 +46,7 @@ func (s *Server) handleStartCombat(_ context.Context, req mcplib.CallToolRequest
 	}
 
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventCombatStarted, Payload: map[string]any{"encounter_id": encID, "name": name}})
+	s.bus.Publish(api.Event{Type: api.EventCombatStarted, Payload: &api.CombatStartedPayload{SessionID: api.RealtimeInt64(sessID), EncounterID: api.RealtimeInt64(encID), Name: api.RealtimePtr(name)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("combat %q started (encounter %d, %d combatants)", name, encID, len(inputs))), nil
 }
 
@@ -72,7 +72,7 @@ func (s *Server) handleUpdateCombatant(_ context.Context, req mcplib.CallToolReq
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventCombatantUpdated, Payload: map[string]any{"combatant_id": combID}})
+	s.bus.Publish(api.Event{Type: api.EventCombatantUpdated, Payload: &api.CombatantUpdatedPayload{SessionID: api.RealtimeInt64(sessID), CombatantID: api.RealtimeInt64(combID)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("combatant %d updated", combID)), nil
 }
 
@@ -93,6 +93,6 @@ func (s *Server) handleEndCombat(_ context.Context, req mcplib.CallToolRequest) 
 	}
 
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventCombatEnded, Payload: map[string]any{"encounter_id": enc.ID}})
+	s.bus.Publish(api.Event{Type: api.EventCombatEnded, Payload: &api.CombatEndedPayload{SessionID: api.RealtimeInt64(sessID), EncounterID: api.RealtimeInt64(enc.ID)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("combat encounter %d ended", enc.ID)), nil
 }

@@ -23,15 +23,17 @@ type OllamaClient struct {
 	think   bool           // prepend /think to system prompt for Qwen3 reasoning mode
 }
 
+func (*OllamaClient) ProviderName() string { return "ollama" }
+
 // NewOllamaClient creates an OllamaClient for the given model using the default
 // localhost:11434 base URL. Override with OLLAMA_HOST env var via NewOllamaClientWithURL.
 func NewOllamaClient(model string) *OllamaClient {
-	return &OllamaClient{model: model, baseURL: defaultOllamaURL, http: &http.Client{}}
+	return &OllamaClient{model: model, baseURL: defaultOllamaURL, http: NewHTTPClient()}
 }
 
 // NewOllamaClientWithURL is like NewOllamaClient but uses the given base URL (for tests).
 func NewOllamaClientWithURL(model, baseURL string) *OllamaClient {
-	return &OllamaClient{model: model, baseURL: baseURL, http: &http.Client{}}
+	return &OllamaClient{model: model, baseURL: baseURL, http: NewHTTPClient()}
 }
 
 // NewOllamaGMClient creates an OllamaClient tuned for GM roleplay:
@@ -43,7 +45,7 @@ func NewOllamaGMClient(model string) *OllamaClient {
 	return &OllamaClient{
 		model:   model,
 		baseURL: defaultOllamaURL,
-		http:    &http.Client{},
+		http:    NewHTTPClient(),
 		options: map[string]any{
 			"num_ctx":        16384,
 			"temperature":    0.85,
@@ -58,11 +60,15 @@ func NewOllamaGMClient(model string) *OllamaClient {
 
 // Generate implements Completer. Sends a single-turn prompt and returns the response.
 func (c *OllamaClient) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
 	return c.chatOnce(ctx, "", []ChatMessage{{Role: "user", Content: prompt}}, maxTokens)
 }
 
 // Respond implements Responder. Sends a multi-turn conversation with a system prompt.
 func (c *OllamaClient) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
 	text, err := c.chatOnce(ctx, system, history, maxTokens)
 	if err != nil {
 		return "", err
@@ -75,6 +81,9 @@ func (c *OllamaClient) Respond(ctx context.Context, system string, history []Cha
 
 // StreamRespond implements Streamer. Streams the response as SSE data lines to w.
 func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	msgs := ollamaMessages(c.applyThink(system), history)
 	payload := map[string]any{
 		"model":      c.model,
@@ -107,7 +116,6 @@ func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history
 		return "", fmt.Errorf("ollama returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	flusher, canFlush := w.(http.Flusher)
 	var (
 		fullText     strings.Builder
 		thinkBuf     strings.Builder
@@ -148,9 +156,8 @@ func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history
 				thinkBuf.Reset()
 				text := stripEmDash(buf)
 				fullText.WriteString(text)
-				fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-				if canFlush {
-					flusher.Flush()
+				if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+					return fullText.String(), fmt.Errorf("write stream: %w", err)
 				}
 				continue
 			}
@@ -162,9 +169,8 @@ func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history
 				if after != "" {
 					after = stripEmDash(after)
 					fullText.WriteString(after)
-					fmt.Fprintf(w, "data: %s\n\n", after) //nolint:errcheck
-					if canFlush {
-						flusher.Flush()
+					if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: after}); err != nil {
+						return fullText.String(), fmt.Errorf("write stream: %w", err)
 					}
 				}
 			}
@@ -172,9 +178,8 @@ func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history
 		}
 		text := stripEmDash(chunk)
 		fullText.WriteString(text)
-		fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-		if canFlush {
-			flusher.Flush()
+		if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+			return fullText.String(), fmt.Errorf("write stream: %w", err)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -187,11 +192,13 @@ func (c *OllamaClient) StreamRespond(ctx context.Context, system string, history
 		if !strings.HasPrefix(thinkBuf.String(), "<think>") {
 			text := stripEmDash(thinkBuf.String())
 			fullText.WriteString(text)
-			fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-			if canFlush {
-				flusher.Flush()
+			if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+				return fullText.String(), fmt.Errorf("write stream: %w", err)
 			}
 		}
+	}
+	if fullText.Len() == 0 {
+		return "", fmt.Errorf("empty response from Ollama")
 	}
 	return fullText.String(), nil
 }
@@ -299,6 +306,8 @@ type DualOllamaClient struct {
 	auto *OllamaClient // handles Generate
 }
 
+func (*DualOllamaClient) ProviderName() string { return "ollama" }
+
 // NewDualOllamaClient creates a split-model Ollama client.
 func NewDualOllamaClient(gmModel, autoModel string) *DualOllamaClient {
 	return &DualOllamaClient{
@@ -327,6 +336,8 @@ type HybridClient struct {
 	gm   *OllamaClient // handles Respond + StreamRespond
 	auto *Client       // handles Generate
 }
+
+func (*HybridClient) ProviderName() string { return "anthropic" }
 
 // NewHybridClient creates a client that sends GM calls to Ollama and automation
 // calls to Anthropic. The GM client is tuned for roleplay quality (see NewOllamaGMClient).

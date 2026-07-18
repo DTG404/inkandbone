@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { listRelationships, createRelationship, deleteRelationship } from './api'
 import type { Relationship } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface RelationshipsPanelProps {
   campaignId: number
+  lastEvent: unknown
 }
 
-export function RelationshipsPanel({ campaignId }: RelationshipsPanelProps) {
+export function RelationshipsPanel({ campaignId, lastEvent }: RelationshipsPanelProps) {
   const [rels, setRels] = useState<Relationship[]>([])
   const [showForm, setShowForm] = useState(false)
   const [fromName, setFromName] = useState('')
@@ -17,6 +19,11 @@ export function RelationshipsPanel({ campaignId }: RelationshipsPanelProps) {
   useEffect(() => {
     listRelationships(campaignId).then(setRels).catch(() => {})
   }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'relationship_updated', 'campaign_id', campaignId)) return
+    listRelationships(campaignId).then(setRels).catch(() => {})
+  }, [campaignId, lastEvent])
 
   async function handleCreate() {
     if (!fromName || !toName) return

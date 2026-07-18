@@ -56,6 +56,7 @@ export interface CombatEncounter {
   name: string
   active: boolean
   active_turn_index: number
+  round_number: number
   created_at: string
 }
 

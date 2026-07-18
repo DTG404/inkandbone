@@ -24,9 +24,9 @@ func (s *Server) handleImprovise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := s.db.ListMessages(sessionID)
+	messages, err := s.db.ListAIVisibleMessages(sessionID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -42,7 +42,7 @@ func (s *Server) handleImprovise(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.aiClient.Generate(r.Context(), sb.String(), 512)
 	if err != nil {
-		http.Error(w, "AI error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (s *Server) handlePreSessionBrief(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.aiClient.Generate(r.Context(), sb.String(), 512)
 	if err != nil {
-		http.Error(w, "AI error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -106,9 +106,9 @@ func (s *Server) handleDetectThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := s.db.ListMessages(sessionID)
+	messages, err := s.db.ListAIVisibleMessages(sessionID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -120,7 +120,7 @@ func (s *Server) handleDetectThreads(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.aiClient.Generate(r.Context(), sb.String(), 512)
 	if err != nil {
-		http.Error(w, "AI error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -146,7 +146,11 @@ func (s *Server) handleCampaignAsk(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Question string `json:"question"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Question == "" {
+	if err := decodeJSON(w, r, &body, shortJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Question == "" {
 		http.Error(w, "question required", http.StatusBadRequest)
 		return
 	}
@@ -163,7 +167,7 @@ func (s *Server) handleCampaignAsk(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.aiClient.Generate(r.Context(), sb.String(), 512)
 	if err != nil {
-		http.Error(w, "AI error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -185,9 +189,9 @@ func (s *Server) handleReanalyzeSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	messages, err := s.db.ListMessages(id)
+	messages, err := s.db.ListAIVisibleMessages(id)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
@@ -212,8 +216,26 @@ func (s *Server) handleReanalyzeSession(w http.ResponseWriter, r *http.Request) 
 		corpus = corpus[len(corpus)-maxCorpusChars:]
 	}
 
-	go s.autoDetectObjectives(context.Background(), id, corpus)
-	go s.extractNPCs(context.Background(), id, corpus)
+	immutableCorpus := corpus
+	err = s.automations.Submit(r.Context(), AutomationJob{
+		Key:       fmt.Sprintf("%d:session_reanalysis", id),
+		SessionID: id,
+		Kind:      settingAutoDetectObj,
+		Mode:      JobModeEvent,
+		HealthKinds: []string{
+			settingAutoDetectObj,
+			settingAutoExtractNPCs,
+		},
+		Run: func(ctx context.Context) error {
+			s.autoDetectObjectives(ctx, id, immutableCorpus)
+			s.extractNPCs(ctx, id, immutableCorpus)
+			return nil
+		},
+	})
+	if err != nil {
+		respondAutomationSubmissionError(w, err)
+		return
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]string{"status": "reanalysis started"})

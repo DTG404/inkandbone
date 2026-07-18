@@ -74,13 +74,15 @@ func (d *DB) UpdateAdventure(id int64, title, description, status string, sortOr
 
 // DeleteAdventure removes an adventure by ID.
 func (d *DB) DeleteAdventure(id int64) error {
-	// Set adventure_id to NULL for all sessions in this adventure before deleting
-	_, err := d.db.Exec(`UPDATE sessions SET adventure_id = NULL WHERE adventure_id = ?`, id)
+	tx, err := d.db.Begin()
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`DELETE FROM adventures WHERE id = ?`, id)
-	return err
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM adventures WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ListSessionsByAdventure returns sessions for a given adventure.

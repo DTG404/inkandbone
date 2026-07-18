@@ -23,7 +23,11 @@ func (s *Server) handleCreateFaction(w http.ResponseWriter, r *http.Request) {
 		ResourcesJSON string `json:"resources_json"`
 		Color         string `json:"color"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Name == "" {
 		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
@@ -42,11 +46,11 @@ func (s *Server) handleCreateFaction(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.db.CreateFaction(campaignID, body.Name, body.Description, factionType, influence, body.ResourcesJSON, color)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: &FactionUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -62,7 +66,7 @@ func (s *Server) handleListFactions(w http.ResponseWriter, r *http.Request) {
 	}
 	factions, err := s.db.ListFactions(campaignID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if factions == nil {
@@ -103,8 +107,8 @@ func (s *Server) handleUpdateFaction(w http.ResponseWriter, r *http.Request) {
 		ResourcesJSON string `json:"resources_json"`
 		Color         string `json:"color"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -123,11 +127,20 @@ func (s *Server) handleUpdateFaction(w http.ResponseWriter, r *http.Request) {
 	if color == "" {
 		color = "#c9a84c"
 	}
-	if err := s.db.UpdateFaction(id, body.Name, body.Description, factionType, influence, body.ResourcesJSON, color); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+	faction, err := s.db.GetFaction(id)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"id": id}})
+	if faction == nil {
+		http.Error(w, "faction not found", http.StatusNotFound)
+		return
+	}
+	if err := s.db.UpdateFaction(id, body.Name, body.Description, factionType, influence, body.ResourcesJSON, color); err != nil {
+		serverError(w, r, err)
+		return
+	}
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: &FactionUpdatedPayload{CampaignID: RealtimeInt64(faction.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -138,9 +151,19 @@ func (s *Server) handleDeleteFaction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.DeleteFaction(id); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+	faction, err := s.db.GetFaction(id)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
+	if faction == nil {
+		http.Error(w, "faction not found", http.StatusNotFound)
+		return
+	}
+	if err := s.db.DeleteFaction(id); err != nil {
+		serverError(w, r, err)
+		return
+	}
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: &FactionUpdatedPayload{CampaignID: RealtimeInt64(faction.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

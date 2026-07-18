@@ -2,17 +2,19 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 )
 
 type CombatEncounter struct {
-	ID               int64  `json:"id"`
-	SessionID        int64  `json:"session_id"`
-	Name             string `json:"name"`
-	Active           bool   `json:"active"`
-	ActiveTurnIndex  int    `json:"active_turn_index"`
-	CreatedAt        string `json:"created_at"`
+	ID              int64  `json:"id"`
+	SessionID       int64  `json:"session_id"`
+	Name            string `json:"name"`
+	Active          bool   `json:"active"`
+	ActiveTurnIndex int    `json:"active_turn_index"`
+	RoundNumber     int    `json:"round_number"`
+	CreatedAt       string `json:"created_at"`
 }
 
 func (d *DB) CreateEncounter(sessionID int64, name string) (int64, error) {
@@ -43,9 +45,9 @@ func (d *DB) GetActiveEncounter(sessionID int64) (*CombatEncounter, error) {
 	e := &CombatEncounter{}
 	var active int
 	err := d.db.QueryRow(
-		"SELECT id, session_id, name, active, active_turn_index, created_at FROM combat_encounters WHERE session_id = ? AND active = 1",
+		"SELECT id, session_id, name, active, active_turn_index, round_number, created_at FROM combat_encounters WHERE session_id = ? AND active = 1",
 		sessionID,
-	).Scan(&e.ID, &e.SessionID, &e.Name, &active, &e.ActiveTurnIndex, &e.CreatedAt)
+	).Scan(&e.ID, &e.SessionID, &e.Name, &active, &e.ActiveTurnIndex, &e.RoundNumber, &e.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -61,28 +63,103 @@ func (d *DB) EndEncounter(id int64) error {
 	return err
 }
 
-// AdvanceTurn increments active_turn_index modulo the number of combatants.
-// Returns the new index. Returns 0 if the encounter has no combatants.
-// Returns an error containing "not found" if the encounter does not exist.
-func (d *DB) AdvanceTurn(encounterID int64) (int, error) {
+// decayConditions decrements the `rounds` field on timed conditions in the JSON
+// array and drops any that reach 0. String items (permanent conditions) are unchanged.
+func decayConditions(condJSON string) (string, error) {
+	if condJSON == "" || condJSON == "[]" || condJSON == "null" {
+		return "[]", nil
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal([]byte(condJSON), &raw); err != nil {
+		return condJSON, nil
+	}
+	out := make([]json.RawMessage, 0, len(raw))
+	for _, item := range raw {
+		var timed struct {
+			Name   string `json:"name"`
+			Rounds int    `json:"rounds"`
+		}
+		if json.Unmarshal(item, &timed) == nil && timed.Name != "" {
+			if timed.Rounds <= 1 {
+				continue // expired
+			}
+			newItem, _ := json.Marshal(struct {
+				Name   string `json:"name"`
+				Rounds int    `json:"rounds"`
+			}{timed.Name, timed.Rounds - 1})
+			out = append(out, newItem)
+		} else {
+			out = append(out, item) // plain string — permanent
+		}
+	}
+	result, err := json.Marshal(out)
+	if err != nil {
+		return condJSON, err
+	}
+	return string(result), nil
+}
+
+// AdvanceTurn advances active_turn_index, increments round_number on wrap,
+// and decays timed conditions on the newly-active combatant.
+// Returns the new index and the current round number.
+func (d *DB) AdvanceTurn(encounterID int64) (nextIdx int, roundNumber int, err error) {
 	var current int
-	err := d.db.QueryRow("SELECT active_turn_index FROM combat_encounters WHERE id = ?", encounterID).Scan(&current)
+	err = d.db.QueryRow("SELECT active_turn_index FROM combat_encounters WHERE id = ?", encounterID).Scan(&current)
 	if err == sql.ErrNoRows {
-		return 0, fmt.Errorf("combat encounter %d not found", encounterID)
+		return 0, 0, fmt.Errorf("combat encounter %d not found", encounterID)
 	}
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
+
 	var count int
-	if err := d.db.QueryRow("SELECT COUNT(*) FROM combatants WHERE encounter_id = ?", encounterID).Scan(&count); err != nil {
-		return 0, err
+	if err = d.db.QueryRow("SELECT COUNT(*) FROM combatants WHERE encounter_id = ?", encounterID).Scan(&count); err != nil {
+		return 0, 0, err
 	}
 	if count == 0 {
-		return 0, nil
+		return 0, 1, nil
 	}
+
 	next := (current + 1) % count
-	_, err = d.db.Exec("UPDATE combat_encounters SET active_turn_index = ? WHERE id = ?", next, encounterID)
-	return next, err
+	wraps := next == 0
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err = tx.Exec("UPDATE combat_encounters SET active_turn_index = ? WHERE id = ?", next, encounterID); err != nil {
+		return 0, 0, err
+	}
+	if wraps {
+		if _, err = tx.Exec("UPDATE combat_encounters SET round_number = round_number + 1 WHERE id = ?", encounterID); err != nil {
+			return 0, 0, err
+		}
+	}
+
+	// Decay conditions on the newly-active combatant.
+	var combID int64
+	var condJSON string
+	scanErr := tx.QueryRow(
+		"SELECT id, conditions_json FROM combatants WHERE encounter_id = ? ORDER BY sort_order ASC LIMIT 1 OFFSET ?",
+		encounterID, next,
+	).Scan(&combID, &condJSON)
+	if scanErr == nil && combID != 0 {
+		newCond, _ := decayConditions(condJSON)
+		if newCond != condJSON {
+			if _, err = tx.Exec("UPDATE combatants SET conditions_json = ? WHERE id = ?", newCond, combID); err != nil {
+				return 0, 0, err
+			}
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	err = d.db.QueryRow("SELECT round_number FROM combat_encounters WHERE id = ?", encounterID).Scan(&roundNumber)
+	return next, roundNumber, err
 }
 
 // --- Combatants ---

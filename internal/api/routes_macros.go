@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -15,7 +14,7 @@ func (s *Server) handleListMacros(w http.ResponseWriter, r *http.Request) {
 	}
 	macros, err := s.db.ListMacros(charID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if macros == nil {
@@ -34,7 +33,7 @@ func (s *Server) handleCreateMacro(w http.ResponseWriter, r *http.Request) {
 	// Enforce 10-macro cap
 	existing, err := s.db.ListMacros(charID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if len(existing) >= 10 {
@@ -47,7 +46,11 @@ func (s *Server) handleCreateMacro(w http.ResponseWriter, r *http.Request) {
 		ActionText string `json:"action_text"`
 		Color      string `json:"color"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Label == "" || body.ActionText == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Label == "" || body.ActionText == "" {
 		http.Error(w, "label and action_text are required", http.StatusBadRequest)
 		return
 	}
@@ -57,7 +60,7 @@ func (s *Server) handleCreateMacro(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateMacro(charID, body.Label, body.ActionText, color)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -75,12 +78,16 @@ func (s *Server) handlePatchMacro(w http.ResponseWriter, r *http.Request) {
 		ActionText string `json:"action_text"`
 		Color      string `json:"color"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Label == "" || body.ActionText == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Label == "" || body.ActionText == "" {
 		http.Error(w, "label and action_text are required", http.StatusBadRequest)
 		return
 	}
 	if err := s.db.UpdateMacro(id, body.Label, body.ActionText, body.Color); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -93,7 +100,7 @@ func (s *Server) handleDeleteMacro(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteMacro(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -108,12 +115,16 @@ func (s *Server) handleReorderMacros(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		IDs []int64 `json:"ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) == 0 {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if len(body.IDs) == 0 {
 		http.Error(w, "ids required", http.StatusBadRequest)
 		return
 	}
 	if err := s.db.ReorderMacros(charID, body.IDs); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listDecks, createDeck, deleteDeck, shuffleDeck, drawCard, listDeckDraws } from './api'
 import type { Deck, DeckCard, DeckDraw } from './types'
+import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface Props {
   campaignId: number
@@ -16,7 +18,16 @@ function parseDeckOrder(json: string): number[] {
   try { return JSON.parse(json) as number[] } catch { return [] }
 }
 
+function parseCard(value: unknown): DeckCard | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const front = Reflect.get(value, 'front')
+  const back = Reflect.get(value, 'back')
+  if (typeof front !== 'string' || (back !== undefined && typeof back !== 'string')) return null
+  return { front, ...(typeof back === 'string' ? { back } : {}) }
+}
+
 export function DecksPanel({ campaignId, sessionId, lastEvent }: Props) {
+  const toast = useToast()
   const [decks, setDecks] = useState<Deck[]>([])
   const [draws, setDraws] = useState<DeckDraw[]>([])
   const [lastCard, setLastCard] = useState<{ card: DeckCard; deckName: string } | null>(null)
@@ -25,46 +36,67 @@ export function DecksPanel({ campaignId, sessionId, lastEvent }: Props) {
   const [newCards, setNewCards] = useState<{ front: string; back: string }[]>([{ front: '', back: '' }])
 
   const load = useCallback(() => {
-    listDecks(campaignId).then(setDecks).catch(console.error)
-    listDeckDraws(sessionId).then(setDraws).catch(console.error)
+    listDecks(campaignId).then(setDecks).catch(() => setDecks([]))
+    listDeckDraws(sessionId).then(setDraws).catch(() => setDraws([]))
   }, [campaignId, sessionId])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    const e = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
-    if (e?.type === 'card_drawn' && e.payload) {
+    if (isScopedEvent(lastEvent, 'card_drawn', 'session_id', sessionId)) {
+      const e = lastEvent
       const p = e.payload
-      setLastCard({ card: p['card'] as DeckCard, deckName: p['deck_name'] as string })
+      const card = parseCard(p.card)
+      if (card && typeof p.deck_name === 'string') setLastCard({ card, deckName: p.deck_name })
       load()
     }
-  }, [lastEvent, load])
+  }, [lastEvent, sessionId, load])
 
   async function handleShuffle(deckId: number) {
-    await shuffleDeck(deckId)
-    load()
+    try {
+      await shuffleDeck(deckId)
+      load()
+    } catch (cause) {
+      console.error(cause)
+      toast.error('Could not shuffle deck.')
+    }
   }
 
   async function handleDraw(deck: Deck) {
-    const result = await drawCard(deck.id, sessionId)
-    if (result.exhausted) return
-    if (result.card) setLastCard({ card: result.card, deckName: deck.name })
-    load()
+    try {
+      const result = await drawCard(deck.id, sessionId)
+      if (result.exhausted) return
+      if (result.card) setLastCard({ card: result.card, deckName: deck.name })
+      load()
+    } catch (cause) {
+      console.error(cause)
+      toast.error('Could not draw a card.')
+    }
   }
 
   async function handleCreate() {
     const cards = newCards.filter(c => c.front.trim())
     if (!newName.trim() || cards.length === 0) return
-    await createDeck(campaignId, newName.trim(), cards.map(c => ({ front: c.front, back: c.back || undefined })))
-    setNewName('')
-    setNewCards([{ front: '', back: '' }])
-    load()
+    try {
+      await createDeck(campaignId, newName.trim(), cards.map(c => ({ front: c.front, back: c.back || undefined })))
+      setNewName('')
+      setNewCards([{ front: '', back: '' }])
+      load()
+    } catch (cause) {
+      console.error(cause)
+      toast.error('Could not create deck.')
+    }
   }
 
   async function handleDelete(deck: Deck) {
     if (!confirm(`Delete "${deck.name}"?`)) return
-    await deleteDeck(deck.id)
-    load()
+    try {
+      await deleteDeck(deck.id)
+      load()
+    } catch (cause) {
+      console.error(cause)
+      toast.error('Could not delete deck.')
+    }
   }
 
   const recentDraws = draws.slice(0, 5)

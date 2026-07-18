@@ -61,6 +61,35 @@ func TestGetContext_withActiveState(t *testing.T) {
 	assert.Nil(t, snap.ActiveCombat)
 }
 
+func TestGetContextExcludesWhispers(t *testing.T) {
+	s := newTestMCP(t)
+	d := s.db
+
+	rs, err := d.GetRulesetByName("dnd5e")
+	require.NoError(t, err)
+	require.NotNil(t, rs)
+	campID, err := d.CreateCampaign(rs.ID, "Test Campaign", "")
+	require.NoError(t, err)
+	sessID, err := d.CreateSession(campID, "Session 1", "2026-04-01")
+	require.NoError(t, err)
+	require.NoError(t, d.SetSetting("active_session_id", strconv.FormatInt(sessID, 10)))
+	_, err = d.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = d.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
+
+	result, err := s.handleGetContext(context.Background(), mcplib.CallToolRequest{})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	tc, ok := result.Content[0].(mcplib.TextContent)
+	require.True(t, ok)
+
+	var snap contextSnapshot
+	require.NoError(t, json.Unmarshal([]byte(tc.Text), &snap))
+	require.Len(t, snap.RecentMessages, 1)
+	assert.Equal(t, "PUBLIC_SENTINEL", snap.RecentMessages[0].Content)
+}
+
 func TestGetContext_withActiveCombat(t *testing.T) {
 	s := newTestMCP(t)
 	d := s.db

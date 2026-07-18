@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { listAdventures, createAdventure, updateAdventure, deleteAdventure, fetchSessions } from './api'
 import type { Adventure, Session } from './types'
+import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface AdventuresPanelProps {
   campaignId: number
@@ -17,6 +19,7 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: AdventuresPanelProps) {
+  const toast = useToast()
   const [adventures, setAdventures] = useState<Adventure[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -27,6 +30,12 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   useEffect(() => {
+    listAdventures(campaignId).then(setAdventures).catch(() => {})
+    fetchSessions(campaignId).then(setSessions).catch(() => {})
+  }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'adventure_updated', 'campaign_id', campaignId)) return
     listAdventures(campaignId).then(setAdventures).catch(() => {})
     fetchSessions(campaignId).then(setSessions).catch(() => {})
   }, [campaignId, lastEvent])
@@ -60,6 +69,7 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       resetForm()
     } catch (err) {
       console.error('Failed to save adventure:', err)
+      toast.error('Could not save adventure.')
     }
   }
 
@@ -69,6 +79,7 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       setAdventures(adventures.filter(a => a.id !== id))
     } catch (err) {
       console.error('Failed to delete adventure:', err)
+      toast.error('Could not delete adventure.')
     }
   }
 
@@ -80,6 +91,7 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       setAdventures(updated)
     } catch (err) {
       console.error('Failed to update adventure status:', err)
+      toast.error('Could not update adventure status.')
     }
   }
 
@@ -121,17 +133,20 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
       <ul className="adventure-list">
         {adventures.map(a => (
           <li key={a.id} className="adventure-item">
-            <div className="adventure-header" onClick={() => setExpandedId(expandedId === a.id ? null : a.id)}>
-              <strong className="adventure-name">{a.title}</strong>
-              <span className={`adventure-status-badge status-${a.status}`}>{STATUS_LABELS[a.status] ?? a.status}</span>
+            <div className="adventure-header">
+              <button type="button" className="adventure-primary-action" aria-label={`Toggle adventure ${a.title}`} onClick={() => setExpandedId(expandedId === a.id ? null : a.id)}>
+                <strong className="adventure-name">{a.title}</strong>
+                <span className={`adventure-status-badge status-${a.status}`}>{STATUS_LABELS[a.status] ?? a.status}</span>
+                <span className="adventure-expand-icon">{expandedId === a.id ? '▴' : '▾'}</span>
+              </button>
               <button
                 className="adventure-toggle-status"
-                onClick={(e) => { e.stopPropagation(); quickToggleStatus(a) }}
+                onClick={() => quickToggleStatus(a)}
                 title="Toggle status"
+                aria-label={`Change status for ${a.title}`}
               >
                 ↻
               </button>
-              <span className="adventure-expand-icon">{expandedId === a.id ? '▴' : '▾'}</span>
             </div>
             {expandedId === a.id && (
               <div className="adventure-body">
@@ -141,12 +156,8 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
                   {sessionsForAdventure(a.id).length > 0 ? (
                     <ul className="adventure-sessions-list">
                       {sessionsForAdventure(a.id).map(s => (
-                        <li
-                          key={s.id}
-                          className="adventure-session-item"
-                          onClick={() => onSessionClick(s.id)}
-                        >
-                          {s.title}
+                        <li key={s.id} className="adventure-session-item">
+                          <button type="button" onClick={() => onSessionClick(s.id)}>{s.title}</button>
                         </li>
                       ))}
                     </ul>

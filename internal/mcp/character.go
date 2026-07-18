@@ -95,7 +95,7 @@ func (s *Server) handleUpdateCharacter(_ context.Context, req mcplib.CallToolReq
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventCharacterUpdated, Payload: map[string]any{"id": charID, "data_json": string(merged)}})
+	s.bus.Publish(api.Event{Type: api.EventCharacterUpdated, Payload: &api.CharacterUpdatedPayload{ID: api.RealtimeInt64(charID), DataJson: api.RealtimePtr(string(merged))}})
 	return mcplib.NewToolResultText(fmt.Sprintf("character %d updated", charID)), nil
 }
 
@@ -140,7 +140,7 @@ func (s *Server) handleAddItem(_ context.Context, req mcplib.CallToolRequest) (*
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventCharacterUpdated, Payload: map[string]any{"id": charID, "data_json": string(merged)}})
+	s.bus.Publish(api.Event{Type: api.EventCharacterUpdated, Payload: &api.CharacterUpdatedPayload{ID: api.RealtimeInt64(charID), DataJson: api.RealtimePtr(string(merged))}})
 	return mcplib.NewToolResultText(fmt.Sprintf("added %q to inventory", itemName)), nil
 }
 
@@ -193,6 +193,6 @@ func (s *Server) handleRemoveItem(_ context.Context, req mcplib.CallToolRequest)
 
 	sessID, _ := s.activeSessionID()
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventCharacterUpdated, Payload: map[string]any{"id": charID, "data_json": string(merged)}})
+	s.bus.Publish(api.Event{Type: api.EventCharacterUpdated, Payload: &api.CharacterUpdatedPayload{ID: api.RealtimeInt64(charID), DataJson: api.RealtimePtr(string(merged))}})
 	return mcplib.NewToolResultText(fmt.Sprintf("removed %q from inventory", itemName)), nil
 }

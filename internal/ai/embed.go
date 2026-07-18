@@ -12,9 +12,14 @@ import (
 
 const ollamaEmbedURL = "http://localhost:11434/api/embeddings"
 
+var embeddingHTTPClient = NewHTTPClient()
+
 // EmbedText calls Ollama's native embeddings endpoint with nomic-embed-text.
 // Returns error if Ollama is unreachable.
 func EmbedText(ctx context.Context, text string) ([]float32, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
+
 	payload := map[string]string{"model": "nomic-embed-text", "prompt": text}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -25,7 +30,7 @@ func EmbedText(ctx context.Context, text string) ([]float32, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := embeddingHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

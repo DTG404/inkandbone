@@ -12,9 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mcpStubCompleter struct{ response string }
+type mcpStubCompleter struct {
+	response string
+	prompt   string
+}
 
-func (s *mcpStubCompleter) Generate(_ context.Context, _ string, _ int) (string, error) {
+func (s *mcpStubCompleter) Generate(_ context.Context, prompt string, _ int) (string, error) {
+	s.prompt = prompt
 	return s.response, nil
 }
 
@@ -31,9 +35,13 @@ func TestGenerateSessionRecap(t *testing.T) {
 	sessID, err := s.db.CreateSession(campID, "S1", "2026-04-03")
 	require.NoError(t, err)
 	require.NoError(t, s.db.SetSetting("active_session_id", strconv.FormatInt(sessID, 10)))
+	_, err = s.db.CreateMessage(sessID, "user", "PUBLIC_SENTINEL", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.CreateMessage(sessID, "user", "PRIVATE_SENTINEL", true, nil)
+	require.NoError(t, err)
 
 	// Collect WS events
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	req := mcplib.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"session_id": float64(sessID)}
@@ -50,15 +58,16 @@ func TestGenerateSessionRecap(t *testing.T) {
 		t.Fatal("timeout waiting for session_updated event")
 	}
 	assert.Equal(t, api.EventSessionUpdated, e.Type)
-	payload, ok := e.Payload.(map[string]any)
-	require.True(t, ok, "expected map[string]any payload")
-	assert.Equal(t, sessID, payload["session_id"])
+	payload := eventPayload(t, e)
+	assert.EqualValues(t, sessID, payload["session_id"])
 	assert.Equal(t, "The heroes fought valiantly.", payload["summary"])
 
 	// Verify DB updated
 	sess, err := s.db.GetSession(sessID)
 	require.NoError(t, err)
 	assert.Equal(t, "The heroes fought valiantly.", sess.Summary)
+	assert.Contains(t, stub.prompt, "PUBLIC_SENTINEL")
+	assert.NotContains(t, stub.prompt, "PRIVATE_SENTINEL")
 }
 
 func TestGenerateSessionRecap_noAI(t *testing.T) {

@@ -1,0 +1,15 @@
+{
+  "name": "inkandbone-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "npm run test:lifecycle && node lifecycle.mjs",
+    "test:lifecycle": "node --test lifecycle.test.mjs",
+    "test:ui": "node lifecycle.mjs --ui",
+    "test:headed": "node lifecycle.mjs --headed"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.61.1"
+  }
+}

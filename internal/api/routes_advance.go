@@ -10,9 +10,33 @@ import (
 	"strings"
 	"time"
 
-	ruleset "github.com/digitalghost404/inkandbone/internal/ruleset"
 	"github.com/digitalghost404/inkandbone/internal/ai"
+	ruleset "github.com/digitalghost404/inkandbone/internal/ruleset"
 )
+
+type advancementConfigResponse struct {
+	MinimumXP int  `json:"minimum_xp"`
+	Supported bool `json:"supported"`
+}
+
+func (s *Server) handleAdvancementConfig(w http.ResponseWriter, r *http.Request) {
+	rulesetID, ok := parsePathID(r, "id")
+	if !ok {
+		http.Error(w, "invalid ruleset id", http.StatusBadRequest)
+		return
+	}
+	configured, err := s.db.GetRuleset(rulesetID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if configured == nil {
+		http.NotFound(w, r)
+		return
+	}
+	minimum, supported := ruleset.MinimumXPCost(configured.Name)
+	writeJSON(w, advancementConfigResponse{MinimumXP: minimum, Supported: supported})
+}
 
 func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) {
 	charID, ok := parsePathID(r, "id")
@@ -25,7 +49,11 @@ func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) 
 		Field    string `json:"field"`
 		NewValue int    `json:"new_value"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Field == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Field == "" {
 		http.Error(w, "field and new_value required", http.StatusBadRequest)
 		return
 	}
@@ -39,13 +67,21 @@ func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) 
 
 	// Load campaign -> ruleset.
 	camp, err := s.db.GetCampaign(char.CampaignID)
-	if err != nil || camp == nil {
-		http.Error(w, "campaign not found", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if camp == nil {
+		serverErrorText(w, r, "campaign not found")
 		return
 	}
 	rs, err := s.db.GetRuleset(camp.RulesetID)
-	if err != nil || rs == nil {
-		http.Error(w, "ruleset not found", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if rs == nil {
+		serverErrorText(w, r, "ruleset not found")
 		return
 	}
 	system := rs.Name
@@ -54,7 +90,7 @@ func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) 
 	var stats map[string]any
 	if char.DataJSON != "" && char.DataJSON != "{}" {
 		if err := json.Unmarshal([]byte(char.DataJSON), &stats); err != nil {
-			http.Error(w, "invalid stats JSON", http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -224,19 +260,15 @@ func (s *Server) handleAdvanceCharacter(w http.ResponseWriter, r *http.Request) 
 	// Persist.
 	updated, err := json.Marshal(stats)
 	if err != nil {
-		http.Error(w, "marshal error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: map[string]any{
-		"id":           charID,
-		"character_id": charID,
-		"data_json":    string(updated),
-	}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), DataJson: RealtimePtr(string(updated))}})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"data_json": string(updated)}) //nolint:errcheck
@@ -275,7 +307,7 @@ func setWGTalentRank(stats map[string]any, talentName string, rank int) {
 	stats["talent_ranks"] = ranks
 }
 
-// handleSuggestAdvances triggers the XP spend suggestion goroutine on demand
+// handleSuggestAdvances queues XP spend suggestions on demand
 // (bypassing the per-session cap). The result arrives as a xp_spend_suggestions WS event.
 // POST /api/characters/{id}/suggest-advances
 func (s *Server) handleSuggestAdvances(w http.ResponseWriter, r *http.Request) {
@@ -292,26 +324,39 @@ func (s *Server) handleSuggestAdvances(w http.ResponseWriter, r *http.Request) {
 	}
 
 	camp, err := s.db.GetCampaign(char.CampaignID)
-	if err != nil || camp == nil {
-		http.Error(w, "campaign not found", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if camp == nil {
+		serverErrorText(w, r, "campaign not found")
 		return
 	}
 
 	rs, err := s.db.GetRuleset(camp.RulesetID)
-	if err != nil || rs == nil {
-		http.Error(w, "ruleset not found", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if rs == nil {
+		serverErrorText(w, r, "ruleset not found")
 		return
 	}
 
 	var body struct {
 		HintXP int `json:"hint_xp"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body) // ignore decode errors — hint is optional
+	if r.Body != http.NoBody && r.ContentLength != 0 {
+		if err := decodeJSON(w, r, &body, shortJSONLimit); err != nil {
+			respondDecodeError(w, err)
+			return
+		}
+	}
 
 	var stats map[string]any
 	if char.DataJSON != "" && char.DataJSON != "{}" {
 		if err := json.Unmarshal([]byte(char.DataJSON), &stats); err != nil {
-			http.Error(w, "invalid stats JSON", http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -335,14 +380,42 @@ func (s *Server) handleSuggestAdvances(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// sessionID = 0 signals "manual trigger" — the goroutine skips the per-session cap.
-	go s.autoSuggestXPSpend(0, charID, char, rs, stats, currentXP)
+	// sessionID = 0 signals "manual trigger" and skips the per-session cap.
+	character := *char
+	rulesetCopy := *rs
+	statsCopy := cloneAutomationStats(stats)
+	err = s.automations.Submit(r.Context(), AutomationJob{
+		Key:       fmt.Sprintf("manual-xp:%d", charID),
+		SessionID: 0,
+		Kind:      settingAutoSuggestXP,
+		Mode:      JobModeEvent,
+		Run: func(ctx context.Context) error {
+			s.autoSuggestXPSpend(ctx, 0, charID, &character, &rulesetCopy, statsCopy, currentXP)
+			return nil
+		},
+	})
+	if err != nil {
+		respondAutomationSubmissionError(w, err)
+		return
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
+func cloneAutomationStats(stats map[string]any) map[string]any {
+	encoded, err := json.Marshal(stats)
+	if err != nil {
+		return map[string]any{}
+	}
+	var clone map[string]any
+	if json.Unmarshal(encoded, &clone) != nil {
+		return map[string]any{}
+	}
+	return clone
+}
+
 // handleTalentDescription returns a 1-2 sentence description for any talent
-	// or power name, generated by the AI when not in the static lookup.
+// or power name, generated by the AI when not in the static lookup.
 // GET /api/talent-description?name=Unnatural+Awareness&system=wrath_glory
 func (s *Server) handleTalentDescription(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
@@ -377,12 +450,12 @@ func (s *Server) handleTalentDescription(w http.ResponseWriter, r *http.Request)
 		systemLabel, name,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
 	desc, err := completer.Generate(ctx, prompt, 120)
 	if err != nil {
-		http.Error(w, "AI error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	desc = strings.TrimSpace(desc)

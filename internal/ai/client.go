@@ -47,17 +47,22 @@ type Client struct {
 	http   *http.Client
 }
 
+func (*Client) ProviderName() string { return "anthropic" }
+
 // NewClient returns a Client using the production Anthropic API URL.
 func NewClient(apiKey string) *Client {
-	return &Client{apiKey: apiKey, url: defaultURL, http: &http.Client{}}
+	return &Client{apiKey: apiKey, url: defaultURL, http: NewHTTPClient()}
 }
 
 // NewClientWithURL returns a Client using a custom URL (for tests).
 func NewClientWithURL(apiKey, url string) *Client {
-	return &Client{apiKey: apiKey, url: url, http: &http.Client{}}
+	return &Client{apiKey: apiKey, url: url, http: NewHTTPClient()}
 }
 
 func (c *Client) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
+
 	body, err := json.Marshal(map[string]any{
 		"model":      model,
 		"max_tokens": maxTokens,
@@ -100,6 +105,9 @@ func (c *Client) Generate(ctx context.Context, prompt string, maxTokens int) (st
 }
 
 func (c *Client) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	msgs := make([]map[string]any, len(history))
 	for i, m := range history {
 		msgs[i] = map[string]any{"role": m.Role, "content": m.Content}
@@ -161,6 +169,9 @@ func stripEmDash(s string) string {
 // writes each text delta as an SSE data line to w. It returns the full
 // accumulated response text so the caller can persist it.
 func (c *Client) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	msgs := make([]map[string]any, len(history))
 	for i, m := range history {
 		msgs[i] = map[string]any{"role": m.Role, "content": m.Content}
@@ -194,8 +205,6 @@ func (c *Client) StreamRespond(ctx context.Context, system string, history []Cha
 		return "", fmt.Errorf("anthropic API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	flusher, canFlush := w.(http.Flusher)
-
 	var fullText strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -217,14 +226,16 @@ func (c *Client) StreamRespond(ctx context.Context, system string, history []Cha
 		if event.Type == "content_block_delta" && event.Delta.Type == "text_delta" && event.Delta.Text != "" {
 			text := stripEmDash(event.Delta.Text)
 			fullText.WriteString(text)
-			fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-			if canFlush {
-				flusher.Flush()
+			if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+				return fullText.String(), fmt.Errorf("write stream: %w", err)
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fullText.String(), fmt.Errorf("read stream: %w", err)
+	}
+	if fullText.Len() == 0 {
+		return "", fmt.Errorf("empty response from Anthropic")
 	}
 	return fullText.String(), nil
 }

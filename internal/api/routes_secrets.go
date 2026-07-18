@@ -20,7 +20,11 @@ func (s *Server) handleCreateSecret(w http.ResponseWriter, r *http.Request) {
 		Content  string `json:"content"`
 		Category string `json:"category"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Title == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
@@ -31,11 +35,11 @@ func (s *Server) handleCreateSecret(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.db.CreateSecret(campaignID, body.Title, body.Content, category)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": campaignID}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(campaignID)}})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -51,7 +55,7 @@ func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 	}
 	secrets, err := s.db.ListSecretsByCampaign(campaignID)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if secrets == nil {
@@ -87,15 +91,29 @@ func (s *Server) handleRevealSecret(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SessionID int64 `json:"session_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SessionID == 0 {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.SessionID == 0 {
 		http.Error(w, "session_id required", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.RevealSecret(id, body.SessionID); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+	secret, err := s.db.GetSecret(id)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"id": id}})
+	if secret == nil {
+		http.Error(w, "secret not found", http.StatusNotFound)
+		return
+	}
+	if err := s.db.RevealSecret(id, body.SessionID); err != nil {
+		serverError(w, r, err)
+		return
+	}
+	s.bus.Publish(Event{Type: EventSecretRevealed, Payload: &SecretRevealedPayload{ID: RealtimeInt64(secret.ID), CampaignID: RealtimeInt64(secret.CampaignID), SessionID: RealtimeInt64(body.SessionID), Title: RealtimePtr(secret.Title), Content: RealtimePtr(secret.Content), Category: RealtimePtr(secret.Category)}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(secret.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -111,8 +129,8 @@ func (s *Server) handleUpdateSecret(w http.ResponseWriter, r *http.Request) {
 		Content  string `json:"content"`
 		Category string `json:"category"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Title == "" {
@@ -123,11 +141,20 @@ func (s *Server) handleUpdateSecret(w http.ResponseWriter, r *http.Request) {
 	if category == "" {
 		category = "secret"
 	}
-	if err := s.db.UpdateSecret(id, body.Title, body.Content, category); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+	secret, err := s.db.GetSecret(id)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"id": id}})
+	if secret == nil {
+		http.Error(w, "secret not found", http.StatusNotFound)
+		return
+	}
+	if err := s.db.UpdateSecret(id, body.Title, body.Content, category); err != nil {
+		serverError(w, r, err)
+		return
+	}
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(secret.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -138,9 +165,19 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.DeleteSecret(id); err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+	secret, err := s.db.GetSecret(id)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
+	if secret == nil {
+		http.Error(w, "secret not found", http.StatusNotFound)
+		return
+	}
+	if err := s.db.DeleteSecret(id); err != nil {
+		serverError(w, r, err)
+		return
+	}
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: &SecretsUpdatedPayload{CampaignID: RealtimeInt64(secret.CampaignID), ID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }

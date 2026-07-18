@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react'
 import { listNpcStats, createNpcStat, updateNpcStat, deleteNpcStat } from './api'
 import type { NpcStat } from './types'
+import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface NPCStatBlockPanelProps {
   campaignId: number
+  lastEvent: unknown
 }
 
 const ROLE_OPTIONS = ['brute', 'scout', 'caster', 'leader', 'support', 'minion', 'elite', 'solo', 'other']
 
-export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
+export function NPCStatBlockPanel({ campaignId, lastEvent }: NPCStatBlockPanelProps) {
+  const toast = useToast()
   const [stats, setStats] = useState<NpcStat[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -28,6 +32,11 @@ export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
   useEffect(() => {
     listNpcStats(campaignId).then(setStats).catch(() => {})
   }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'npc_stat_updated', 'campaign_id', campaignId)) return
+    listNpcStats(campaignId).then(setStats).catch(() => {})
+  }, [campaignId, lastEvent])
 
   function resetForm() {
     setName('')
@@ -72,6 +81,7 @@ export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
       resetForm()
     } catch (err) {
       console.error('Failed to save NPC stat:', err)
+      toast.error('Could not save NPC stat block.')
     }
   }
 
@@ -81,6 +91,7 @@ export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
       setStats(stats.filter(s => s.id !== id))
     } catch (err) {
       console.error('Failed to delete NPC stat:', err)
+      toast.error('Could not delete NPC stat block.')
     }
   }
 
@@ -150,15 +161,15 @@ export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
       <ul className="npc-stats-list">
         {filtered.map(n => (
           <li key={n.id} className="npc-stat-item">
-            <div className="npc-stat-header" onClick={() => setExpandedId(expandedId === n.id ? null : n.id)}>
+            <button type="button" className="npc-stat-header" aria-label={`Toggle NPC stat block ${n.name}`} onClick={() => setExpandedId(expandedId === n.id ? null : n.id)}>
               <strong className="npc-stat-name">{n.name}</strong>
               {n.role && <span className="npc-stat-role-badge">{n.role}</span>}
-              <div className="npc-stat-hp-bar">
-                <div className="npc-stat-hp-fill" style={{ width: `${hpPercent(n.hp_max)}%` }} />
-              </div>
+              <span className="npc-stat-hp-bar">
+                <span className="npc-stat-hp-fill" style={{ width: `${hpPercent(n.hp_max)}%` }} />
+              </span>
               <span className="npc-stat-ac">{n.armor_class !== null ? `AC ${n.armor_class}` : '—'}</span>
               <span className="npc-stat-expand-icon">{expandedId === n.id ? '▴' : '▾'}</span>
-            </div>
+            </button>
             {expandedId === n.id && (
               <div className="npc-stat-body">
                 <div className="npc-stat-detail-row"><span className="npc-stat-label">HP:</span> {n.hp_max}</div>

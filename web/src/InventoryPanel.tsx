@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchItems, createItem, patchItem, deleteItem, patchCurrency } from './api'
 import type { Item } from './types'
+import { useToast } from './ui/ToastProvider'
+import { wsEvent } from './wsEvents'
 
 interface InventoryPanelProps {
   characterId: number | null
@@ -24,6 +26,7 @@ export function InventoryPanel({
   lastEvent,
   characterIdOverride,
 }: InventoryPanelProps) {
+  const feedback = useToast()
   const effectiveCharacterId = characterIdOverride ?? characterId
   const [items, setItems] = useState<Item[]>([])
   const [addName, setAddName] = useState('')
@@ -63,19 +66,20 @@ export function InventoryPanel({
   }, [effectiveCharacterId])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
+    const ev = wsEvent(lastEvent)
     if (!ev) return
 
-    if (ev.type === 'item_updated' && effectiveCharacterId !== null) {
+    if (effectiveCharacterId !== null && ev.type === 'item_updated' && ev.payload.character_id === effectiveCharacterId) {
       fetchItems(effectiveCharacterId).then(setItems).catch(() => {})
     }
 
-    if (ev.type === 'character_updated') {
+    if (ev.type === 'character_updated' && (ev.payload.character_id === effectiveCharacterId || ev.payload.id === effectiveCharacterId)) {
       const p = ev.payload
-      if (p && typeof p.currency_delta === 'number' && p.currency_delta !== 0) {
-        const delta = p.currency_delta as number
-        const newBal = p.currency_balance as number
-        const lbl = (p.currency_label as string) ?? label
+      if (typeof p.currency_delta === 'number' && p.currency_delta !== 0) {
+        if (typeof p.currency_balance !== 'number' || typeof p.currency_label !== 'string') return
+        const delta = p.currency_delta
+        const newBal = p.currency_balance
+        const lbl = p.currency_label
 
         // Clear any existing timer
         if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -96,7 +100,7 @@ export function InventoryPanel({
         if (typeof p.currency_label === 'string') setLabel(p.currency_label as string)
       }
     }
-  }, [lastEvent, effectiveCharacterId, label])
+  }, [lastEvent, effectiveCharacterId])
 
   async function handleUndoToast() {
     if (!toast || effectiveCharacterId === null) return
@@ -107,6 +111,8 @@ export function InventoryPanel({
       await patchCurrency(effectiveCharacterId, { currency_balance: toast.prevBalance })
     } catch (err) {
       console.error(err)
+      setBalance(toast.newBalance)
+      feedback.error('Could not undo the currency change.')
     }
   }
 
@@ -117,12 +123,15 @@ export function InventoryPanel({
       return
     }
     const clamped = Math.max(0, parsed)
+    const previous = balance
     setBalance(clamped)
     setEditingBalance(false)
     try {
       await patchCurrency(effectiveCharacterId, { currency_balance: clamped })
     } catch (err) {
       console.error(err)
+      setBalance(previous)
+      feedback.error('Could not update currency balance.')
     }
   }
 
@@ -132,12 +141,15 @@ export function InventoryPanel({
       setEditingLabel(false)
       return
     }
+    const previous = label
     setLabel(trimmed)
     setEditingLabel(false)
     try {
       await patchCurrency(effectiveCharacterId, { currency_label: trimmed })
     } catch (err) {
       console.error(err)
+      setLabel(previous)
+      feedback.error('Could not update currency label.')
     }
   }
 
@@ -150,6 +162,7 @@ export function InventoryPanel({
       setAddName('')
     } catch (err) {
       console.error(err)
+      feedback.error('Could not add item.')
     } finally {
       setSaving(false)
     }
@@ -163,6 +176,7 @@ export function InventoryPanel({
       )
     } catch (err) {
       console.error(err)
+      feedback.error('Could not update item equipment.')
     }
   }
 
@@ -172,6 +186,7 @@ export function InventoryPanel({
       setItems((prev) => prev.filter((i) => i.id !== id))
     } catch (err) {
       console.error(err)
+      feedback.error('Could not delete item.')
     }
   }
 

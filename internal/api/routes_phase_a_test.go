@@ -22,7 +22,7 @@ func TestNextTurn(t *testing.T) {
 	s.db.AddCombatant(encID, "Fighter", 16, 30, true, nil)
 	s.db.AddCombatant(encID, "Goblin", 10, 8, false, nil)
 
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 
 	req := httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/api/combat-encounters/%d/next-turn", encID), nil)
@@ -37,9 +37,10 @@ func TestNextTurn(t *testing.T) {
 		t.Fatal("expected turn_advanced event")
 	}
 	assert.Equal(t, EventTurnAdvanced, got.Type)
-	payload := got.Payload.(map[string]any)
-	assert.Equal(t, encID, payload["encounter_id"])
+	payload := eventPayload(t, got)
+	assert.EqualValues(t, encID, payload["encounter_id"])
 	assert.EqualValues(t, 1, payload["active_turn_index"])
+	assert.EqualValues(t, 1, payload["round_number"]) // first advance, no wrap — still round 1
 }
 
 func TestNextTurnNotFound(t *testing.T) {
@@ -64,7 +65,7 @@ func TestListCreateDeleteXP(t *testing.T) {
 	assert.Empty(t, list)
 
 	// Create
-	ch := s.bus.Subscribe()
+	ch := s.bus.SubscribeContext(t.Context())
 	body := `{"note":"Solved the riddle","amount":100}`
 	req = httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/api/sessions/%d/xp", sessID),

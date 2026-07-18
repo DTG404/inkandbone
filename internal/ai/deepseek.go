@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	deepseekURL      = "https://api.deepseek.com/chat/completions"
-	DeepSeekModel    = "deepseek-v4-flash"
+	deepseekURL   = "https://api.deepseek.com/chat/completions"
+	DeepSeekModel = "deepseek-v4-flash"
 )
 
 // DeepSeekClient calls the DeepSeek API directly via its OpenAI-compatible endpoint.
@@ -24,6 +24,8 @@ type DeepSeekClient struct {
 	http   *http.Client
 	think  bool // strip <think>...</think> blocks from responses
 }
+
+func (*DeepSeekClient) ProviderName() string { return "deepseek" }
 
 // NewDeepSeekClient returns a GM client for DeepSeek V4 Flash.
 // DeepSeek defaults to thinking mode (reasoning tokens before output), but this
@@ -36,7 +38,7 @@ func NewDeepSeekClient(apiKey string) *DeepSeekClient {
 	return &DeepSeekClient{
 		apiKey: apiKey,
 		model:  DeepSeekModel,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 		think:  true,
 	}
 }
@@ -45,7 +47,7 @@ func newDeepSeekClientWithModel(apiKey, model string) *DeepSeekClient {
 	return &DeepSeekClient{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 		think:  true,
 	}
 }
@@ -55,15 +57,19 @@ func newDeepSeekAutoClient(apiKey, model string) *DeepSeekClient {
 	return &DeepSeekClient{
 		apiKey: apiKey,
 		model:  model,
-		http:   &http.Client{},
+		http:   NewHTTPClient(),
 	}
 }
 
 func (c *DeepSeekClient) Generate(ctx context.Context, prompt string, maxTokens int) (string, error) {
+	ctx, cancel := withAutomationDeadline(ctx)
+	defer cancel()
 	return c.chatOnce(ctx, "", []ChatMessage{{Role: "user", Content: prompt}}, maxTokens)
 }
 
 func (c *DeepSeekClient) Respond(ctx context.Context, system string, history []ChatMessage, maxTokens int) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
 	text, err := c.chatOnce(ctx, system, history, maxTokens)
 	if err != nil {
 		return "", err
@@ -75,6 +81,9 @@ func (c *DeepSeekClient) Respond(ctx context.Context, system string, history []C
 }
 
 func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, history []ChatMessage, maxTokens int, w http.ResponseWriter) (string, error) {
+	ctx, cancel := withGMDeadline(ctx)
+	defer cancel()
+
 	payload := map[string]any{
 		"model":      c.model,
 		"max_tokens": maxTokens,
@@ -105,7 +114,6 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 		return "", fmt.Errorf("deepseek returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	flusher, canFlush := w.(http.Flusher)
 	var (
 		fullText     strings.Builder
 		thinkBuf     strings.Builder
@@ -144,9 +152,8 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 				thinkBuf.Reset()
 				text := stripEmDash(buf)
 				fullText.WriteString(text)
-				fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-				if canFlush {
-					flusher.Flush()
+				if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+					return fullText.String(), fmt.Errorf("write stream: %w", err)
 				}
 				continue
 			}
@@ -158,9 +165,8 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 				if after != "" {
 					after = stripEmDash(after)
 					fullText.WriteString(after)
-					fmt.Fprintf(w, "data: %s\n\n", after) //nolint:errcheck
-					if canFlush {
-						flusher.Flush()
+					if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: after}); err != nil {
+						return fullText.String(), fmt.Errorf("write stream: %w", err)
 					}
 				}
 			}
@@ -169,9 +175,8 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 
 		text := stripEmDash(chunk)
 		fullText.WriteString(text)
-		fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-		if canFlush {
-			flusher.Flush()
+		if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+			return fullText.String(), fmt.Errorf("write stream: %w", err)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -181,11 +186,13 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 		if !strings.HasPrefix(thinkBuf.String(), "<think>") {
 			text := stripEmDash(thinkBuf.String())
 			fullText.WriteString(text)
-			fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-			if canFlush {
-				flusher.Flush()
+			if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+				return fullText.String(), fmt.Errorf("write stream: %w", err)
 			}
 		}
+	}
+	if fullText.Len() == 0 {
+		return "", fmt.Errorf("empty response from DeepSeek")
 	}
 	return fullText.String(), nil
 }
@@ -243,6 +250,8 @@ type DualDeepSeekClient struct {
 	gm   *DeepSeekClient
 	auto *DeepSeekClient
 }
+
+func (*DualDeepSeekClient) ProviderName() string { return "deepseek" }
 
 // NewDualDeepSeekClient creates a client that sends GM calls to the default
 // DeepSeek V4 Flash model and automation calls to a faster model.

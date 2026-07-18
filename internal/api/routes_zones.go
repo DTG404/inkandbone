@@ -14,7 +14,7 @@ func (s *Server) handleListZones(w http.ResponseWriter, r *http.Request) {
 	}
 	zones, err := s.db.ListMapZones(mapID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if zones == nil {
@@ -36,7 +36,11 @@ func (s *Server) handleCreateZone(w http.ResponseWriter, r *http.Request) {
 		Width  float64 `json:"width"`
 		Height float64 `json:"height"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.Name == "" {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Name == "" {
 		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
@@ -46,7 +50,7 @@ func (s *Server) handleCreateZone(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateMapZone(mapID, body.Name, body.X, body.Y, body.Width, body.Height)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -68,13 +72,13 @@ func (s *Server) handlePatchZone(w http.ResponseWriter, r *http.Request) {
 		Height     *float64 `json:"height"`
 		IsRevealed *bool    `json:"is_revealed"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	existing, err := s.db.GetMapZone(id)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if existing == nil {
@@ -103,20 +107,15 @@ func (s *Server) handlePatchZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.UpdateMapZone(id, name, x, y, w2, h); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if body.IsRevealed != nil {
 		if err := s.db.RevealZone(id, *body.IsRevealed); err != nil {
-			http.Error(w, "db reveal: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
-		s.bus.Publish(Event{Type: EventZoneRevealed, Payload: map[string]any{
-			"map_id":      existing.MapID,
-			"zone_id":     id,
-			"zone_name":   name,
-			"is_revealed": *body.IsRevealed,
-		}})
+		s.bus.Publish(Event{Type: EventZoneRevealed, Payload: &ZoneRevealedPayload{MapID: RealtimeInt64(existing.MapID), ZoneID: RealtimeInt64(id), ZoneName: RealtimePtr(name), IsRevealed: RealtimePtr(*body.IsRevealed)}})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -128,7 +127,7 @@ func (s *Server) handleDeleteZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteMapZone(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

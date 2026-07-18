@@ -18,6 +18,9 @@ import {
   fetchCharacterOptions,
 } from './api'
 import { AutomationSettingsPanel } from './AutomationSettingsPanel'
+import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
+import { StatusRegion } from './ui/StatusRegion'
 
 type Tab = 'campaigns' | 'characters' | 'sessions' | 'rulebooks' | 'automation'
 
@@ -76,12 +79,25 @@ export function ManagePanel({
   const [rulebookMsg, setRulebookMsg] = useState('')
 
   const [error, setError] = useState('')
+  const [announcement, setAnnouncement] = useState('')
   const [busy, setBusy] = useState(false)
+
+  function showSafeError(message: string, cause: unknown) {
+    console.error(cause)
+    setAnnouncement('')
+    setError(message)
+  }
 
   // Load initial data
   useEffect(() => {
-    fetchRulesets().then(setRulesets).catch(console.error)
-    fetchCampaigns().then(setCampaigns).catch(console.error)
+    fetchRulesets().then(setRulesets).catch((cause) => {
+      console.error(cause)
+      setError('Rulesets could not be loaded. Close and reopen Manage to try again.')
+    })
+    fetchCampaigns().then(setCampaigns).catch((cause) => {
+      console.error(cause)
+      setError('Campaigns could not be loaded. Close and reopen Manage to try again.')
+    })
   }, [])
 
   useEffect(() => {
@@ -91,17 +107,26 @@ export function ManagePanel({
   }, [rulesets, newCampaignRuleset])
 
   const loadCharacters = useCallback((campaignId: number) => {
-    fetchCharacters(campaignId).then(setCharacters).catch(console.error)
+    fetchCharacters(campaignId).then(setCharacters).catch((cause) => {
+      console.error(cause)
+      setError('Characters could not be loaded. Select the campaign again to retry.')
+    })
   }, [])
 
   const loadSessions = useCallback((campaignId: number) => {
-    fetchSessions(campaignId).then(setSessions).catch(console.error)
+    fetchSessions(campaignId).then(setSessions).catch((cause) => {
+      console.error(cause)
+      setError('Sessions could not be loaded. Select the campaign again to retry.')
+    })
   }, [])
 
   const loadRulebookSources = useCallback((campaignId: number) => {
     const campaign = campaigns.find(c => c.id === campaignId)
     if (!campaign) return
-    fetchRulebookSources(campaign.ruleset_id).then(setRulebookSources).catch(console.error)
+    fetchRulebookSources(campaign.ruleset_id).then(setRulebookSources).catch((cause) => {
+      console.error(cause)
+      setError('Rulebook sources could not be loaded. Reopen the Rulebooks tab to retry.')
+    })
   }, [campaigns])
 
   useEffect(() => {
@@ -114,7 +139,10 @@ export function ManagePanel({
       if (campaign) {
         fetchCharacterOptions(campaign.ruleset_id)
           .then(opts => { setCharacterOptions(opts); setCharOverrides({}) })
-          .catch(console.error)
+          .catch((cause) => {
+            console.error(cause)
+            setError('Character options could not be loaded. Select the campaign again to retry.')
+          })
       }
     }
   }, [selectedCampaignId, tab, loadCharacters, loadSessions, loadRulebookSources, campaigns])
@@ -132,7 +160,7 @@ export function ManagePanel({
       const updated = await fetchCampaigns()
       setCampaigns(updated)
     } catch (e) {
-      setError(String(e))
+      showSafeError('The campaign could not be created. Try again.', e)
     } finally {
       setCreatingCampaign(false)
     }
@@ -148,8 +176,9 @@ export function ManagePanel({
       setCampaigns(updated)
       if (selectedCampaignId === id) setSelectedCampaignId(null)
       if (activeCampaignId === id) onContextChanged()
+      setAnnouncement('Campaign deleted.')
     } catch (e) {
-      setError(String(e))
+      showSafeError('The campaign could not be deleted. Try again.', e)
     } finally {
       setBusy(false)
     }
@@ -163,7 +192,7 @@ export function ManagePanel({
       await patchSettings({ campaign_id: id, character_id: 0, session_id: 0 })
       ;(onCampaignActivated ?? onContextChanged)()
     } catch (e) {
-      setError(String(e))
+      showSafeError('The active campaign could not be changed. Try again.', e)
     } finally {
       setBusy(false)
     }
@@ -181,7 +210,7 @@ export function ManagePanel({
       setCharOverrides({})
       loadCharacters(selectedCampaignId)
     } catch (e) {
-      setError(String(e))
+      showSafeError('The character could not be created. Try again.', e)
     } finally {
       setCreatingChar(false)
     }
@@ -195,8 +224,9 @@ export function ManagePanel({
       await deleteCharacter(id)
       if (selectedCampaignId) loadCharacters(selectedCampaignId)
       if (activeCharacterId === id) onContextChanged()
+      setAnnouncement('Character deleted.')
     } catch (e) {
-      setError(String(e))
+      showSafeError('The character could not be deleted. Try again.', e)
     } finally {
       setBusy(false)
     }
@@ -212,7 +242,7 @@ export function ManagePanel({
       await patchSettings(patch)
       onContextChanged()
     } catch (e) {
-      setError(String(e))
+      showSafeError('The active character could not be changed. Try again.', e)
     } finally {
       setBusy(false)
     }
@@ -229,7 +259,7 @@ export function ManagePanel({
       setNewSessionTitle('')
       loadSessions(selectedCampaignId)
     } catch (e) {
-      setError(String(e))
+      showSafeError('The session could not be created. Try again.', e)
     } finally {
       setCreatingSession(false)
     }
@@ -242,8 +272,9 @@ export function ManagePanel({
     try {
       await deleteSession(id)
       if (selectedCampaignId) loadSessions(selectedCampaignId)
+      setAnnouncement('Session deleted.')
     } catch (e) {
-      setError(String(e))
+      showSafeError('The session could not be deleted. Try again.', e)
     } finally {
       setBusy(false)
     }
@@ -259,7 +290,7 @@ export function ManagePanel({
       await patchSettings(patch)
       onContextChanged()
     } catch (e) {
-      setError(String(e))
+      showSafeError('The active session could not be changed. Try again.', e)
     } finally {
       setBusy(false)
     }
@@ -281,7 +312,7 @@ export function ManagePanel({
       setRulebookSourceLabel('')
       loadRulebookSources(selectedCampaignId)
     } catch (e) {
-      setError(String(e))
+      showSafeError('The rulebook could not be uploaded. Try again.', e)
     } finally {
       setUploadingRulebook(false)
     }
@@ -292,11 +323,10 @@ export function ManagePanel({
   const selectedRuleset = rulesets.find(r => r.id === selectedCampaign?.ruleset_id)
 
   return (
-    <div className="manage-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="manage-panel">
+    <Dialog open title="Manage Campaign" onClose={onClose} className="manage-panel">
         <div className="manage-header">
           <span className="manage-title">⚙ Manage Campaign</span>
-          <button className="manage-close" onClick={onClose}>×</button>
+          <IconButton className="manage-close" label="Close Manage Campaign" icon="×" onClick={onClose} />
         </div>
 
         <div className="manage-tabs">
@@ -311,7 +341,8 @@ export function ManagePanel({
           ))}
         </div>
 
-        {error && <div className="manage-error">{error}</div>}
+        <StatusRegion message={error} priority="assertive" className="manage-error" />
+        <StatusRegion message={announcement} />
 
         <div className="manage-content">
 
@@ -328,15 +359,16 @@ export function ManagePanel({
                   const isActive = c.id === activeCampaignId
                   return (
                     <div key={c.id} className={`manage-row${isActive ? ' manage-row--active' : ''}`}>
-                      <div
+                      <button
+                        type="button"
                         className="manage-row-info"
+                        aria-label={`Select campaign ${c.name}`}
                         onClick={() => setSelectedCampaignId(c.id)}
-                        style={{ cursor: 'pointer' }}
                       >
                         <span className="manage-row-name">{c.name}</span>
                         <span className="manage-row-meta">{ruleset?.name ?? `ruleset #${c.ruleset_id}`}</span>
                         {c.description && <span className="manage-row-desc">{c.description}</span>}
-                      </div>
+                      </button>
                       <div className="manage-row-actions">
                         {!isActive && (
                           <button
@@ -649,7 +681,6 @@ export function ManagePanel({
           )}
 
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }

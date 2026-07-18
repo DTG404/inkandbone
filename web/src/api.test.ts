@@ -1,7 +1,65 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchContext, fetchWorldNotes, fetchDiceRolls, fetchTimeline, fetchMaps, fetchMapPins, patchSessionSummary, generateRecap, draftWorldNote, uploadMap } from './api'
+import { fetchContext, fetchMessages, fetchWorldNotes, fetchDiceRolls, fetchTimeline, fetchMaps, fetchMapPins, patchSessionSummary, generateRecap, draftWorldNote, uploadMap, gmRespondStream } from './api'
 
 afterEach(() => vi.restoreAllMocks())
+
+function chunkedResponse(payload: string, cuts: number[]): Response {
+  const bytes = new TextEncoder().encode(payload)
+  let offset = 0
+  return new Response(new ReadableStream({
+    start(controller) {
+      for (const cut of cuts) {
+        controller.enqueue(bytes.slice(offset, cut))
+        offset = cut
+      }
+      controller.enqueue(bytes.slice(offset))
+      controller.close()
+    },
+  }))
+}
+
+describe('gmRespondStream', () => {
+  it('returns and callbacks the exact multiline Unicode deltas across adversarial chunks', async () => {
+    const payload = 'data: {"type":"delta","delta":"first\\nsecond ☃"}\n\n' +
+      'data: {"type":"delta","delta":"!"}\n\n' +
+      'data: {"type":"done"}\n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [1, 7, 48, 49, 57])))
+    const chunks: string[] = []
+    const result = await gmRespondStream(7, (chunk) => chunks.push(chunk))
+    expect(result).toBe('first\nsecond ☃!')
+    expect(chunks.join('')).toBe(result)
+  })
+
+  it('surfaces only the stable error code and opaque request ID', async () => {
+    const payload = 'data: {"type":"error","code":"gm_failed","request_id":"req-opaque","provider_detail":"secret"}\n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [20, 61])))
+    await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream failed (gm_failed; request req-opaque)')
+  })
+
+  it('rejects truncated streams that end without a terminal event', async () => {
+    const payload = 'data: {"type":"delta","delta":"partial"}\n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [7])))
+    await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream ended without completion')
+  })
+
+  it('rejects duplicate or conflicting terminal events', async () => {
+    for (const payload of [
+      'data: {"type":"done"}\n\ndata: {"type":"done"}\n\n',
+      'data: {"type":"error","code":"gm_failed","request_id":"req-1"}\n\ndata: {"type":"done"}\n\n',
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [11])))
+      await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream sent multiple terminal events')
+    }
+  })
+
+  it('does not render delta data received after completion', async () => {
+    const payload = 'data: {"type":"done"}\n\ndata: {"type":"delta","delta":"invalid tail"}\n\n'
+    const onChunk = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [13])))
+    await expect(gmRespondStream(7, onChunk)).rejects.toThrow('GM stream sent multiple terminal events')
+    expect(onChunk).not.toHaveBeenCalled()
+  })
+})
 
 describe('fetchContext', () => {
   it('returns parsed GameContext on success', async () => {
@@ -29,6 +87,24 @@ describe('fetchContext', () => {
     }))
 
     await expect(fetchContext()).rejects.toThrow('GET /api/context failed: 500')
+  })
+})
+
+describe('fetchMessages', () => {
+  it('loads the authorized session transcript including whisper metadata', async () => {
+    const messages = [
+      { id: 1, session_id: 7, role: 'user', content: 'PRIVATE_SENTINEL', whisper: true, created_at: '' },
+    ]
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(messages) })
+    vi.stubGlobal('fetch', mockFetch)
+
+    await expect(fetchMessages(7)).resolves.toEqual(messages)
+    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/7/messages')
+  })
+
+  it('throws when the authorized transcript cannot be loaded', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+    await expect(fetchMessages(7)).rejects.toThrow('GET /api/sessions/7/messages failed: 500')
   })
 })
 

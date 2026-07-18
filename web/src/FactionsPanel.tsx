@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react'
 import { listFactions, createFaction, updateFaction, deleteFaction } from './api'
 import type { Faction } from './types'
+import { isScopedEvent } from './wsEvents'
+import { useToast } from './ui/ToastProvider'
 
 interface FactionsPanelProps {
   campaignId: number
+  lastEvent: unknown
 }
 
 const FACTION_TYPE_OPTIONS = ['faction', 'guild', 'clan', 'cult', 'kingdom', 'order', 'gang', 'corporation', 'tribe', 'other']
 
-export function FactionsPanel({ campaignId }: FactionsPanelProps) {
+export function FactionsPanel({ campaignId, lastEvent }: FactionsPanelProps) {
+  const toast = useToast()
   const [factions, setFactions] = useState<Faction[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -22,6 +26,11 @@ export function FactionsPanel({ campaignId }: FactionsPanelProps) {
   useEffect(() => {
     listFactions(campaignId).then(setFactions).catch(() => {})
   }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'faction_updated', 'campaign_id', campaignId)) return
+    listFactions(campaignId).then(setFactions).catch(() => {})
+  }, [campaignId, lastEvent])
 
   function resetForm() {
     setName('')
@@ -56,6 +65,7 @@ export function FactionsPanel({ campaignId }: FactionsPanelProps) {
       resetForm()
     } catch (err) {
       console.error('Failed to save faction:', err)
+      toast.error('Could not save faction.')
     }
   }
 
@@ -65,6 +75,7 @@ export function FactionsPanel({ campaignId }: FactionsPanelProps) {
       setFactions(factions.filter(f => f.id !== id))
     } catch (err) {
       console.error('Failed to delete faction:', err)
+      toast.error('Could not delete faction.')
     }
   }
 
@@ -124,18 +135,18 @@ export function FactionsPanel({ campaignId }: FactionsPanelProps) {
       <ul className="faction-list">
         {factions.map(f => (
           <li key={f.id} className="faction-item">
-            <div className="faction-header" onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>
+            <button type="button" className="faction-header" aria-label={`Toggle faction ${f.name}`} onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>
               <span className="faction-color-dot" style={{ backgroundColor: f.color }} />
               <strong className="faction-name">{f.name}</strong>
               <span className="faction-type-badge">{f.faction_type}</span>
-              <div className="faction-influence-bar">
-                <div
+              <span className="faction-influence-bar">
+                <span
                   className="faction-influence-fill"
                   style={{ width: `${(f.influence / 10) * 100}%`, backgroundColor: f.color }}
                 />
-              </div>
+              </span>
               <span className="faction-expand-icon">{expandedId === f.id ? '▴' : '▾'}</span>
-            </div>
+            </button>
             {expandedId === f.id && (
               <div className="faction-body">
                 {f.description && <p className="faction-description">{f.description}</p>}

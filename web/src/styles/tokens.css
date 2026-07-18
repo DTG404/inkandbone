@@ -1,0 +1,31 @@
+:root {
+  --bg: #0f0e0a;
+  --surface: #1a1710;
+  --surface2: #141208;
+  --gold: #d9b85a;
+  --gold-dim: #ad9257;
+  --text: #e3d8bd;
+  --text-dim: #b9a683;
+  --border: #806b42;
+  --health: #9ccd6a;
+  --accent: #ff6478;
+  --serif: 'Cormorant Garamond Variable', Georgia, serif;
+  --sans: 'Noto Sans Variable', sans-serif;
+  --mono: 'Noto Sans Mono Variable', monospace;
+  --font-body: var(--sans);
+  --font-display: var(--serif);
+  --font-ui: var(--sans);
+}
+
+[data-theme='parchment'] {
+  --bg: #f5eed8;
+  --surface: #ede3c4;
+  --surface2: #e5d9b6;
+  --gold: #684b0a;
+  --gold-dim: #71591c;
+  --text: #2a1f0a;
+  --text-dim: #5c4828;
+  --border: #75602d;
+  --health: #2f681f;
+  --accent: #922136;
+}

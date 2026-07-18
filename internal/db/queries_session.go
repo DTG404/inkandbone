@@ -102,18 +102,8 @@ func (d *DB) DeleteSession(id int64) error {
 		return err
 	}
 	defer tx.Rollback()
-	stmts := []string{
-		`DELETE FROM dice_rolls WHERE session_id = ?`,
-		`DELETE FROM messages WHERE session_id = ?`,
-		`DELETE FROM session_npcs WHERE session_id = ?`,
-		`DELETE FROM combatants WHERE encounter_id IN (SELECT id FROM combat_encounters WHERE session_id = ?)`,
-		`DELETE FROM combat_encounters WHERE session_id = ?`,
-		`DELETE FROM sessions WHERE id = ?`,
-	}
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(stmt, id); err != nil {
-			return fmt.Errorf("delete session %d: %w", id, err)
-		}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete session %d: %w", id, err)
 	}
 	return tx.Commit()
 }
@@ -151,6 +141,35 @@ func boolToIntMsg(b bool) int {
 func (d *DB) ListMessages(sessionID int64) ([]Message, error) {
 	rows, err := d.db.Query(
 		"SELECT id, session_id, role, content, whisper, character_id, created_at FROM messages WHERE session_id = ? ORDER BY created_at, id",
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Message
+	for rows.Next() {
+		var m Message
+		var whisper int
+		var charID sql.NullInt64
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &whisper, &charID, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Whisper = whisper == 1
+		if charID.Valid {
+			m.CharacterID = &charID.Int64
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ListAIVisibleMessages returns the session transcript that may be shared with
+// an AI provider. Whispers are excluded by the database query so callers
+// cannot accidentally include private content while building context.
+func (d *DB) ListAIVisibleMessages(sessionID int64) ([]Message, error) {
+	rows, err := d.db.Query(
+		"SELECT id, session_id, role, content, whisper, character_id, created_at FROM messages WHERE session_id = ? AND whisper = 0 ORDER BY created_at, id",
 		sessionID,
 	)
 	if err != nil {

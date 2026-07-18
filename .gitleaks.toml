@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated review artifacts"
+paths = [
+  '''^\.superpowers/sdd/review-.*\.diff$''',
+]
+
+[[allowlists]]
+description = "RFC WebSocket handshake fixture"
+paths = ['''^internal/api/ws_test\.go$''']
+regexTarget = "match"
+regexes = [
+  '''MDEyMzQ1Njc4OWFiY2RlZg==''',
+  '''0123456789abcdef''',
+]

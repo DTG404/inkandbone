@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -28,7 +28,7 @@ func (s *Server) handleListRulebookSources(w http.ResponseWriter, r *http.Reques
 	}
 	sources, err := s.db.ListRulebookSources(rulesetID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if sources == nil {
@@ -44,30 +44,34 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ct := r.Header.Get("Content-Type")
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		http.Error(w, "unsupported Content-Type; use text/plain or multipart/form-data", http.StatusUnsupportedMediaType)
+		return
+	}
 
 	var text string
 	var source string
 
-	switch {
-	case strings.HasPrefix(ct, "text/plain"):
+	switch contentType {
+	case "text/plain":
 		source = r.URL.Query().Get("source")
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			respondBodyError(w, err)
 			return
 		}
 		text = string(b)
 
-	case strings.HasPrefix(ct, "multipart/form-data"):
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
-			http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+	case "multipart/form-data":
+		if err := parseMultipartBody(w, r, rulebookLimit); err != nil {
+			respondBodyError(w, err)
 			return
 		}
 		source = r.FormValue("source")
 		file, _, err := r.FormFile("rulebook")
 		if err != nil {
-			http.Error(w, "rulebook field is required: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "rulebook field is required", http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
@@ -75,9 +79,9 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 		extracted, err := extractPDFText(file)
 		if err != nil {
 			if errors.Is(err, errInvalidPDF) {
-				http.Error(w, "pdf extraction: "+err.Error(), http.StatusUnprocessableEntity)
+				http.Error(w, "invalid PDF", http.StatusUnprocessableEntity)
 			} else {
-				http.Error(w, "pdf extraction: "+err.Error(), http.StatusInternalServerError)
+				serverError(w, r, err)
 			}
 			return
 		}
@@ -94,7 +98,7 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 
 	ruleset, err := s.db.GetRuleset(rulesetID)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	var rulesetName string
@@ -105,34 +109,20 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 	chunks := chunkRulebook(rulesetName, text, source)
 	// Replace only chunks for this source — other books are untouched.
 	if err := s.db.DeleteRulebookChunksBySource(rulesetID, source); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	if err := s.db.CreateRulebookChunks(rulesetID, chunks); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	// Embed new chunks asynchronously; invalidate cache for this ruleset.
 	s.embCache.Delete(rulesetID)
-	go func() {
-		ctx := context.Background()
-		pending, err := s.db.ListChunksForEmbedding(rulesetID)
-		if err != nil {
-			return
-		}
-		for _, c := range pending {
-			emb, err := ai.EmbedText(ctx, c.Content)
-			if err != nil {
-				log.Printf("ingest embed chunk %d: %v", c.ID, err)
-				continue
-			}
-			if err := s.db.UpsertChunkEmbedding(c.ID, emb); err != nil {
-				log.Printf("ingest store embedding %d: %v", c.ID, err)
-			}
-		}
+	s.startLifecycleJob(func(ctx context.Context) {
+		_ = s.embedPendingChunks(ctx, rulesetID, "ingest")
 		s.embCache.Delete(rulesetID)
-	}()
+	})
 
 	writeJSON(w, map[string]interface{}{"chunks_created": len(chunks), "source": source})
 }
@@ -253,7 +243,11 @@ func (s *Server) handleSearchRulebook(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Query string `json:"query"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.Query == "" {
+	if err := decodeJSON(w, r, &body, shortJSONLimit); err != nil {
+		respondDecodeError(w, err)
+		return
+	}
+	if body.Query == "" {
 		http.Error(w, "query required", http.StatusBadRequest)
 		return
 	}
@@ -276,7 +270,7 @@ func (s *Server) handleSearchRulebook(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			chunks, err := s.db.ListAllChunks(rulesetID)
 			if err != nil {
-				http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+				serverError(w, r, err)
 				return
 			}
 			s.embCache.Store(rulesetID, chunks)
@@ -303,7 +297,7 @@ func (s *Server) handleSearchRulebook(w http.ResponseWriter, r *http.Request) {
 	// Keyword fallback (also used when no embeddings are stored yet).
 	chunks, err := s.db.SearchRulebookChunks(rulesetID, body.Query)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	out := make([]result, len(chunks))

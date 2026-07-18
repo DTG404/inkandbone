@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -14,60 +18,252 @@ import (
 
 // Server holds dependencies and registers routes.
 type Server struct {
-	db               *db.DB
-	hub              *Hub
-	bus              *Bus
-	mux              *http.ServeMux
-	dataDir          string
-	aiClient         ai.Completer // nil when ANTHROPIC_API_KEY is unset
-	xpSuggestCounts  sync.Map     // sessionID int64 → int
-	settingCache     sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
-	embCache         sync.Map     // rulesetID int64 → []db.RulebookChunk
-	autoFailCount    int32        // incremented on automation failure, reset on success; circuit breaker at 3
+	db              *db.DB
+	hub             *Hub
+	bus             *Bus
+	mux             *http.ServeMux
+	dataDir         string
+	aiClient        ai.Completer // nil when ANTHROPIC_API_KEY is unset
+	xpSuggestCounts sync.Map     // sessionID int64 → int
+	settingCache    sync.Map     // rulesetID int64 → string (cached [SETTING]...[/SETTING] block)
+	embCache        sync.Map     // rulesetID int64 → []db.RulebookChunk
+	breakers        *BreakerRegistry
+	automations     *Dispatcher
+	sessions        *sessionManager
+	secureCookies   bool
+	rootCtx         context.Context
+	cancel          context.CancelFunc
+	embedText       func(context.Context, string) ([]float32, error)
+	lifecycleMu     sync.Mutex
+	lifecycleWG     sync.WaitGroup
+	lifecycleStop   bool
+	shutdownOnce    sync.Once
+	lifecycleDone   chan struct{}
+	httpServerMu    sync.Mutex
+	httpServer      *http.Server
+	httpServerReady chan struct{}
+	started         bool
+}
+
+// ServerOptions configures optional security behavior for the HTTP server.
+type ServerOptions struct {
+	Security ListenSecurityConfig
+	// AutomationBreakerCooldown overrides the one-minute production default.
+	// Zero preserves the default and is intended for process-scoped reliability tests.
+	AutomationBreakerCooldown time.Duration
+	// RootContext owns request and startup-background lifetimes. A nil context
+	// defaults to context.Background.
+	RootContext context.Context
+	embedText   func(context.Context, string) ([]float32, error)
 }
 
 // NewServer creates the HTTP server. dataDir is the base path for uploaded files
 // (e.g. ~/.ttrpg). aiClient may be nil if AI features are disabled.
 func NewServer(database *db.DB, dataDir string, aiClient ai.Completer) *Server {
+	return NewServerWithOptions(database, dataDir, aiClient, ServerOptions{})
+}
+
+// NewServerWithOptions creates an HTTP server with explicit security options.
+func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer, options ServerOptions) *Server {
+	parentCtx := options.RootContext
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	rootCtx, cancel := context.WithCancel(parentCtx)
+	embedText := options.embedText
+	if embedText == nil {
+		embedText = ai.EmbedText
+	}
+	breakerCooldown := options.AutomationBreakerCooldown
+	if breakerCooldown <= 0 {
+		breakerCooldown = defaultAutomationCooldown
+	}
 	bus := NewBus()
 	hub := NewHub(bus)
 	s := &Server{
-		db:       database,
-		hub:      hub,
-		bus:      bus,
-		mux:      http.NewServeMux(),
-		dataDir:  dataDir,
-		aiClient: aiClient,
+		db:              database,
+		hub:             hub,
+		bus:             bus,
+		mux:             http.NewServeMux(),
+		dataDir:         dataDir,
+		aiClient:        aiClient,
+		breakers:        NewBreakerRegistry(time.Now, defaultAutomationFailureThreshold, breakerCooldown),
+		automations:     NewDispatcher(parentCtx, DispatcherOptions{}),
+		secureCookies:   options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
+		rootCtx:         rootCtx,
+		cancel:          cancel,
+		embedText:       embedText,
+		lifecycleDone:   make(chan struct{}),
+		httpServerReady: make(chan struct{}),
 	}
+	if options.Security.AuthSecret != "" {
+		s.sessions = newSessionManager(options.Security.AuthSecret)
+	}
+	hub.SetAllowedOrigins(options.Security.AllowedOrigins)
 	s.registerRoutes()
-	go hub.Run()
+	s.startLifecycleJob(func(ctx context.Context) { hub.Run(ctx) })
 	// Capture the ruleset list before launching the goroutine so that rulesets
 	// created after NewServer returns are not included in the startup backfill.
 	existingRulesets, _ := database.ListRulesets()
-	go s.backfillEmbeddings(existingRulesets)
+	s.startLifecycleJob(func(ctx context.Context) { s.backfillEmbeddings(ctx, existingRulesets) })
 	return s
 }
 
 // Bus returns the event bus so the MCP server can publish events.
 func (s *Server) Bus() *Bus { return s.bus }
 
+// SetAllowedOrigins configures explicit WebSocket origins in addition to the
+// request's own origin.
+func (s *Server) SetAllowedOrigins(origins []string) {
+	s.hub.SetAllowedOrigins(origins)
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Block path traversal attempts on file-serving routes before the mux
-	// redirects them (Go's mux normalises .. segments via 307).
-	if strings.HasPrefix(r.URL.Path, "/api/files/") && strings.Contains(r.URL.Path, "..") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	setSecurityHeaders(w)
+	id := newRequestID()
+	w.Header().Set("X-Request-ID", id)
+	r = withRequestID(r, id)
+	if r.URL.Path == "/api/files" || strings.HasPrefix(r.URL.Path, "/api/files/") {
+		http.NotFound(w, r)
+		return
+	}
+	if s.sessions != nil && s.isProtectedPath(r) && !s.requireAuthentication(w, r) {
 		return
 	}
 	s.mux.ServeHTTP(w, r)
 }
 
-// ListenAndServe starts the HTTP server on addr (e.g. ":7432").
-func (s *Server) ListenAndServe(addr string) error {
-	return http.ListenAndServe(addr, s)
+func (s *Server) isProtectedPath(r *http.Request) bool {
+	if r.URL.Path == "/api/health" || r.URL.Path == "/api/auth/login" ||
+		(r.URL.Path == "/api/auth/session" && r.Method == http.MethodGet) {
+		return false
+	}
+	return r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, "/api/")
 }
 
-// Shutdown is a no-op placeholder.
-func (s *Server) Shutdown(_ context.Context) error { return nil }
+// Start starts the owned HTTP or HTTPS server and blocks until it stops. The
+// Server lifecycle is one-shot: concurrent or later Start calls are rejected.
+func (s *Server) Start(addr, certFile, keyFile string) error {
+	if (certFile == "") != (keyFile == "") {
+		return errors.New("both TLS certificate and key are required")
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.startOnListener(listener, certFile, keyFile)
+}
+
+func (s *Server) startOnListener(listener net.Listener, certFile, keyFile string) error {
+	defer listener.Close() //nolint:errcheck // Serve also closes; this covers pre-Serve TLS failures.
+	if (certFile == "") != (keyFile == "") {
+		return errors.New("both TLS certificate and key are required")
+	}
+	server := &http.Server{
+		Addr:              listener.Addr().String(),
+		Handler:           s,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+		BaseContext: func(net.Listener) context.Context {
+			return s.rootCtx
+		},
+	}
+	s.httpServerMu.Lock()
+	if s.started {
+		s.httpServerMu.Unlock()
+		return errors.New("server already started")
+	}
+	if err := s.rootCtx.Err(); err != nil {
+		s.httpServerMu.Unlock()
+		return fmt.Errorf("server context: %w", err)
+	}
+	s.started = true
+	s.httpServer = server
+	close(s.httpServerReady)
+	s.httpServerMu.Unlock()
+
+	if certFile != "" {
+		return server.ServeTLS(listener, certFile, keyFile)
+	}
+	return server.Serve(listener)
+}
+
+// ListenAndServe is retained for callers that do not use TLS.
+func (s *Server) ListenAndServe(addr string) error {
+	return s.Start(addr, "", "")
+}
+
+// ListenAndServeTLS is retained for callers that use TLS.
+func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
+	return s.Start(addr, certFile, keyFile)
+}
+
+// Shutdown gracefully stops a server started by ListenAndServe or ListenAndServeTLS.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.httpServerMu.Lock()
+	server := s.httpServer
+	s.httpServerMu.Unlock()
+	var httpErr error
+	if server != nil {
+		httpErr = server.Shutdown(ctx)
+	}
+	// Graceful HTTP shutdown stops new intake and waits for active handlers.
+	// Keep dispatcher admission and root context alive until those handlers have
+	// transferred ownership of any required follow-up automation.
+	s.automations.stopAccepting()
+	s.beginShutdown()
+	var lifecycleErr error
+	select {
+	case <-s.lifecycleDone:
+	case <-ctx.Done():
+		lifecycleErr = ctx.Err()
+	}
+	automationErr := s.automations.Shutdown(ctx)
+	return errors.Join(httpErr, lifecycleErr, automationErr)
+}
+
+// Close force-closes active HTTP connections after beginning lifecycle
+// cancellation. Callers should first attempt Shutdown with a bounded context.
+func (s *Server) Close() error {
+	s.automations.ForceCancel()
+	s.beginShutdown()
+	s.httpServerMu.Lock()
+	server := s.httpServer
+	s.httpServerMu.Unlock()
+	if server == nil {
+		return nil
+	}
+	return server.Close()
+}
+
+func (s *Server) startLifecycleJob(job func(context.Context)) bool {
+	s.lifecycleMu.Lock()
+	if s.lifecycleStop || s.rootCtx.Err() != nil {
+		s.lifecycleMu.Unlock()
+		return false
+	}
+	s.lifecycleWG.Add(1)
+	s.lifecycleMu.Unlock()
+	go func() {
+		defer s.lifecycleWG.Done()
+		job(s.rootCtx)
+	}()
+	return true
+}
+
+func (s *Server) beginShutdown() {
+	s.shutdownOnce.Do(func() {
+		s.lifecycleMu.Lock()
+		s.lifecycleStop = true
+		s.lifecycleMu.Unlock()
+		s.cancel()
+		go func() {
+			s.lifecycleWG.Wait()
+			close(s.lifecycleDone)
+		}()
+	})
+}
 
 // RegisterStatic serves the embedded React SPA for all routes not matched by /api/ or /ws.
 // index.html is served with Cache-Control: no-cache so browsers always re-validate it
@@ -86,8 +282,11 @@ func (s *Server) RegisterStatic(fsys http.FileSystem) {
 }
 
 func (s *Server) registerRoutes() {
-	s.mux.HandleFunc("/ws", s.hub.ServeWS)
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.HandleFunc("/api/health", s.handleHealth)
+	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)
 	// Existing read routes
 	s.mux.HandleFunc("GET /api/campaigns", s.handleListCampaigns)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/characters", s.handleListCharacters)
@@ -101,8 +300,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/context", s.handleGetContext)
 	// Plan 7
 	s.mux.HandleFunc("GET /api/sessions/{id}/timeline", s.handleGetTimeline)
-	// Plan 8
-	s.mux.HandleFunc("GET /api/files/{path...}", s.handleServeFile)
+	// Typed database-backed assets.
+	s.mux.HandleFunc("GET /api/assets/maps/{id}", s.handleMapAsset)
+	s.mux.HandleFunc("GET /api/assets/portraits/{id}", s.handlePortraitAsset)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/maps", s.handleListMaps)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/maps", s.handleUploadMap)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/maps/generate", s.handleGenerateMap)
@@ -110,14 +310,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/campaigns/{id}", s.handlePatchCampaign)
 	s.mux.HandleFunc("PATCH /api/sessions/{id}", s.handlePatchSession)
 	s.mux.HandleFunc("POST /api/sessions/{id}/recap", s.handleGenerateRecap)
-	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", withMaxBody(4096, s.handleDraftWorldNote))
+	s.mux.HandleFunc("POST /api/campaigns/{id}/world-notes/draft", withMaxBody(shortJSONLimit, s.handleDraftWorldNote))
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}", s.handlePatchWorldNote)
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}/personality", s.handlePatchWorldNotePersonality)
 	s.mux.HandleFunc("PATCH /api/world-notes/{id}/reveal", s.handlePatchWorldNoteRevealed)
 	s.mux.HandleFunc("GET /api/rulesets/{id}", s.handleGetRuleset)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/character-options", s.handleGetCharacterOptions)
 	s.mux.HandleFunc("GET /api/rulesets/{id}/rulebook", s.handleListRulebookSources)
-	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", withMaxBody(50<<20, s.handleIngestRulebook))
+	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook", withMaxBody(rulebookLimit, s.handleIngestRulebook))
 	s.mux.HandleFunc("POST /api/rulesets/{id}/rulebook/search", s.handleSearchRulebook)
 	s.mux.HandleFunc("PATCH /api/characters/{id}", s.handlePatchCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/portrait", s.handleUploadPortrait)
@@ -214,6 +414,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/settings/automations", s.handleListAutomationSettings)
 	s.mux.HandleFunc("PATCH /api/settings/automations", s.handlePatchAutomationSetting)
 	// XP advancement
+	s.mux.HandleFunc("GET /api/rulesets/{id}/advancement-config", s.handleAdvancementConfig)
 	s.mux.HandleFunc("POST /api/characters/{id}/advance", s.handleAdvanceCharacter)
 	s.mux.HandleFunc("POST /api/characters/{id}/suggest-advances", s.handleSuggestAdvances)
 	s.mux.HandleFunc("GET /api/talent-description", s.handleTalentDescription)
@@ -245,6 +446,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/maps/{id}/zones", s.handleCreateZone)
 	s.mux.HandleFunc("PATCH /api/map-zones/{id}", s.handlePatchZone)
 	s.mux.HandleFunc("DELETE /api/map-zones/{id}", s.handleDeleteZone)
+	// Map particle FX
+	s.mux.HandleFunc("POST /api/maps/{id}/fx", s.handleTriggerMapFX)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -256,23 +459,44 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // backfillEmbeddings runs at startup to embed any chunks that have no embedding yet.
-func (s *Server) backfillEmbeddings(rulesets []db.Ruleset) {
-	ctx := context.Background()
+func (s *Server) backfillEmbeddings(ctx context.Context, rulesets []db.Ruleset) {
 	for _, rs := range rulesets {
-		chunks, err := s.db.ListChunksForEmbedding(rs.ID)
-		if err != nil {
-			continue
+		if err := ctx.Err(); err != nil {
+			return
 		}
-		for _, c := range chunks {
-			emb, err := ai.EmbedText(ctx, c.Content)
-			if err != nil {
-				log.Printf("backfillEmbeddings: embed chunk %d: %v", c.ID, err)
-				continue
-			}
-			if err := s.db.UpsertChunkEmbedding(c.ID, emb); err != nil {
-				log.Printf("backfillEmbeddings: store chunk %d: %v", c.ID, err)
-			}
+		if err := s.embedPendingChunks(ctx, rs.ID, "backfillEmbeddings"); errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
 		}
 		s.embCache.Delete(rs.ID)
 	}
+}
+
+func (s *Server) embedPendingChunks(ctx context.Context, rulesetID int64, operation string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	chunks, err := s.db.ListChunksForEmbedding(rulesetID)
+	if err != nil {
+		return err
+	}
+	for _, chunk := range chunks {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		embedding, err := s.embedText(ctx, chunk.Content)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			log.Printf("%s: embed chunk %d: %v", operation, chunk.ID, err)
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.db.UpsertChunkEmbedding(chunk.ID, embedding); err != nil {
+			log.Printf("%s: store chunk %d: %v", operation, chunk.ID, err)
+		}
+	}
+	return nil
 }

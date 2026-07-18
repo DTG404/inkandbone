@@ -25,7 +25,7 @@ func (s *Server) handleSetActive(_ context.Context, req mcplib.CallToolRequest) 
 			if err := s.db.SetSetting("active_campaign_id", strconv.FormatInt(id, 10)); err != nil {
 				return mcplib.NewToolResultError("set campaign: " + err.Error()), nil
 			}
-			s.bus.Publish(api.Event{Type: api.EventCampaignReopened, Payload: map[string]any{"campaign_id": id}})
+			s.bus.Publish(api.Event{Type: api.EventCampaignReopened, Payload: &api.CampaignReopenedPayload{CampaignID: api.RealtimeInt64(id)}})
 		} else if err := s.db.SetSetting("active_campaign_id", strconv.FormatInt(id, 10)); err != nil {
 			return mcplib.NewToolResultError("set campaign: " + err.Error()), nil
 		}
@@ -71,7 +71,7 @@ func (s *Server) handleStartSession(_ context.Context, req mcplib.CallToolReques
 	}
 
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventSessionStarted, Payload: map[string]any{"session_id": sessID, "title": title}})
+	s.bus.Publish(api.Event{Type: api.EventSessionStarted, Payload: &api.SessionStartedPayload{SessionID: api.RealtimeInt64(sessID), Title: api.RealtimePtr(title)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("session %d started: %s", sessID, title)), nil
 }
 
@@ -95,7 +95,7 @@ func (s *Server) handleEndSession(_ context.Context, req mcplib.CallToolRequest)
 	_ = s.db.SetSetting("active_session_id", "")
 
 	s.logNarrative(req, sessID)
-	s.bus.Publish(api.Event{Type: api.EventSessionEnded, Payload: map[string]any{"session_id": sessID}})
+	s.bus.Publish(api.Event{Type: api.EventSessionEnded, Payload: &api.SessionEndedPayload{SessionID: api.RealtimeInt64(sessID)}})
 	return mcplib.NewToolResultText(fmt.Sprintf("session %d ended", sessID)), nil
 }
 
@@ -104,7 +104,7 @@ func (s *Server) handleEndSession(_ context.Context, req mcplib.CallToolRequest)
 func (s *Server) logNarrative(req mcplib.CallToolRequest, sessionID int64) {
 	if n := optStr(req, "narrative"); n != "" && sessionID != 0 {
 		if _, err := s.db.CreateMessage(sessionID, "assistant", n, false, nil); err == nil {
-			s.bus.Publish(api.Event{Type: api.EventMessageCreated, Payload: map[string]any{"session_id": sessionID, "content": n}})
+			s.bus.Publish(api.Event{Type: api.EventMessageCreated, Payload: &api.MessageCreatedPayload{SessionID: api.RealtimeInt64(sessionID), Content: api.RealtimePtr(n)}})
 		}
 	}
 }

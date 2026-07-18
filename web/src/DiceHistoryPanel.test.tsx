@@ -52,17 +52,66 @@ describe('DiceHistoryPanel', () => {
     expect(screen.queryByText(/^\[/)).toBeNull()
   })
 
-  it('refetches rolls on dice_rolled event', async () => {
-    const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(rolls) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(rolls) })
+  it('adds live roll to feed on dice_rolled event without refetching', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
     vi.stubGlobal('fetch', mockFetch)
     const { rerender } = render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
-    await screen.findByText('1d20+5')
-    const callsBefore = mockFetch.mock.calls.length
-    rerender(<DiceHistoryPanel sessionId={1} lastEvent={{ type: 'dice_rolled', payload: { total: 15 } }} />)
-    await vi.waitFor(() => {
-      expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore)
-    })
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledOnce())
+    rerender(<DiceHistoryPanel sessionId={1} lastEvent={{
+      type: 'dice_rolled',
+      sequence: 1,
+      payload: { session_id: 1, expression: '1d20', result: 15, character_name: '', hidden: false }
+    }} />)
+    expect(await screen.findByText('1d20')).toBeInTheDocument()
+    expect(mockFetch).toHaveBeenCalledOnce()
+  })
+
+  it('shows character_name from dice_rolled event', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
+    const { rerender } = render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
+    rerender(<DiceHistoryPanel sessionId={1} lastEvent={{
+      type: 'dice_rolled',
+      sequence: 1,
+      payload: { session_id: 1, expression: '1d20', result: 15, character_name: 'Kira', hidden: false }
+    }} />)
+    expect(await screen.findByText('Kira')).toBeInTheDocument()
+    expect(screen.getByText('15')).toBeInTheDocument()
+  })
+
+  it('shows hidden roll as GM roll with result masked', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
+    const { rerender } = render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
+    rerender(<DiceHistoryPanel sessionId={1} lastEvent={{
+      type: 'dice_rolled',
+      sequence: 1,
+      payload: { session_id: 1, expression: '1d20', result: 19, character_name: 'GM', hidden: true }
+    }} />)
+    expect(await screen.findByText('[GM]')).toBeInTheDocument()
+    expect(screen.queryByText('19')).not.toBeInTheDocument()
+  })
+
+  it('adds dice-entry-new class to incoming live roll', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
+    const { rerender } = render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
+    rerender(<DiceHistoryPanel sessionId={1} lastEvent={{
+      type: 'dice_rolled',
+      sequence: 1,
+      payload: { session_id: 1, expression: '2d6', result: 8, character_name: '', hidden: false }
+    }} />)
+    const row = (await screen.findByText('2d6')).closest('.dice-compact-row')
+    expect(row).toHaveClass('dice-entry-new')
+  })
+
+  it('ignores rolls from another session', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
+    vi.stubGlobal('fetch', mockFetch)
+    const { rerender } = render(<DiceHistoryPanel sessionId={1} lastEvent={null} />)
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledOnce())
+    rerender(<DiceHistoryPanel sessionId={1} lastEvent={{
+      type: 'dice_rolled',
+      sequence: 1,
+      payload: { session_id: 2, expression: '1d20', result: 15, character_name: '', hidden: false },
+    }} />)
+    expect(screen.queryByText('1d20')).not.toBeInTheDocument()
   })
 })

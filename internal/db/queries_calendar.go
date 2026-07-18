@@ -17,9 +17,9 @@ type CalendarEvent struct {
 
 // CampaignCalendarInfo holds the calendar state for a campaign.
 type CampaignCalendarInfo struct {
-	InGameYear    int    `json:"in_game_year"`
-	InGameMonth   int    `json:"in_game_month"`
-	InGameDay     int    `json:"in_game_day"`
+	InGameYear     int    `json:"in_game_year"`
+	InGameMonth    int    `json:"in_game_month"`
+	InGameDay      int    `json:"in_game_day"`
 	CalendarConfig string `json:"calendar_config"`
 }
 

@@ -38,32 +38,43 @@ describe('MapPanel', () => {
   })
 
   it('TestMapPanel_showsPins: renders map image and two pin buttons at correct positions', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn()
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([map]) })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(pins) }),
-    )
+    const mockFetch = vi.fn((url: string) => {
+      const responses: Record<string, unknown[]> = {
+        '/api/campaigns/1/maps': [map],
+        [`/api/maps/${map.id}/pins`]: pins,
+        [`/api/maps/${map.id}/tokens`]: [],
+        [`/api/maps/${map.id}/zones`]: [],
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(responses[url]) })
+    })
+    vi.stubGlobal('fetch', mockFetch)
     render(<MapPanel campaignId={1} lastEvent={null} />)
 
     const img = await screen.findByRole('img', { name: 'Dungeon' })
-    expect(img).toHaveAttribute('src', '/api/files/maps/dungeon.png')
+    expect(img).toHaveAttribute('src', '/api/assets/maps/42')
 
-    const buttons = await screen.findAllByRole('button')
-    expect(buttons).toHaveLength(2)
+    const entrancePin = await screen.findByTitle('Main door')
+    const bossRoomPin = await screen.findByTitle('Boss Room')
 
-    expect(buttons[0]).toHaveAttribute('title', 'Main door')
-    expect(buttons[1]).toHaveAttribute('title', 'Boss Room')
+    expect(entrancePin).toHaveRole('button')
+    expect(bossRoomPin).toHaveRole('button')
+    expect(entrancePin).toHaveStyle({ left: '25%', top: '50%' })
+    expect(bossRoomPin).toHaveStyle({ left: '75%', top: '25%' })
 
-    expect(buttons[0]).toHaveStyle({ left: '25%', top: '50%' })
-    expect(buttons[1]).toHaveStyle({ left: '75%', top: '25%' })
+    expect(mockFetch).toHaveBeenCalledWith(`/api/maps/${map.id}/tokens`)
+    expect(mockFetch).toHaveBeenCalledWith(`/api/maps/${map.id}/zones`)
   })
 
   it('TestMapPanel_wsEvent: refetches pins when map_pin_added event fires with matching map_id', async () => {
-    const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([map]) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(pins) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(pins) })
+    const mockFetch = vi.fn((url: string) => {
+      const responses: Record<string, unknown[]> = {
+        '/api/campaigns/1/maps': [map],
+        [`/api/maps/${map.id}/pins`]: pins,
+        [`/api/maps/${map.id}/tokens`]: [],
+        [`/api/maps/${map.id}/zones`]: [],
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(responses[url]) })
+    })
 
     vi.stubGlobal('fetch', mockFetch)
 
@@ -73,7 +84,7 @@ describe('MapPanel', () => {
     rerender(
       <MapPanel
         campaignId={1}
-        lastEvent={{ type: 'map_pin_added', payload: { map_id: 42 } }}
+        lastEvent={{ type: 'map_pin_added', sequence: 1, payload: { map_id: 42 } }}
       />,
     )
 

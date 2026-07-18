@@ -1,17 +1,17 @@
 # ink & bone
 
-A private, local AI Game Master for 14 tabletop RPG systems. Single-binary Go server (HTTP, WebSocket, SQLite) with embedded React/TypeScript frontend. Streams GM responses via SSE. Automation goroutines handle NPC extraction, map generation, stat updates, recap regeneration, objective detection, and item tracking. Schema-driven character sheets with computed fields and conditional visibility.
+A local-first AI Game Master for 14 tabletop RPG systems. Single-binary Go server (HTTP, WebSocket, SQLite) with embedded React/TypeScript frontend. Streams GM responses via SSE. A bounded dispatcher runs NPC extraction, map generation, stat updates, recap regeneration, objective detection, and item tracking. Schema-driven character sheets support computed fields and conditional visibility. Canonical toolchain and verification details live in `docs/development.md`.
 
 ## Tech Stack
 
 **Backend:**
-- Go 1.22+
+- Go 1.26.5
 - SQLite (persisted to `~/.ttrpg`)
 - HTTP + WebSocket + SSE
 - AI clients: DeepSeek Flash (primary), Anthropic Claude Haiku (fallback), Ollama (local)
 
 **Frontend:**
-- React 18 + TypeScript
+- React 19 + TypeScript 6
 - Vite (development and bundled into binary)
 - WebSocket client for live updates
 - "Worn Grimoire" dark theme (parchment + gold) + light theme toggle
@@ -28,7 +28,7 @@ A private, local AI Game Master for 14 tabletop RPG systems. Single-binary Go se
 cmd/ttrpg/            - Binary entrypoint
 internal/
   api/                - HTTP handlers (decomposed: routes, automations, vtm, factions, etc.), WebSocket hub, event bus, validation middleware
-  db/                 - SQLite layer, 46 migrations
+  db/                 - SQLite layer, 57 migrations
   ai/                 - AI client implementations (DeepSeek, Anthropic Claude, Ollama, Hybrid, Dual), system prompt injection, SSE streaming
   mcp/                - MCP server for AI coding assistant integration (optional)
   ruleset/            - Ruleset-specific logic (advancement, random stats, character options, VtM, W&G)
@@ -106,18 +106,13 @@ All fire after every GM response via `handleGMRespondStream`. Each can be indivi
 
 ## E2E Testing
 
-A comprehensive end-to-end test suite lives at `scripts/e2e-comprehensive.mjs`. It tests every feature through both browser (Playwright) and API calls — 187 assertions covering all UI panels, CRUD endpoints, and edge cases.
+The maintained Playwright suite lives under `e2e/`; its lifecycle runner builds and owns a disposable server, database, port, and process tree.
 
 ```bash
-# Start server with a fresh DB
-ttrpg -db /tmp/e2e-test.db
-
-# Run tests (in another terminal)
-node scripts/e2e-comprehensive.mjs
-# Expected: 187 passed, 0 failed
+make verify-e2e
 ```
 
-Requires: `npm install playwright` + `npx playwright install chromium`
+See `docs/testing/e2e-coverage-matrix.md` for the browser/API coverage boundary and retired-script migration.
 
 ## Build & Deploy
 
@@ -228,7 +223,7 @@ If you need complex stat logic (e.g. D&D's 4d6-drop-lowest, VtM's attribute pool
 2. **Automation goroutine?** Handle nil AI client gracefully and log errors.
 3. **New feature = new migration.** Don't modify existing migrations; add incrementals (files are sorted alphabetically, so prefix with `NNN_`).
 4. **Frontend updates?** Hot reload via Vite during `make dev`; rebuild with `make build`.
-5. **Ruleset additions?** Use the template at `internal/db/migrations/038_template_new_ruleset.sql`. See **Schema System** section above for field properties. Most rulesets need zero Go code — just fill in `default` and `options` in the schema JSON.
+5. **Ruleset additions?** Copy `docs/ruleset-template.sql` into a new incrementally numbered migration. Historical migration `038_template_new_ruleset.sql` is immutable and must not be copied or edited. See **Schema System** above for field properties; most rulesets need only schema `default` and `options` values.
 6. **AI thinking mode:** DeepSeek defaults to thinking mode. The DeepSeek client explicitly disables it with `"thinking":{"type":"disabled"}` on every request. If switching models, check for equivalent defaults.
 7. **RollStats fallback:** If you add a ruleset with only schema defaults (no Go `case`), the API automatically calls `RollStatsFromSchema()`. You only need to add Go code for complex stat generation logic.
 8. **Character options in schema:** Fields with `"options":[...]` render as dropdowns in the UI. The `CharacterOptions()` Go function is still used for character-creation defaults, but the UI will show dropdowns regardless.

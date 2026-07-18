@@ -360,7 +360,7 @@ func TestOracleRoll_invalidTable(t *testing.T) {
 
 func TestCreateRelationship(t *testing.T) {
 	s, campID, _ := newTestServerWithSeed(t)
-	body := bytes.NewReader([]byte(`{"from_name":"Paul Atreides","to_name":"Baron Harkonnen","type":"enemy","description":"Mortal enemies"}`))
+	body := bytes.NewReader([]byte(`{"from_name":"Paul Atreides","to_name":"Baron Harkonnen","relationship_type":"enemy","description":"Mortal enemies"}`))
 	req := httptest.NewRequest(http.MethodPost, "/api/campaigns/"+strconv.FormatInt(campID, 10)+"/relationships", body)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -463,8 +463,6 @@ func TestHealthEndpoint(t *testing.T) {
 	assert.False(t, resp["ai_enabled"].(bool))
 }
 
-
-
 // --- XP ---
 
 func TestCreateXP(t *testing.T) {
@@ -520,8 +518,6 @@ func TestIngestRulebook_plainText(t *testing.T) {
 	assert.Equal(t, float64(3), resp["chunks_created"])
 }
 
-
-
 // --- VALIDATION / ERROR CASES ---
 func TestCreateCharacter_invalidCampaignID(t *testing.T) {
 	s := newTestServer(t)
@@ -530,9 +526,7 @@ func TestCreateCharacter_invalidCampaignID(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	// The handler creates the character first, then fails to roll stats.
-	// Character is created but without stats — that's the current behavior.
-	assert.True(t, w.Code < 500, "unexpected server error: %d", w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestDeleteCampaign_invalidID(t *testing.T) {
@@ -565,5 +559,3 @@ func TestPatchSession_sceneTags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "dungeon,night", sess.SceneTags)
 }
-
-

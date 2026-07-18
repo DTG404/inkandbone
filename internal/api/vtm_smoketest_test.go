@@ -911,7 +911,7 @@ func TestVtM_HungerDice_NormalRoll_NoHunger(t *testing.T) {
 
 	// Simulate vtmHungerDiceRoll with pool=4, hunger=0 → all normal dice.
 	result := s.vtmHungerDiceRoll(context.Background(), sessID, 4, "Strength", 2,
-		"Forcing a door", "4d10", `{"hunger":0}`)
+		"Forcing a door", "4d10", `{"hunger":0}`, "")
 
 	assert.NotNil(t, result)
 	assert.Equal(t, "Strength", result.Attribute)
@@ -928,7 +928,7 @@ func TestVtM_HungerDice_MaxHunger_PoolFull(t *testing.T) {
 	require.NoError(t, s.db.SetSetting("active_character_id", fmt.Sprintf("%d", charID)))
 
 	result := s.vtmHungerDiceRoll(context.Background(), sessID, 3, "Strength", 2,
-		"Forcing a door", "3d10", `{"hunger":5}`)
+		"Forcing a door", "3d10", `{"hunger":5}`, "")
 
 	assert.NotNil(t, result)
 	// Pool=3, hunger=5 → clamped: 3 hunger dice, 0 normal dice.
@@ -942,7 +942,7 @@ func TestVtM_HungerDice_ExpressionFormat(t *testing.T) {
 	require.NoError(t, s.db.SetSetting("active_character_id", fmt.Sprintf("%d", charID)))
 
 	result := s.vtmHungerDiceRoll(context.Background(), sessID, 5, "Dexterity", 2,
-		"Dodging an attack", "5d10", `{"hunger":2}`)
+		"Dodging an attack", "5d10", `{"hunger":2}`, "")
 
 	assert.NotNil(t, result)
 	// Expression should note pool split: 5 total = 3 normal + 2 hunger.
@@ -997,7 +997,7 @@ func TestVtM_HungerDice_SuccessCount_NotRawSum(t *testing.T) {
 	require.NoError(t, s.db.SetSetting("active_character_id", fmt.Sprintf("%d", charID)))
 
 	result := s.vtmHungerDiceRoll(context.Background(), sessID, 3, "Wits", 1,
-		"Noticing something", "3d10", `{"hunger":1}`)
+		"Noticing something", "3d10", `{"hunger":1}`, "")
 
 	assert.NotNil(t, result)
 	// Total = successes (6+), which for 3 dice is at most 3 + 1 critical pair bonus = 4 max

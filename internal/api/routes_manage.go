@@ -13,7 +13,7 @@ import (
 func (s *Server) handleListRulesets(w http.ResponseWriter, r *http.Request) {
 	rulesets, err := s.db.ListRulesets()
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	writeJSON(w, rulesets)
@@ -27,8 +27,8 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		RulesetID   int64  `json:"ruleset_id"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		respondError(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
@@ -41,10 +41,10 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateCampaign(body.RulesetID, body.Name, body.Description)
 	if err != nil {
-		respondError(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventCampaignCreated, Payload: map[string]any{"campaign_id": id, "name": body.Name}})
+	s.bus.Publish(Event{Type: EventCampaignCreated, Payload: &CampaignCreatedPayload{CampaignID: RealtimeInt64(id), Name: RealtimePtr(body.Name)}})
 	w.WriteHeader(http.StatusCreated)
 	respondJSON(w, map[string]any{"id": id})
 }
@@ -79,10 +79,10 @@ func (s *Server) handleDeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.db.DeleteCampaign(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventCampaignDeleted, Payload: map[string]any{"campaign_id": id}})
+	s.bus.Publish(Event{Type: EventCampaignDeleted, Payload: &CampaignDeletedPayload{CampaignID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -119,50 +119,60 @@ func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 		Name      string            `json:"name"`
 		Overrides map[string]string `json:"overrides"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
+	camp, err := s.db.GetCampaign(campaignID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if camp == nil {
+		http.Error(w, "campaign not found", http.StatusNotFound)
+		return
+	}
 	id, err := s.db.CreateCharacter(campaignID, body.Name)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 
 	// Auto-roll stats based on the campaign's ruleset system.
-	camp, err := s.db.GetCampaign(campaignID)
-	if err == nil && camp != nil {
-		rs, err := s.db.GetRuleset(camp.RulesetID)
-		if err == nil && rs != nil {
-			stats := ruleset.RollStats(rs.Name, body.Overrides["archetype"])
-			// If RollStats doesn't know this system, try schema_json defaults.
-			if len(stats) == 0 && rs.SchemaJSON != "" {
-				stats = ruleset.RollStatsFromSchema(rs.SchemaJSON)
+	rs, err := s.db.GetRuleset(camp.RulesetID)
+	if err == nil && rs != nil {
+		stats := ruleset.RollStats(rs.Name, body.Overrides["archetype"])
+		// If RollStats doesn't know this system, try schema_json defaults.
+		if len(stats) == 0 && rs.SchemaJSON != "" {
+			stats = ruleset.RollStatsFromSchema(rs.SchemaJSON)
+		}
+		if len(stats) > 0 {
+			// Apply user-selected overrides (non-empty values only).
+			for k, v := range body.Overrides {
+				if v != "" {
+					stats[k] = v
+				}
 			}
-			if len(stats) > 0 {
-				// Apply user-selected overrides (non-empty values only).
-				for k, v := range body.Overrides {
-					if v != "" {
-						stats[k] = v
-					}
-				}
-				if dataJSON, err := json.Marshal(stats); err == nil {
-					_ = s.db.UpdateCharacterData(id, string(dataJSON))
-				}
+			if dataJSON, err := json.Marshal(stats); err == nil {
+				_ = s.db.UpdateCharacterData(id, string(dataJSON))
 			}
 		}
 	}
 
 	char, err := s.db.GetCharacter(id)
-	if err != nil || char == nil {
-		http.Error(w, "db: could not retrieve character", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterCreated, Payload: map[string]any{"character_id": id, "name": body.Name}})
+	if char == nil {
+		serverErrorText(w, r, "db: could not retrieve character")
+		return
+	}
+	s.bus.Publish(Event{Type: EventCharacterCreated, Payload: &CharacterCreatedPayload{CharacterID: RealtimeInt64(id), Name: RealtimePtr(body.Name)}})
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, char)
 }
@@ -180,7 +190,7 @@ func (s *Server) handleDeleteCharacter(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.SetSetting("active_character_id", "")
 	}
 	if err := s.db.DeleteCharacter(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -198,8 +208,8 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		Title string `json:"title"`
 		Date  string `json:"date"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.Title == "" {
@@ -211,15 +221,19 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.db.CreateSession(campaignID, body.Title, body.Date)
 	if err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
 	sess, err := s.db.GetSession(id)
-	if err != nil || sess == nil {
-		http.Error(w, "db: could not retrieve session", http.StatusInternalServerError)
+	if err != nil {
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSessionStarted, Payload: map[string]any{"session_id": id, "title": body.Title}})
+	if sess == nil {
+		serverErrorText(w, r, "db: could not retrieve session")
+		return
+	}
+	s.bus.Publish(Event{Type: EventSessionStarted, Payload: &SessionStartedPayload{SessionID: RealtimeInt64(id), Title: RealtimePtr(body.Title)}})
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, sess)
 }
@@ -237,10 +251,10 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.SetSetting("active_session_id", "")
 	}
 	if err := s.db.DeleteSession(id); err != nil {
-		http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSessionDeleted, Payload: map[string]any{"session_id": id}})
+	s.bus.Publish(Event{Type: EventSessionDeleted, Payload: &SessionDeletedPayload{SessionID: RealtimeInt64(id)}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -252,8 +266,8 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 		CharacterID *int64 `json:"character_id"`
 		SessionID   *int64 `json:"session_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
+		respondDecodeError(w, err)
 		return
 	}
 	if body.CampaignID != nil {
@@ -263,19 +277,19 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			// Auto-reopen closed campaigns, mirroring MCP set_active behaviour.
 			campaign, err := s.db.GetCampaign(*body.CampaignID)
 			if err != nil {
-				http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+				serverError(w, r, err)
 				return
 			}
 			if campaign != nil && !campaign.Active {
 				if err := s.db.ReopenCampaign(*body.CampaignID); err != nil {
-					http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+					serverError(w, r, err)
 					return
 				}
-				s.bus.Publish(Event{Type: EventCampaignReopened, Payload: map[string]any{"campaign_id": *body.CampaignID}})
+				s.bus.Publish(Event{Type: EventCampaignReopened, Payload: &CampaignReopenedPayload{CampaignID: RealtimeInt64(*body.CampaignID)}})
 			}
 		}
 		if err := s.db.SetSetting("active_campaign_id", val); err != nil {
-			http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -285,7 +299,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			val = strconv.FormatInt(*body.CharacterID, 10)
 		}
 		if err := s.db.SetSetting("active_character_id", val); err != nil {
-			http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
@@ -295,21 +309,20 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
 			val = strconv.FormatInt(*body.SessionID, 10)
 		}
 		if err := s.db.SetSetting("active_session_id", val); err != nil {
-			http.Error(w, "db: "+err.Error(), http.StatusInternalServerError)
+			serverError(w, r, err)
 			return
 		}
 	}
-	ctxPayload := map[string]any{}
+	ctxPayload := &ContextUpdatedPayload{}
 	if body.CampaignID != nil {
-		ctxPayload["campaign_id"] = *body.CampaignID
+		ctxPayload.CampaignID = body.CampaignID
 	}
 	if body.CharacterID != nil {
-		ctxPayload["character_id"] = *body.CharacterID
+		ctxPayload.CharacterID = body.CharacterID
 	}
 	if body.SessionID != nil {
-		ctxPayload["session_id"] = *body.SessionID
+		ctxPayload.SessionID = body.SessionID
 	}
 	s.bus.Publish(Event{Type: EventContextUpdated, Payload: ctxPayload})
 	w.WriteHeader(http.StatusNoContent)
 }
-

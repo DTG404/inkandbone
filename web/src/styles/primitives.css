@@ -1,0 +1,108 @@
+.ui-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 72%);
+}
+
+.ui-dialog {
+  width: min(42rem, 100%);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--gold-dim, #9a7b3f);
+  border-radius: 0.5rem;
+  background: var(--bg-panel, #211b18);
+  color: var(--text, #eee4ce);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 55%);
+}
+
+.ui-dialog-title {
+  margin-block: 0 1rem;
+}
+
+.ui-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: 100dvh;
+  border-radius: 0;
+}
+
+.ui-drawer-left { left: 0; }
+.ui-drawer-right { right: 0; }
+
+.ui-tab,
+.ui-icon-button,
+.ui-dialog button,
+.ui-dialog a,
+.ui-dialog input,
+.ui-dialog select,
+.ui-dialog textarea {
+  min-height: 2.75rem;
+}
+
+.ui-icon-button {
+  min-width: 2.75rem;
+}
+
+.ui-tab:focus-visible,
+.ui-icon-button:focus-visible,
+.ui-dialog :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+.ui-dialog:focus-visible {
+  outline: 2px solid var(--gold, #d8b35d);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .ui-tab,
+  .ui-icon-button,
+  .ui-dialog button,
+  .ui-dialog a,
+  .ui-dialog input,
+  .ui-dialog select,
+  .ui-dialog textarea {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+.ui-toast-viewport {
+  position: fixed;
+  z-index: 1200;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  display: grid;
+  width: min(24rem, calc(100vw - 2rem));
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.ui-toast-viewport > div {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ui-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  border-radius: 0.35rem;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 45%);
+  pointer-events: auto;
+}
+
+.ui-toast-error { border-left-color: var(--accent); }
+.ui-toast-success { border-left-color: var(--health); }
+.ui-toast span { flex: 1; }
+.ui-toast button { min-height: 2.75rem; }

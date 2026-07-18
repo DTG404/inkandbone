@@ -9,11 +9,13 @@ describe('theme typography', () => {
       dependencies?: Record<string, string>
     }
     const appEntry = readFileSync(join(process.cwd(), 'src/App.tsx'), 'utf8')
+    const tokens = readFileSync(join(process.cwd(), 'src/styles/tokens.css'), 'utf8')
     const version = packageJSON.dependencies?.['@fontsource-variable/cormorant-garamond']
 
     expect(version).toMatch(/^\d+\.\d+\.\d+$/)
     expect(appEntry).toMatch(
       /import ['"]@fontsource-variable\/cormorant-garamond\/index\.css['"]/,
     )
+    expect(tokens).toMatch(/--serif:\s*'Cormorant Garamond Variable'/)
   })
 })

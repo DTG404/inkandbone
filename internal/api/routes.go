@@ -1179,7 +1179,8 @@ Return ONLY JSON (no explanation, no markdown):
 Story passage:
 %s`, gmText)
 
-	if !s.canRunAutomation(settingAutoGenerateMap) {
+	permit, ok := s.acquireAutomation(settingAutoGenerateMap)
+	if !ok {
 		return
 	}
 	var raw string
@@ -1190,10 +1191,9 @@ Story passage:
 	})
 	if err != nil {
 		log.Printf("autoGenerateMap: location detection failed (session %d): %v", sessionID, err)
-		s.recordAutoFailure(settingAutoGenerateMap, err)
+		permit.Complete(err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoGenerateMap)
 
 	raw = strings.TrimSpace(raw)
 	// Strip markdown code fences that some models emit despite instructions.
@@ -1209,6 +1209,7 @@ Story passage:
 	end := strings.LastIndex(raw, "}")
 	if start < 0 || end <= start {
 		log.Printf("autoGenerateMap: no JSON in location detection response (session %d): %q", sessionID, raw)
+		permit.Success()
 		return
 	}
 
@@ -1219,15 +1220,18 @@ Story passage:
 	}
 	if err := json.Unmarshal([]byte(raw[start:end+1]), &loc); err != nil {
 		log.Printf("autoGenerateMap: JSON parse error (session %d): %v — raw: %q", sessionID, err, raw[start:end+1])
+		permit.Success()
 		return
 	}
 	if !loc.NewLocation || loc.Name == "" {
+		permit.Success()
 		return // no new location detected — not an error
 	}
 
 	locNameLower := strings.ToLower(loc.Name)
 	for _, name := range existingNames {
 		if strings.ToLower(name) == locNameLower {
+			permit.Success()
 			return // duplicate — not an error
 		}
 	}
@@ -1235,9 +1239,6 @@ Story passage:
 	// Map generation requires precise SVG output — use the structured AI client,
 	// not the narrative GM model.
 	mapPrompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + loc.Context
-	if !s.canRunAutomation(settingAutoGenerateMap) {
-		return
-	}
 	var svgRaw string
 	err = retryWithBackoff(ctx, 2, func(ctx context.Context) error {
 		var e error
@@ -1246,10 +1247,10 @@ Story passage:
 	})
 	if err != nil {
 		log.Printf("autoGenerateMap: SVG generation failed for %q (session %d): %v", loc.Name, sessionID, err)
-		s.recordAutoFailure(settingAutoGenerateMap, err)
+		permit.Complete(err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoGenerateMap)
+	permit.Success()
 
 	svgContent := extractSVG(svgRaw)
 	if svgContent == "" {
@@ -1460,7 +1461,8 @@ Return ONLY a JSON object with the fields that must change and their new values.
 - If nothing needs to change, return {}.
 - No explanation, no markdown — just the JSON object.`, ruleset.Name, schema, systemNote, char.DataJSON, playerAction, gmText)
 
-	if !s.canRunAutomation(settingAutoUpdateStats) {
+	permit, ok := s.acquireAutomation(settingAutoUpdateStats)
+	if !ok {
 		return
 	}
 	var raw string
@@ -1469,11 +1471,10 @@ Return ONLY a JSON object with the fields that must change and their new values.
 		raw, e = completer.Generate(ctx, prompt, 400)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
-		s.recordAutoFailure(settingAutoUpdateStats, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoUpdateStats)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")
@@ -1801,7 +1802,8 @@ If there are no good suggestions, return an empty JSON array: []
 	ctx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
 	defer cancel()
 
-	if !s.canRunAutomation(settingAutoSuggestXP) {
+	permit, ok := s.acquireAutomation(settingAutoSuggestXP)
+	if !ok {
 		return
 	}
 	var raw string
@@ -1810,12 +1812,11 @@ If there are no good suggestions, return an empty JSON array: []
 		raw, e = completer.Generate(ctx, prompt, 1536)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
 		log.Printf("autoSuggestXPSpend: AI error: %v", err)
-		s.recordAutoFailure(settingAutoSuggestXP, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoSuggestXP)
 
 	// Extract JSON array from response using balanced bracket matching.
 	// The AI sometimes wraps output in markdown fences or adds trailing commentary
@@ -2097,7 +2098,8 @@ Example: {"add":[{"name":"Torvan","note":"A scarred mercenary guarding the gate"
 If nothing changed: {"add":[],"remove":[]}
 No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 
-	if !s.canRunAutomation(settingAutoExtractNPCs) {
+	permit, ok := s.acquireAutomation(settingAutoExtractNPCs)
+	if !ok {
 		return
 	}
 	var raw string
@@ -2106,11 +2108,10 @@ No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 		raw, e = completer.Generate(ctx, prompt, 384)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
-		s.recordAutoFailure(settingAutoExtractNPCs, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoExtractNPCs)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")
@@ -2726,7 +2727,8 @@ Output ONLY: {"new":[{"title":"...","description":"..."}],"resolved":[{"id":3,"s
 No changes: {"new":[],"resolved":[]}
 No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentContext)
 
-	if !s.canRunAutomation(settingAutoDetectObj) {
+	permit, ok := s.acquireAutomation(settingAutoDetectObj)
+	if !ok {
 		return
 	}
 	var raw string
@@ -2735,11 +2737,10 @@ No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentC
 		raw, e = completer.Generate(ctx, prompt, 1024)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
-		s.recordAutoFailure(settingAutoDetectObj, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoDetectObj)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")
@@ -2957,7 +2958,8 @@ If nothing changed: {"gained":[],"lost":[]}
 Story passage:
 %s`, gmText)
 
-	if !s.canRunAutomation(settingAutoExtractItems) {
+	permit, ok := s.acquireAutomation(settingAutoExtractItems)
+	if !ok {
 		return
 	}
 	var raw string
@@ -2966,11 +2968,10 @@ Story passage:
 		raw, e = completer.Generate(ctx, prompt, 256)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
-		s.recordAutoFailure(settingAutoExtractItems, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoExtractItems)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")

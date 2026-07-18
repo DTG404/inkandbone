@@ -382,7 +382,8 @@ GM narration: %s
 
 Reply with ONLY a single integer: the number of Rouse Checks owed (0 if none). No explanation.`, playerAction, gmText)
 
-	if !s.canRunAutomation(settingAutoCheckRoll) {
+	permit, ok := s.acquireAutomation(settingAutoCheckRoll)
+	if !ok {
 		return
 	}
 	var raw string
@@ -391,11 +392,10 @@ Reply with ONLY a single integer: the number of Rouse Checks owed (0 if none). N
 		raw, e = completer.Generate(ctx, prompt, 10)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
-		s.recordAutoFailure(settingAutoCheckRoll, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoCheckRoll)
 	raw = strings.TrimSpace(raw)
 	count := 0
 	if _, err := fmt.Sscanf(raw, "%d", &count); err != nil || count <= 0 {
@@ -569,7 +569,8 @@ Only set "embraced" to true if the narration clearly describes the player charac
 
 Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 
-	if !s.canRunAutomation(settingAutoUpdateStats) {
+	permit, ok := s.acquireAutomation(settingAutoUpdateStats)
+	if !ok {
 		return
 	}
 	var raw string
@@ -578,12 +579,11 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 		raw, e = completer.Generate(ctx, prompt, 80)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
 		log.Printf("autoDetectVtMEmbrace: AI call failed: %v", err)
-		s.recordAutoFailure(settingAutoUpdateStats, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoUpdateStats)
 
 	raw = strings.TrimSpace(raw)
 	start := strings.Index(raw, "{")

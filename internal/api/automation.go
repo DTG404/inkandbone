@@ -144,7 +144,8 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 	if gmCount == 0 || gmCount%4 != 0 {
 		return
 	}
-	if !s.canRunAutomation(settingAutoUpdateRecap) {
+	permit, ok := s.acquireAutomation(settingAutoUpdateRecap)
+	if !ok {
 		return
 	}
 	var summary string
@@ -153,11 +154,10 @@ func (s *Server) autoUpdateRecap(ctx context.Context, sessionID int64) {
 		summary, e = s.buildRecap(ctx, sessionID)
 		return e
 	})
+	permit.Complete(err)
 	if err != nil {
-		s.recordAutoFailure(settingAutoUpdateRecap, err)
 		return
 	}
-	s.recordAutoSuccess(settingAutoUpdateRecap)
 	if err := s.db.UpdateSessionSummary(sessionID, summary); err != nil {
 		return
 	}

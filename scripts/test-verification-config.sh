@@ -34,6 +34,15 @@ require 'version:[[:space:]]*v2\.12\.2' "$workflow"
 require 'run:[[:space:]]+make verify$' "$workflow"
 require 'run:[[:space:]]+make verify-e2e$' "$workflow"
 require 'gitleaks/v8@v8\.30\.1' "$workflow"
+require 'actions/checkout@v7\.0\.0' "$workflow"
+require 'actions/setup-go@v7\.0\.0' "$workflow"
+require 'actions/setup-node@v7\.0\.0' "$workflow"
+require 'golangci/golangci-lint-action@v9\.3\.0' "$workflow"
+
+if grep -Eq 'uses:[[:space:]]+[^[:space:]@]+@v[0-9]+([[:space:]]|$)' "$workflow"; then
+  echo "workflow action references must use exact release tags or commit SHAs" >&2
+  exit 1
+fi
 
 if [[ $(grep -c 'web/package-lock\.json' "$workflow") -lt 2 || $(grep -c 'e2e/package-lock\.json' "$workflow") -lt 2 ]]; then
   echo "both CI jobs must cache the web and e2e npm lockfiles" >&2

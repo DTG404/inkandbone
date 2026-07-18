@@ -46,7 +46,7 @@ func MinimumXPCost(system string) (int, bool) {
 	case "vtm":
 		return 3, true // first skill dot: 1 * 3
 	case "wrath_glory":
-		return 8, true // first practical attribute/skill advance: rating 2 * 4
+		return 4, true // first skill dot from the seeded zero rating: 1 * 4
 	case "shadowrun":
 		return 5, true // specialization, or first active skill/attribute rating: 1 * 5
 	case "wfrp":

@@ -55,7 +55,7 @@ func TestMinimumXPCost(t *testing.T) {
 		supported bool
 	}{
 		{"vtm", 3, true},
-		{"wrath_glory", 8, true},
+		{"wrath_glory", 4, true},
 		{"shadowrun", 5, true},
 		{"wfrp", 10, true},
 		{"cyberpunk", 10, true},
@@ -88,7 +88,7 @@ func TestMinimumXPCostMatchesLegalCostRules(t *testing.T) {
 		newValue int
 	}{
 		{"vtm", "athletics", 1},
-		{"wrath_glory", "athletics", 2},
+		{"wrath_glory", "athletics", 1},
 		{"shadowrun", "specialization", 1},
 		{"wfrp", "ws", 1},
 		{"cyberpunk", "athletics", 1},
@@ -284,10 +284,10 @@ func TestVtMInClanDisciplinesSpacedName(t *testing.T) {
 }
 
 func TestCanAffordAny(t *testing.T) {
-	// W&G with 8 XP: can afford skill at rating 2 (cost 8)
-	statsJSON := `{"xp":8,"strength":2,"agility":2,"toughness":2,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0}`
-	if !CanAffordAny("wrath_glory", 8, statsJSON) {
-		t.Error("expected CanAffordAny=true for W&G with 8 XP and zero skills")
+	// W&G with 4 XP: can afford a zero-rated skill's first dot (cost 4).
+	statsJSON := `{"xp":4,"strength":2,"agility":2,"toughness":2,"intellect":2,"willpower":2,"fellowship":2,"initiative":2,"ws":0,"bs":0,"athletics":0,"awareness":0,"cunning":0,"deception":0,"fortitude":0,"insight":0,"intimidation":0,"investigation":0,"leadership":0,"medicae":0,"persuasion":0,"pilot":0,"psychic_mastery":0,"scholar":0,"stealth":0,"survival":0,"tech":0}`
+	if !CanAffordAny("wrath_glory", 4, statsJSON) {
+		t.Error("expected CanAffordAny=true for W&G with 4 XP and a zero-rated skill")
 	}
 	// W&G with 0 XP: cannot afford anything
 	if CanAffordAny("wrath_glory", 0, statsJSON) {

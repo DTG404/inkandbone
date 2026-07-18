@@ -9,12 +9,16 @@ if (!BASE) throw new Error('workspace workflow tests require INKANDBONE_E2E_BASE
 let campaignId: number
 let characterId: number
 let sessionId: number
+let duneCampaignId: number
+let duneCharacterId: number
+let duneSessionId: number
 
 test.beforeAll(async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: BASE })
   const rulesets = await (await api.get('/api/rulesets')).json() as Array<{ id: number; name: string }>
   const dnd5e = rulesets.find((ruleset) => ruleset.name === 'dnd5e')
-  if (!dnd5e) throw new Error('dnd5e ruleset missing')
+  const dune = rulesets.find((ruleset) => ruleset.name === 'dune')
+  if (!dnd5e || !dune) throw new Error('required dnd5e or dune ruleset missing')
 
   campaignId = (await (await api.post('/api/campaigns', {
     data: { name: 'Maintained Workflow Campaign', ruleset_id: dnd5e.id },
@@ -31,6 +35,20 @@ test.beforeAll(async ({ playwright }) => {
   await api.post(`/api/sessions/${sessionId}/messages`, {
     data: { role: 'user', content: 'A decoy message should disappear from filtered results.', character_id: characterId },
   })
+
+  duneCampaignId = (await (await api.post('/api/campaigns', {
+    data: { name: 'Maintained Dune Skill Campaign', ruleset_id: dune.id },
+  })).json()).id
+  duneCharacterId = (await (await api.post(`/api/campaigns/${duneCampaignId}/characters`, {
+    data: { name: 'Liet Swordmaster' },
+  })).json()).id
+  duneSessionId = (await (await api.post(`/api/campaigns/${duneCampaignId}/sessions`, {
+    data: { title: 'Maintained Dune Skill Session', date: '2026-07-18' },
+  })).json()).id
+  await api.patch(`/api/characters/${duneCharacterId}`, {
+    data: { data_json: JSON.stringify({ battle: 4, communicate: 2, discipline: 3, move: 3, understand: 2 }) },
+  })
+
   await api.patch('/api/settings', {
     data: { campaign_id: campaignId, character_id: characterId, session_id: sessionId },
   })
@@ -113,6 +131,26 @@ test('character attribute click-to-roll records the maintained action shape', as
     return messages.filter((message) => message.role === 'user').at(-1)?.content
   }).toMatch(/attempts a .+ check\./)
   await expect.poll(() => page.evaluate(() => localStorage.getItem('inkandbone_roll_hint_shown'))).toBe('1')
+})
+
+test('Dune skill click-to-roll records the maintained action shape', async ({ page, request }) => {
+  await request.patch(`${BASE}/api/settings`, {
+    data: { campaign_id: duneCampaignId, character_id: duneCharacterId, session_id: duneSessionId },
+  })
+  await page.goto('/')
+
+  const skill = page.locator('label[title^="Click to roll"]').first()
+  await expect(skill).toBeVisible()
+  await skill.click()
+
+  await expect.poll(async () => {
+    const messages = await (await request.get(`${BASE}/api/sessions/${duneSessionId}/messages`)).json() as Array<{ role: string; content: string }>
+    return messages.filter((message) => message.role === 'user').at(-1)?.content
+  }).toMatch(/attempts a .+ check\./)
+
+  await request.patch(`${BASE}/api/settings`, {
+    data: { campaign_id: campaignId, character_id: characterId, session_id: sessionId },
+  })
 })
 
 test('macro workflow fires, reorders, deletes, and enforces the ten-item cap', async ({ page, request }) => {

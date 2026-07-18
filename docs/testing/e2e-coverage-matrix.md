@@ -76,9 +76,9 @@ The maintained browser tree is `e2e/tests/`; `cd e2e && npm test` is its only su
 
 | Old script/scenario | Maintained coverage | Status and rationale |
 |---|---|---|
-| `group-a-interactivity-e2e.mjs` A.1-A.10 click-to-roll | `workspace-workflows.spec.ts` click-to-roll; `CharacterSheetPanel.test.tsx` schema rendering | Covered. The maintained test asserts the persisted action shape and hint state without a fixed browser binary path. |
+| `group-a-interactivity-e2e.mjs` A.1-A.10 click-to-roll | `workspace-workflows.spec.ts` D&D attribute and Dune skill click-to-roll; `CharacterSheetPanel.test.tsx` schema rendering | Covered. The maintained browser tests assert the persisted action shape for both rendering paths and the one-time hint state without a fixed browser binary path. |
 | `group-a-interactivity-e2e.mjs` B.1-B.12 macros | `workspace-workflows.spec.ts` macro workflow; `queries_macros_test.go` | Covered across visible fire/reorder/delete/cap behavior and database ordering. |
-| `group-a-interactivity-e2e.mjs` C.1-C.10 combat order | `CombatPanel.test.tsx`; `UserActionFeedback.test.tsx`; `queries_combat_test.go` | Covered. The former script inserted directly through `node:sqlite`, tied itself to `/tmp/e2e-group-a.db`, and bypassed the API prerequisite rule; deterministic component/database characterization replaces it. |
+| `group-a-interactivity-e2e.mjs` C.1-C.10 combat order | `CombatPanel.test.tsx` initiative edit and reorder interactions; `UserActionFeedback.test.tsx`; `queries_combat_test.go` | Covered. Deterministic component tests invoke the visible controls and assert the exact persisted callback payloads, while database tests own ordering semantics. This replaces the former direct `node:sqlite` setup that bypassed the API prerequisite rule. |
 | `multiplayer-e2e.mjs` seed/context/message ownership | context/message route tests; `App.test.tsx` character selection | Covered. |
 | `multiplayer-e2e.mjs` ten live GM turns and name mentions | none | Obsolete: model wording is nondeterministic, requires external provider credentials, and can incur paid requests; it is not a reliable product contract. Prompt/context inclusion is verified by deterministic backend tests. |
 | `multiplayer-e2e.mjs` browser story/selector | `App.test.tsx`; maintained smoke/session workflow specs | Covered deterministically. |

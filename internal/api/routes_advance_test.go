@@ -53,6 +53,7 @@ func TestAdvancementConfig(t *testing.T) {
 	}{
 		{"vtm", 3},
 		{"cyberpunk", 10},
+		{"wrath_glory", 4},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ruleset, err := s.db.GetRulesetByName(test.name)

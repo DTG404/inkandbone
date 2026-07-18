@@ -1,7 +1,16 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { CombatPanel } from './CombatPanel'
 import type { CombatSnapshot } from './types'
+
+const apiMocks = vi.hoisted(() => ({
+  patchCombatant: vi.fn(),
+  advanceTurn: vi.fn(),
+  reorderCombatants: vi.fn(),
+}))
+
+vi.mock('./api', () => apiMocks)
 
 const combat: CombatSnapshot = {
   encounter: { id: 1, session_id: 1, name: 'Bandit Ambush', active: true, active_turn_index: 0, round_number: 1, created_at: '' },
@@ -20,6 +29,13 @@ const combat: CombatSnapshot = {
 }
 
 afterEach(cleanup)
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  apiMocks.patchCombatant.mockResolvedValue(undefined)
+  apiMocks.advanceTurn.mockResolvedValue(undefined)
+  apiMocks.reorderCombatants.mockResolvedValue(undefined)
+})
 
 describe('CombatPanel', () => {
   it('renders encounter name and all combatants', () => {
@@ -66,5 +82,26 @@ describe('CombatPanel', () => {
   it('renders hp text label', () => {
     render(<CombatPanel combat={combat} />)
     expect(screen.getByText('30 / 40 HP')).toBeInTheDocument()
+  })
+
+  it('persists an initiative edit from the combat UI', async () => {
+    const user = userEvent.setup()
+    render(<CombatPanel combat={combat} />)
+
+    await user.click(screen.getAllByTitle('Click to edit initiative')[1])
+    const input = screen.getByRole('spinbutton')
+    await user.clear(input)
+    await user.type(input, '21{Enter}')
+
+    expect(apiMocks.patchCombatant).toHaveBeenCalledWith(2, { initiative: 21 })
+  })
+
+  it('persists the reordered combatant IDs from the combat UI', async () => {
+    const user = userEvent.setup()
+    render(<CombatPanel combat={combat} />)
+
+    await user.click(screen.getAllByTitle('Move up')[1])
+
+    expect(apiMocks.reorderCombatants).toHaveBeenCalledWith(1, [2, 1])
   })
 })

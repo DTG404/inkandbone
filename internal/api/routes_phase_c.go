@@ -222,6 +222,10 @@ func (s *Server) handleReanalyzeSession(w http.ResponseWriter, r *http.Request) 
 		SessionID: id,
 		Kind:      settingAutoDetectObj,
 		Mode:      JobModeEvent,
+		HealthKinds: []string{
+			settingAutoDetectObj,
+			settingAutoExtractNPCs,
+		},
 		Run: func(ctx context.Context) error {
 			s.autoDetectObjectives(ctx, id, immutableCorpus)
 			s.extractNPCs(ctx, id, immutableCorpus)

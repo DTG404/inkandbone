@@ -368,6 +368,164 @@ func TestDispatcherSubmitCoalesceShutdownStress(t *testing.T) {
 	}
 }
 
+func TestDispatcherRecoversJobPanicAndContinuesSameSession(t *testing.T) {
+	d := NewDispatcher(context.Background(), DispatcherOptions{Workers: 1, QueueSize: 4})
+	continued := make(chan struct{})
+	require.NoError(t, d.Submit(context.Background(), eventAutomationJob("panic", 77, "panic-kind", func(context.Context) error {
+		panic("SECRET panic payload")
+	})))
+	require.NoError(t, d.Submit(context.Background(), eventAutomationJob("after-panic", 77, "continuation-kind", func(context.Context) error {
+		close(continued)
+		return nil
+	})))
+	receiveWithin(t, continued, time.Second, "same-session job after panic")
+	shutdownDispatcher(t, d)
+	health := dispatcherHealthByKind(d.Snapshot())["panic-kind"]
+	assert.Zero(t, health.Running)
+	assert.Equal(t, "automation job panicked", health.LastError)
+	assert.NotContains(t, health.LastError, "SECRET")
+}
+
+func TestDispatcherRejectsPreCanceledCallerBeforeOwnership(t *testing.T) {
+	d := NewDispatcher(context.Background(), DispatcherOptions{Workers: 1, QueueSize: 4})
+	t.Cleanup(func() { shutdownDispatcher(t, d) })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var ran atomic.Int32
+	for _, job := range []AutomationJob{
+		eventAutomationJob("canceled-event", 1, "canceled-event", func(context.Context) error { ran.Add(1); return nil }),
+		snapshotAutomationJob(2, "canceled-snapshot", func(context.Context) error { ran.Add(1); return nil }),
+	} {
+		assert.ErrorIs(t, d.Submit(ctx, job), context.Canceled)
+	}
+	time.Sleep(20 * time.Millisecond)
+	assert.Zero(t, ran.Load(), "pre-canceled jobs must never transfer ownership")
+}
+
+func TestAutomationManualEndpointsRejectPreCanceledCaller(t *testing.T) {
+	t.Run("session reanalysis", func(t *testing.T) {
+		s := newTestServerWithAI(t, &stubCompleter{response: `[]`})
+		_, sessionID := seedCampaign(t, s.db)
+		_, err := s.db.CreateMessage(sessionID, "assistant", "The relic remains in Ashen Tower.", false, nil)
+		require.NoError(t, err)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+strconv.FormatInt(sessionID, 10)+"/reanalyze", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusRequestTimeout, w.Code)
+		assert.NotEqual(t, http.StatusAccepted, w.Code)
+	})
+
+	t.Run("manual xp suggestion", func(t *testing.T) {
+		s := newTestServer(t)
+		ruleset, err := s.db.GetRulesetByName("vtm")
+		require.NoError(t, err)
+		campaignID, err := s.db.CreateCampaign(ruleset.ID, "Canceled Caller", "")
+		require.NoError(t, err)
+		characterID, err := s.db.CreateCharacter(campaignID, "Avery")
+		require.NoError(t, err)
+		require.NoError(t, s.db.UpdateCharacterData(characterID, `{"xp":20}`))
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req := httptest.NewRequest(http.MethodPost, "/api/characters/"+strconv.FormatInt(characterID, 10)+"/suggest-advances", strings.NewReader(`{}`)).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusRequestTimeout, w.Code)
+		assert.NotEqual(t, http.StatusAccepted, w.Code)
+	})
+}
+
+func TestAutomationSettingsRetainSanitizedDispatcherAndBreakerErrors(t *testing.T) {
+	s := newTestServer(t)
+	shutdownDispatcher(t, s.automations)
+	s.automations = NewDispatcher(context.Background(), DispatcherOptions{Workers: 1, QueueSize: 1})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	started := make(chan struct{})
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	require.NoError(t, s.automations.Submit(context.Background(), eventAutomationJob("block", 1, "block", func(context.Context) error {
+		close(started)
+		<-release
+		return nil
+	})))
+	receiveWithin(t, started, time.Second, "health blocker")
+	require.NoError(t, s.automations.Submit(context.Background(), snapshotAutomationJob(2, settingAutoUpdateRecap, func(context.Context) error { return nil })))
+	require.ErrorIs(t, s.automations.Submit(context.Background(), snapshotAutomationJob(3, settingAutoUpdateRecap, func(context.Context) error { return nil })), ErrAutomationQueueFull)
+	permit, ok := s.breakers.Acquire(s.automationBreakerKey(settingAutoUpdateRecap))
+	require.True(t, ok)
+	permit.Failure(errors.New("SECRET https://provider.invalid/raw-prompt"))
+
+	readRecap := func() map[string]any {
+		req := httptest.NewRequest(http.MethodGet, "/api/settings/automations", nil)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var settings []map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &settings))
+		return settingByKey(settings)[settingAutoUpdateRecap]
+	}
+	lastError, _ := readRecap()["last_error"].(string)
+	assert.Contains(t, lastError, "automation provider request failed")
+	assert.Contains(t, lastError, ErrAutomationQueueFull.Error())
+	assert.NotContains(t, lastError, "SECRET")
+	assert.NotContains(t, lastError, "provider.invalid")
+
+	releaseOnce.Do(func() { close(release) })
+	require.Eventually(t, func() bool {
+		health := dispatcherHealthByKind(s.automations.Snapshot())[settingAutoUpdateRecap]
+		return health.Queued == 0 && health.Running == 0
+	}, time.Second, time.Millisecond)
+	lastError, _ = readRecap()["last_error"].(string)
+	assert.Contains(t, lastError, "automation provider request failed")
+	assert.Contains(t, lastError, ErrAutomationQueueFull.Error(), "job completion must not erase admission failure health")
+}
+
+type blockingReanalysisCompleter struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (c *blockingReanalysisCompleter) Generate(context.Context, string, int) (string, error) {
+	c.once.Do(func() { close(c.started) })
+	<-c.release
+	return `[]`, nil
+}
+
+func TestAutomationReanalysisHealthAttributesCompositeEvent(t *testing.T) {
+	completer := &blockingReanalysisCompleter{started: make(chan struct{}), release: make(chan struct{})}
+	s := newTestServerWithAI(t, completer)
+	_, sessionID := seedCampaign(t, s.db)
+	_, err := s.db.CreateMessage(sessionID, "assistant", "A new mission objective names Captain Voss.", false, nil)
+	require.NoError(t, err)
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(completer.release) }) })
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+strconv.FormatInt(sessionID, 10)+"/reanalyze", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	receiveWithin(t, completer.started, time.Second, "composite reanalysis")
+
+	settingsReq := httptest.NewRequest(http.MethodGet, "/api/settings/automations", nil)
+	settingsW := httptest.NewRecorder()
+	s.ServeHTTP(settingsW, settingsReq)
+	require.Equal(t, http.StatusOK, settingsW.Code)
+	var settings []map[string]any
+	require.NoError(t, json.Unmarshal(settingsW.Body.Bytes(), &settings))
+	byKey := settingByKey(settings)
+	assert.Equal(t, float64(1), byKey[settingAutoDetectObj]["running"])
+	assert.Equal(t, float64(1), byKey[settingAutoExtractNPCs]["running"])
+
+	releaseOnce.Do(func() { close(completer.release) })
+	require.Eventually(t, func() bool {
+		health := dispatcherHealthByKind(s.automations.Snapshot())
+		return health[settingAutoDetectObj].Running == 0 && health[settingAutoExtractNPCs].Running == 0
+	}, time.Second, time.Millisecond)
+}
+
 func TestServerShutdownDrainsDispatcherAndCloseForcesCancellation(t *testing.T) {
 	t.Run("graceful drain", func(t *testing.T) {
 		s := newTestServer(t)

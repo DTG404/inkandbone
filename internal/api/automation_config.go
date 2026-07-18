@@ -81,10 +81,7 @@ func (s *Server) handleListAutomationSettings(w http.ResponseWriter, r *http.Req
 			status = BreakerClosed
 		}
 		lastSuccess := latestTime(breaker.LastSuccess, dispatch.LastSuccess)
-		lastError := breaker.LastError
-		if lastError == "" {
-			lastError = dispatch.LastError
-		}
+		lastError := joinAutomationErrors(breaker.LastError, dispatch.LastError)
 		result[i] = map[string]any{
 			"key":          setting.Key,
 			"label":        setting.Label,

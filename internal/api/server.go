@@ -194,8 +194,6 @@ func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
 
 // Shutdown gracefully stops a server started by ListenAndServe or ListenAndServeTLS.
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.automations.stopAccepting()
-	s.beginShutdown()
 	s.httpServerMu.Lock()
 	server := s.httpServer
 	s.httpServerMu.Unlock()
@@ -203,6 +201,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if server != nil {
 		httpErr = server.Shutdown(ctx)
 	}
+	// Graceful HTTP shutdown stops new intake and waits for active handlers.
+	// Keep dispatcher admission and root context alive until those handlers have
+	// transferred ownership of any required follow-up automation.
+	s.automations.stopAccepting()
+	s.beginShutdown()
 	var lifecycleErr error
 	select {
 	case <-s.lifecycleDone:

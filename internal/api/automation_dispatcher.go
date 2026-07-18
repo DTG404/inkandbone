@@ -17,6 +17,7 @@ const (
 var (
 	ErrAutomationQueueFull        = errors.New("automation queue full")
 	ErrAutomationDispatcherClosed = errors.New("automation dispatcher closed")
+	errAutomationJobPanicked      = errors.New("automation job panicked")
 )
 
 type JobMode uint8
@@ -32,6 +33,9 @@ type AutomationJob struct {
 	Kind      string
 	Mode      JobMode
 	Run       func(context.Context) error
+	// HealthKinds attributes one composite job to each affected automation
+	// setting. Kind remains the scheduling/snapshot identity.
+	HealthKinds []string
 }
 
 type DispatcherOptions struct {
@@ -48,15 +52,17 @@ type AutomationDispatchHealth struct {
 }
 
 type dispatchHealth struct {
-	queued      int
-	running     int
-	lastSuccess time.Time
-	lastError   string
+	queued              int
+	running             int
+	lastSuccess         time.Time
+	lastRunError        string
+	lastSubmissionError string
 }
 
 type queuedAutomation struct {
-	job      AutomationJob
-	identity string
+	job         AutomationJob
+	identity    string
+	healthKinds []string
 }
 
 // Dispatcher bounds automation execution while preserving accepted event work
@@ -133,6 +139,8 @@ func (d *Dispatcher) Submit(ctx context.Context, job AutomationJob) error {
 	if job.Mode != JobModeEvent && job.Mode != JobModeSnapshot {
 		return errors.New("invalid automation job mode")
 	}
+	healthKinds := automationHealthKinds(job)
+	job.HealthKinds = append([]string(nil), healthKinds...)
 
 	identity := ""
 	if job.Mode == JobModeSnapshot {
@@ -141,15 +149,29 @@ func (d *Dispatcher) Submit(ctx context.Context, job AutomationJob) error {
 	}
 	for {
 		d.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			d.setSubmissionErrorLocked(healthKinds, automationDispatchError(err))
+			d.mu.Unlock()
+			return err
+		}
+		if d.ctx.Err() != nil {
+			d.setSubmissionErrorLocked(healthKinds, ErrAutomationDispatcherClosed.Error())
+			d.mu.Unlock()
+			return ErrAutomationDispatcherClosed
+		}
 		if !d.accepting {
-			d.healthForLocked(job.Kind).lastError = ErrAutomationDispatcherClosed.Error()
+			d.setSubmissionErrorLocked(healthKinds, ErrAutomationDispatcherClosed.Error())
 			d.mu.Unlock()
 			return ErrAutomationDispatcherClosed
 		}
 		if job.Mode == JobModeSnapshot {
 			for _, pending := range d.queue {
 				if pending.job.Mode == JobModeSnapshot && pending.identity == identity {
+					d.adjustQueuedLocked(pending.healthKinds, -1)
 					pending.job = job
+					pending.healthKinds = append(pending.healthKinds[:0], healthKinds...)
+					d.adjustQueuedLocked(pending.healthKinds, 1)
+					d.setSubmissionErrorLocked(healthKinds, "")
 					d.signalLocked()
 					d.mu.Unlock()
 					return nil
@@ -161,15 +183,15 @@ func (d *Dispatcher) Submit(ctx context.Context, job AutomationJob) error {
 			if job.Mode == JobModeEvent {
 				job.Key = fmt.Sprintf("%s#%d", job.Key, d.nextKey)
 			}
-			d.queue = append(d.queue, &queuedAutomation{job: job, identity: identity})
-			health := d.healthForLocked(job.Kind)
-			health.queued++
+			d.queue = append(d.queue, &queuedAutomation{job: job, identity: identity, healthKinds: healthKinds})
+			d.adjustQueuedLocked(healthKinds, 1)
+			d.setSubmissionErrorLocked(healthKinds, "")
 			d.signalLocked()
 			d.mu.Unlock()
 			return nil
 		}
 		if job.Mode == JobModeSnapshot {
-			d.healthForLocked(job.Kind).lastError = ErrAutomationQueueFull.Error()
+			d.setSubmissionErrorLocked(healthKinds, ErrAutomationQueueFull.Error())
 			d.mu.Unlock()
 			return ErrAutomationQueueFull
 		}
@@ -178,10 +200,10 @@ func (d *Dispatcher) Submit(ctx context.Context, job AutomationJob) error {
 
 		select {
 		case <-ctx.Done():
-			d.recordSubmissionError(job.Kind, automationDispatchError(ctx.Err()))
+			d.recordSubmissionError(healthKinds, automationDispatchError(ctx.Err()))
 			return ctx.Err()
 		case <-d.ctx.Done():
-			d.recordSubmissionError(job.Kind, ErrAutomationDispatcherClosed.Error())
+			d.recordSubmissionError(healthKinds, ErrAutomationDispatcherClosed.Error())
 			return ErrAutomationDispatcherClosed
 		case <-wait:
 		}
@@ -225,9 +247,8 @@ func (d *Dispatcher) forceCancel() {
 		d.accepting = false
 		d.forced = true
 		for _, pending := range d.queue {
-			health := d.healthForLocked(pending.job.Kind)
-			health.queued--
-			health.lastError = "automation request canceled"
+			d.adjustQueuedLocked(pending.healthKinds, -1)
+			d.setRunErrorLocked(pending.healthKinds, "automation request canceled")
 		}
 		d.queue = nil
 		d.cancel()
@@ -247,7 +268,7 @@ func (d *Dispatcher) Snapshot() []AutomationDispatchHealth {
 			Queued:      health.queued,
 			Running:     health.running,
 			LastSuccess: copyTime(health.lastSuccess),
-			LastError:   health.lastError,
+			LastError:   joinAutomationErrors(health.lastRunError, health.lastSubmissionError),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Kind < result[j].Kind })
@@ -274,16 +295,21 @@ func (d *Dispatcher) worker() {
 		}
 		d.mu.Unlock()
 
-		err := job.job.Run(d.ctx)
+		err := runAutomationJob(d.ctx, job.job.Run)
 
 		d.mu.Lock()
-		health := d.healthForLocked(job.job.Kind)
-		health.running--
+		d.adjustRunningLocked(job.healthKinds, -1)
 		if err == nil {
-			health.lastSuccess = time.Now()
-			health.lastError = ""
+			completedAt := time.Now()
+			for _, kind := range job.healthKinds {
+				health := d.healthForLocked(kind)
+				health.lastSuccess = completedAt
+				health.lastRunError = ""
+			}
+		} else if errors.Is(err, errAutomationJobPanicked) {
+			d.setRunErrorLocked(job.healthKinds, errAutomationJobPanicked.Error())
 		} else {
-			health.lastError = sanitizeAutomationError(err)
+			d.setRunErrorLocked(job.healthKinds, sanitizeAutomationError(err))
 		}
 		if job.job.SessionID != 0 {
 			delete(d.runningSession, job.job.SessionID)
@@ -302,9 +328,8 @@ func (d *Dispatcher) takeLocked() (*queuedAutomation, bool) {
 			continue
 		}
 		d.queue = append(d.queue[:index], d.queue[index+1:]...)
-		health := d.healthForLocked(pending.job.Kind)
-		health.queued--
-		health.running++
+		d.adjustQueuedLocked(pending.healthKinds, -1)
+		d.adjustRunningLocked(pending.healthKinds, 1)
 		if pending.job.SessionID != 0 {
 			d.runningSession[pending.job.SessionID] = true
 		}
@@ -323,10 +348,71 @@ func (d *Dispatcher) healthForLocked(kind string) *dispatchHealth {
 	return health
 }
 
-func (d *Dispatcher) recordSubmissionError(kind, message string) {
+func (d *Dispatcher) recordSubmissionError(kinds []string, message string) {
 	d.mu.Lock()
-	d.healthForLocked(kind).lastError = message
+	d.setSubmissionErrorLocked(kinds, message)
 	d.mu.Unlock()
+}
+
+func automationHealthKinds(job AutomationJob) []string {
+	result := make([]string, 0, 1+len(job.HealthKinds))
+	seen := make(map[string]bool, 1+len(job.HealthKinds))
+	for _, kind := range append([]string{job.Kind}, job.HealthKinds...) {
+		if kind != "" && !seen[kind] {
+			seen[kind] = true
+			result = append(result, kind)
+		}
+	}
+	return result
+}
+
+func (d *Dispatcher) adjustQueuedLocked(kinds []string, delta int) {
+	for _, kind := range kinds {
+		d.healthForLocked(kind).queued += delta
+	}
+}
+
+func (d *Dispatcher) adjustRunningLocked(kinds []string, delta int) {
+	for _, kind := range kinds {
+		d.healthForLocked(kind).running += delta
+	}
+}
+
+func (d *Dispatcher) setRunErrorLocked(kinds []string, message string) {
+	for _, kind := range kinds {
+		d.healthForLocked(kind).lastRunError = message
+	}
+}
+
+func (d *Dispatcher) setSubmissionErrorLocked(kinds []string, message string) {
+	for _, kind := range kinds {
+		d.healthForLocked(kind).lastSubmissionError = message
+	}
+}
+
+func runAutomationJob(ctx context.Context, run func(context.Context) error) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errAutomationJobPanicked
+		}
+	}()
+	return run(ctx)
+}
+
+func joinAutomationErrors(values ...string) string {
+	result := ""
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		if result != "" {
+			result += "; "
+		}
+		result += value
+	}
+	return result
 }
 
 func automationDispatchError(err error) string {

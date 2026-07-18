@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +15,37 @@ import (
 )
 
 var lifecycleHTTPClient = &http.Client{Timeout: time.Second}
+
+type pipeListener struct {
+	connections chan net.Conn
+	closed      chan struct{}
+	closeOnce   sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{connections: make(chan net.Conn, 1), closed: make(chan struct{})}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case connection := <-l.connections:
+		return connection, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.closeOnce.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return pipeAddr("pipe") }
+
+type pipeAddr string
+
+func (a pipeAddr) Network() string { return string(a) }
+func (a pipeAddr) String() string  { return string(a) }
 
 func startLifecycleServer(t *testing.T, s *Server) (string, <-chan error) {
 	t.Helper()
@@ -27,6 +61,54 @@ func startLifecycleServer(t *testing.T, s *Server) (string, <-chan error) {
 		t.Fatal("timed out waiting for owned http.Server installation")
 	}
 	return "http://" + listener.Addr().String(), serveErr
+}
+
+func TestLifecycleShutdownLetsActiveHandlerSubmitAutomation(t *testing.T) {
+	s := newTestServer(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	submitted := make(chan error, 1)
+	ran := make(chan struct{})
+	s.mux.HandleFunc("POST /lifecycle-submit", func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		err := s.automations.Submit(s.rootCtx, eventAutomationJob("active-handler", 41, "active-handler", func(context.Context) error {
+			close(ran)
+			return nil
+		}))
+		submitted <- err
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	listener := newPipeListener()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- s.startOnListener(listener, "", "") }()
+	receiveWithin(t, s.httpServerReady, time.Second, "pipe HTTP server")
+	serverConn, clientConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close() })
+	listener.connections <- serverConn
+	go func() {
+		_, _ = fmt.Fprint(clientConn, "POST /lifecycle-submit HTTP/1.1\r\nHost: pipe\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+		_, _ = io.Copy(io.Discard, clientConn)
+	}()
+	receiveWithin(t, entered, time.Second, "active HTTP handler")
+
+	shutdownDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		shutdownDone <- s.Shutdown(ctx)
+	}()
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("shutdown returned before active handler completed: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, receiveWithin(t, submitted, time.Second, "active handler automation ownership"))
+	receiveWithin(t, ran, time.Second, "active handler automation")
+	require.NoError(t, receiveWithin(t, shutdownDone, time.Second, "active-handler-aware shutdown"))
+	assert.ErrorIs(t, receiveWithin(t, serveErr, time.Second, "pipe server stop"), http.ErrServerClosed)
 }
 
 func TestLifecycleInvalidTLSClosesOwnedListener(t *testing.T) {

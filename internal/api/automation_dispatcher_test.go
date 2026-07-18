@@ -597,9 +597,13 @@ func TestAutomationSettingsExposeCompatibleCombinedSanitizedHealth(t *testing.T)
 		assert.Contains(t, setting, "running")
 		assert.Contains(t, setting, "last_success")
 		assert.Contains(t, setting, "last_error")
+		assert.Contains(t, setting, "failure_count")
+		assert.Contains(t, setting, "cooling_down")
 	}
 	recap := settingByKey(settings)[settingAutoUpdateRecap]
 	assert.Equal(t, BreakerOpen, recap["status"])
+	assert.Equal(t, float64(3), recap["failure_count"])
+	assert.Equal(t, true, recap["cooling_down"])
 	assert.NotContains(t, recap["last_error"], "SECRET")
 	assert.NotContains(t, recap["last_error"], "provider.invalid")
 }

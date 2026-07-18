@@ -50,7 +50,6 @@ var (
 	svgPathPattern      = regexp.MustCompile(`^[MmZzLlHhVvCcSsQqTtAa0-9eE+\-.,\s]+$`)
 	svgTransformPattern = regexp.MustCompile(`^(?:(?:matrix|translate|scale|rotate|skewX|skewY)\s*\([0-9eE+\-.,\s]+\)\s*)+$`)
 	svgFragmentPattern  = regexp.MustCompile(`^#[A-Za-z_][A-Za-z0-9_.:-]*$`)
-	svgURLPattern       = regexp.MustCompile(`^url\(#[A-Za-z_][A-Za-z0-9_.:-]*\)$`)
 	svgColorPattern     = regexp.MustCompile(`^(?:none|currentColor|transparent|#[0-9A-Fa-f]{3,8}|[A-Za-z]+|rgba?\([0-9.,%\s]+\)|url\(#[A-Za-z_][A-Za-z0-9_.:-]*\))$`)
 	svgTextValuePattern = regexp.MustCompile(`^[A-Za-z0-9 _.,'"\-]+$`)
 )

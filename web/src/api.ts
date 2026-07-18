@@ -1000,6 +1000,8 @@ export interface AutomationSetting {
   label: string
   enabled: boolean
   status: 'closed' | 'open' | 'half-open'
+  failure_count: number
+  cooling_down: boolean
   queued: number
   running: number
   last_success: string | null

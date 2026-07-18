@@ -25,7 +25,7 @@ test:
 	go test ./... -v
 	cd web && npm test -- --run
 
-# Build the current binary, then run Playwright smoke and security tests.
+# Build the current binary, then run Playwright smoke, security, and reliability tests.
 e2e: build
 	cd e2e && npm test
 

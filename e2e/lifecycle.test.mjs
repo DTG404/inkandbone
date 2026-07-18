@@ -151,6 +151,7 @@ test('external E2E lifecycle cleans startup, pass, and test-failure paths', asyn
         INKANDBONE_E2E_PLAYWRIGHT_CLI: runner,
         INKANDBONE_E2E_PORT: String(port),
         OLLAMA_MODEL: 'hostile-lifecycle-marker',
+        OLLAMA_HOST: 'http://127.0.0.1:1/hostile-lifecycle-marker',
       })
       assert.equal(result.code, exitCode)
       assert.ok(result.durationMs < 4_000, `graceful lifecycle took ${result.durationMs}ms`)

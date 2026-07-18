@@ -889,13 +889,13 @@ make test
 
 Tests cover the database layer, API handlers, automation goroutines, and AI integration.
 
-Run the browser smoke and security suite with:
+Run the browser smoke, security, and reliability suite with:
 
 ```bash
 make e2e
 ```
 
-The E2E suite requires Playwright Chromium and the `openssl` executable. `make e2e` builds the current embedded frontend/server binary first. Its lifecycle runner creates a unique temporary directory for the smoke database, sidecars, backups, and uploaded assets; starts the exact test server; runs Playwright; terminates and reaps the test and server processes; and only then recursively removes that directory. The security scenarios separately own and remove another unique directory containing their databases and generated one-day TLS key pair.
+The E2E suite requires Playwright Chromium and the `openssl` executable. `make e2e` builds the current embedded frontend/server binary first. Its lifecycle runner creates a unique temporary directory for the smoke database, sidecars, backups, and uploaded assets; starts the exact test server; runs Playwright; terminates and reaps the test and server processes; and only then recursively removes that directory. The security scenarios separately own and remove another unique directory containing their databases and generated one-day TLS key pair. Reliability scenarios own an additional disposable server and local provider stub on dynamic loopback ports; they never use inherited provider credentials or a paid external provider.
 
 ---
 

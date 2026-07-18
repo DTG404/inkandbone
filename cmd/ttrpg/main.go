@@ -102,7 +102,11 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 		log.Printf("AI: Ollama dual-model (GM=%s, automation=%s)", gmModel, autoModel)
 	case os.Getenv("OLLAMA_MODEL") != "":
 		model := os.Getenv("OLLAMA_MODEL")
-		aiClient = ai.NewOllamaClient(model)
+		if baseURL := configuredOllamaURL(os.Getenv("OLLAMA_HOST")); baseURL != "" {
+			aiClient = ai.NewOllamaClientWithURL(model, baseURL)
+		} else {
+			aiClient = ai.NewOllamaClient(model)
+		}
 		log.Printf("AI: Ollama single-model (%s)", model)
 	default:
 		log.Println("AI: disabled (set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OLLAMA_MODEL)")
@@ -137,6 +141,10 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 			keyFile:         securityConfig.TLSKeyFile,
 			shutdownTimeout: 15 * time.Second,
 		})
+}
+
+func configuredOllamaURL(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 type httpLifecycle interface {

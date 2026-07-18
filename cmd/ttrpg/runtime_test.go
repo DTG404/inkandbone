@@ -213,3 +213,8 @@ func TestSetupFailureJoinsDatabaseCloseError(t *testing.T) {
 	require.ErrorIs(t, err, setupErr)
 	require.ErrorIs(t, err, closeErr)
 }
+
+func TestConfiguredOllamaURL(t *testing.T) {
+	assert.Equal(t, "", configuredOllamaURL(" \t"))
+	assert.Equal(t, "http://127.0.0.1:43123", configuredOllamaURL(" http://127.0.0.1:43123/ "))
+}

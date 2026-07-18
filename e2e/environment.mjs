@@ -17,6 +17,7 @@ export const TTRPG_SERVER_ENVIRONMENT_KEYS = [
   'OLLAMA_GM_MODEL',
   'OLLAMA_AI_MODEL',
   'OLLAMA_MODEL',
+  'OLLAMA_HOST',
 ]
 
 export function sanitizedE2EEnvironment(overrides = {}) {

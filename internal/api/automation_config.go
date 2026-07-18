@@ -83,14 +83,16 @@ func (s *Server) handleListAutomationSettings(w http.ResponseWriter, r *http.Req
 		lastSuccess := latestTime(breaker.LastSuccess, dispatch.LastSuccess)
 		lastError := joinAutomationErrors(breaker.LastError, dispatch.LastError)
 		result[i] = map[string]any{
-			"key":          setting.Key,
-			"label":        setting.Label,
-			"enabled":      s.isAutomationEnabled(setting.Key),
-			"status":       status,
-			"queued":       dispatch.Queued,
-			"running":      dispatch.Running,
-			"last_success": lastSuccess,
-			"last_error":   lastError,
+			"key":           setting.Key,
+			"label":         setting.Label,
+			"enabled":       s.isAutomationEnabled(setting.Key),
+			"status":        status,
+			"failure_count": breaker.FailureCount,
+			"cooling_down":  breaker.CoolingDown,
+			"queued":        dispatch.Queued,
+			"running":       dispatch.Running,
+			"last_success":  lastSuccess,
+			"last_error":    lastError,
 		}
 	}
 	respondJSON(w, result)

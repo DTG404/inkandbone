@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 
@@ -100,22 +99,28 @@ func (s *Server) handleRevealSecret(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session_id required", http.StatusBadRequest)
 		return
 	}
+	secret, err := s.db.GetSecret(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if secret == nil {
+		http.Error(w, "secret not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.RevealSecret(id, body.SessionID); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	secret, err := s.db.GetSecret(id)
-	if err != nil {
-		log.Printf("handleRevealSecret: fetch after reveal failed: %v", err)
-	} else if secret != nil {
-		s.bus.Publish(Event{Type: EventSecretRevealed, Payload: map[string]any{
-			"id":       secret.ID,
-			"title":    secret.Title,
-			"content":  secret.Content,
-			"category": secret.Category,
-		}})
-	}
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventSecretRevealed, Payload: map[string]any{
+		"id":          secret.ID,
+		"campaign_id": secret.CampaignID,
+		"session_id":  body.SessionID,
+		"title":       secret.Title,
+		"content":     secret.Content,
+		"category":    secret.Category,
+	}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": secret.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -143,11 +148,20 @@ func (s *Server) handleUpdateSecret(w http.ResponseWriter, r *http.Request) {
 	if category == "" {
 		category = "secret"
 	}
+	secret, err := s.db.GetSecret(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if secret == nil {
+		http.Error(w, "secret not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateSecret(id, body.Title, body.Content, category); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": secret.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -158,9 +172,19 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	secret, err := s.db.GetSecret(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if secret == nil {
+		http.Error(w, "secret not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteSecret(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
+	s.bus.Publish(Event{Type: EventSecretsUpdated, Payload: map[string]any{"campaign_id": secret.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }

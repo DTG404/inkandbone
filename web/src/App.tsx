@@ -313,14 +313,15 @@ function GameApp() {
       }
     }
   }, [loadContext, refreshTranscript])
-  const { lastEvent, needsReconcile, acknowledgeReconcile } = useWebSocket(webSocketURL(window.location), handleEvent)
+  const { lastEvent, needsReconcile, reconcileGeneration, acknowledgeReconcile } = useWebSocket(webSocketURL(window.location), handleEvent)
 
   useEffect(() => {
     if (!needsReconcile) return
+    const generation = reconcileGeneration
     void loadContext(true).then((loaded) => {
-      if (loaded) acknowledgeReconcile()
+      if (loaded) acknowledgeReconcile(generation)
     })
-  }, [needsReconcile, loadContext, acknowledgeReconcile])
+  }, [needsReconcile, reconcileGeneration, loadContext, acknowledgeReconcile])
 
   const handleSendText = useCallback(async (text: string) => {
     if (!text || !ctx?.session || sending) return

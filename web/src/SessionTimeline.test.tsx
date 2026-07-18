@@ -56,7 +56,7 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'dice_rolled', payload: { expression: '2d6', total: 8, breakdown: [3, 5] } }}
+        lastEvent={{ type: 'dice_rolled', payload: { session_id: 1, expression: '2d6', total: 8, breakdown: [3, 5] } }}
       />,
     )
 
@@ -73,7 +73,7 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'combat_started', payload: { encounter_id: 1, name: 'Goblin Raid' } }}
+        lastEvent={{ type: 'combat_started', payload: { session_id: 1, encounter_id: 1, name: 'Goblin Raid' } }}
       />,
     )
 
@@ -81,5 +81,19 @@ describe('SessionTimeline', () => {
       expect(screen.getByText('combat started')).toBeInTheDocument()
       expect(screen.getByText('Goblin Raid')).toBeInTheDocument()
     })
+  })
+
+  it('ignores events from another session', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
+    const { rerender } = render(<SessionTimeline sessionId={1} lastEvent={null} />)
+    await screen.findByText('No events yet.')
+
+    rerender(
+      <SessionTimeline
+        sessionId={1}
+        lastEvent={{ type: 'dice_rolled', payload: { session_id: 2, expression: '2d6', total: 8 } }}
+      />,
+    )
+    expect(screen.queryByText('2d6')).not.toBeInTheDocument()
   })
 })

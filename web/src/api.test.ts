@@ -35,6 +35,30 @@ describe('gmRespondStream', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [20, 61])))
     await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream failed (gm_failed; request req-opaque)')
   })
+
+  it('rejects truncated streams that end without a terminal event', async () => {
+    const payload = 'data: {"type":"delta","delta":"partial"}\n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [7])))
+    await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream ended without completion')
+  })
+
+  it('rejects duplicate or conflicting terminal events', async () => {
+    for (const payload of [
+      'data: {"type":"done"}\n\ndata: {"type":"done"}\n\n',
+      'data: {"type":"error","code":"gm_failed"}\n\ndata: {"type":"done"}\n\n',
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [11])))
+      await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream sent multiple terminal events')
+    }
+  })
+
+  it('does not render delta data received after completion', async () => {
+    const payload = 'data: {"type":"done"}\n\ndata: {"type":"delta","delta":"invalid tail"}\n\n'
+    const onChunk = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [13])))
+    await expect(gmRespondStream(7, onChunk)).rejects.toThrow('GM stream sent multiple terminal events')
+    expect(onChunk).not.toHaveBeenCalled()
+  })
 })
 
 describe('fetchContext', () => {

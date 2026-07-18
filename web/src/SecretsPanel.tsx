@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { listSecrets, createSecret, revealSecret, updateSecret, deleteSecret } from './api'
 import type { Secret } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface SecretsPanelProps {
   campaignId: number
@@ -21,6 +22,11 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
   const [filter, setFilter] = useState<'all' | 'hidden' | 'revealed'>('all')
 
   useEffect(() => {
+    listSecrets(campaignId).then(setSecrets).catch(() => {})
+  }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'secrets_updated', 'campaign_id', campaignId)) return
     listSecrets(campaignId).then(setSecrets).catch(() => {})
   }, [campaignId, lastEvent])
 

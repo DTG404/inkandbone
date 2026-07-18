@@ -199,6 +199,10 @@ func (c *hubClient) enqueue(event Event) bool {
 	if c.revoked {
 		return false
 	}
+	if c.lostFrom != 0 {
+		c.lostTo = event.Sequence
+		return true
+	}
 	select {
 	case c.send <- event:
 	default:

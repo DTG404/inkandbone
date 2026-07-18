@@ -103,6 +103,15 @@ func (s *Server) handleUpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
+	adventure, err := s.db.GetAdventure(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if adventure == nil {
+		http.Error(w, "adventure not found", http.StatusNotFound)
+		return
+	}
 	status := body.Status
 	if status == "" {
 		status = "upcoming"
@@ -111,7 +120,7 @@ func (s *Server) handleUpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": adventure.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -122,10 +131,20 @@ func (s *Server) handleDeleteAdventure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	adventure, err := s.db.GetAdventure(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if adventure == nil {
+		http.Error(w, "adventure not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteAdventure(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": adventure.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -143,10 +162,19 @@ func (s *Server) handleSetSessionAdventure(w http.ResponseWriter, r *http.Reques
 		respondDecodeError(w, err)
 		return
 	}
+	session, err := s.db.GetSession(sessionID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if session == nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.SetSessionAdventure(sessionID, body.AdventureID); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"session_id": sessionID}})
+	s.bus.Publish(Event{Type: EventAdventureUpdated, Payload: map[string]any{"campaign_id": session.CampaignID, "session_id": sessionID}})
 	w.WriteHeader(http.StatusOK)
 }

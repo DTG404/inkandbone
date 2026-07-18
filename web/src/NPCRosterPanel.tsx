@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchNPCs, createNPC, patchNPC, deleteNPC, reanalyzeSession } from './api'
 import type { SessionNPC } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface Props {
   sessionId: number | null
@@ -21,8 +22,7 @@ export function NPCRosterPanel({ sessionId, lastEvent }: Props) {
   }, [sessionId])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string } | null
-    if (ev?.type === 'npc_updated' && sessionId !== null) {
+    if (sessionId !== null && isScopedEvent(lastEvent, 'npc_updated', 'session_id', sessionId)) {
       fetchNPCs(sessionId).then(setNpcs).catch(() => {})
     }
   }, [lastEvent, sessionId])

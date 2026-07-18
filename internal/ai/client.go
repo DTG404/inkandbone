@@ -237,8 +237,5 @@ func (c *Client) StreamRespond(ctx context.Context, system string, history []Cha
 	if fullText.Len() == 0 {
 		return "", fmt.Errorf("empty response from Anthropic")
 	}
-	if err := WriteSSE(w, SSEEvent{Type: "done"}); err != nil {
-		return fullText.String(), fmt.Errorf("write stream completion: %w", err)
-	}
 	return fullText.String(), nil
 }

@@ -39,7 +39,9 @@ export async function parseSSE(response: Response, onEvent: (event: SSEEvent) =>
   let buffer = ''
 
   const consume = (atEOF = false) => {
-    buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const pendingCR = !atEOF && buffer.endsWith('\r')
+    const complete = pendingCR ? buffer.slice(0, -1) : buffer
+    buffer = complete.replace(/\r\n/g, '\n').replace(/\r/g, '\n') + (pendingCR ? '\r' : '')
     let boundary = buffer.indexOf('\n\n')
     while (boundary >= 0) {
       dispatchFrame(buffer.slice(0, boundary), onEvent)

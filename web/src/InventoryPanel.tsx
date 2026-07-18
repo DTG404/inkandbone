@@ -66,11 +66,11 @@ export function InventoryPanel({
     const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
     if (!ev) return
 
-    if (ev.type === 'item_updated' && effectiveCharacterId !== null) {
+    if (effectiveCharacterId !== null && ev.type === 'item_updated' && ev.payload?.character_id === effectiveCharacterId) {
       fetchItems(effectiveCharacterId).then(setItems).catch(() => {})
     }
 
-    if (ev.type === 'character_updated') {
+    if (ev.type === 'character_updated' && (ev.payload?.character_id === effectiveCharacterId || ev.payload?.id === effectiveCharacterId)) {
       const p = ev.payload
       if (p && typeof p.currency_delta === 'number' && p.currency_delta !== 0) {
         const delta = p.currency_delta as number

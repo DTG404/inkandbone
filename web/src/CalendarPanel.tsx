@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getCampaignCalendar, patchCampaignCalendar, listCalendarEvents, createCalendarEvent, deleteCalendarEvent } from './api'
 import type { CampaignCalendarInfo, CalendarEvent } from './types'
+import { isScopedEvent } from './wsEvents'
 
 const EVENT_TYPES = ['note', 'battle', 'festival', 'ceremony', 'death', 'birth', 'discovery', 'disaster', 'meeting', 'travel']
 
@@ -45,8 +46,8 @@ export function CalendarPanel({ campaignId, sessionId, lastEvent }: CalendarPane
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (lastEvent) load()
-  }, [lastEvent, load])
+    if (isScopedEvent(lastEvent, 'calendar_updated', 'campaign_id', campaignId)) load()
+  }, [lastEvent, campaignId, load])
 
   async function handleAdvance(days: number) {
     try {

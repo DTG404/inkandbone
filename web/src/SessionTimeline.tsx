@@ -69,6 +69,7 @@ export function SessionTimeline({ sessionId, lastEvent }: Props) {
   useEffect(() => {
     const ev = lastEvent as WsEvent | null
     if (!ev?.type) return
+    if (ev.payload?.session_id !== sessionId) return
     const entry = wsToEntry(ev)
     if (!entry) return
 
@@ -83,7 +84,7 @@ export function SessionTimeline({ sessionId, lastEvent }: Props) {
     return () => {
       if (newCountTimerRef.current) clearTimeout(newCountTimerRef.current)
     }
-  }, [lastEvent])
+  }, [lastEvent, sessionId])
 
   if (error) return <p className="error">{error}</p>
 

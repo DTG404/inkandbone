@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchObjectives, patchObjective, deleteObjective, createObjective, reanalyzeSession, deduplicateObjectives } from './api'
 import type { Objective } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface ObjectivesPanelProps {
   campaignId: number | null
@@ -25,8 +26,7 @@ export function ObjectivesPanel({ campaignId, sessionId, lastEvent }: Objectives
   }, [campaignId, load])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string } | null
-    if (ev?.type === 'objective_updated' && campaignId !== null) {
+    if (isScopedEvent(lastEvent, 'objective_updated', 'campaign_id', campaignId)) {
       load()
     }
   }, [lastEvent, campaignId, load])

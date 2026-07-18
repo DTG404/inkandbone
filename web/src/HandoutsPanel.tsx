@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { fetchWorldNotes } from './api'
 import type { WorldNote } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface Props {
   campaignId: number
@@ -20,9 +21,8 @@ export function HandoutsPanel({ campaignId, lastEvent }: Props) {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    const e = lastEvent as { type?: string } | null
-    if (e?.type === 'world_note_revealed') load()
-  }, [lastEvent, load])
+    if (isScopedEvent(lastEvent, 'world_note_revealed', 'campaign_id', campaignId)) load()
+  }, [lastEvent, campaignId, load])
 
   if (notes.length === 0) {
     return <p className="panel-empty">No handouts revealed yet.</p>

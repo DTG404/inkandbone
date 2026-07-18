@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchDiceRolls } from './api'
 import type { DiceRoll } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface Props {
   sessionId: number
@@ -53,8 +54,8 @@ export function DiceHistoryPanel({ sessionId, lastEvent }: Props) {
   }, [sessionId])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
-    if (ev?.type !== 'dice_rolled' || !ev.payload) return
+    if (!isScopedEvent(lastEvent, 'dice_rolled', 'session_id', sessionId)) return
+    const ev = lastEvent
     const { expression, result, character_name, hidden } = ev.payload as {
       expression: string
       result: number
@@ -75,7 +76,7 @@ export function DiceHistoryPanel({ sessionId, lastEvent }: Props) {
       setLiveRolls((prev) => prev.map((r) => r.isNew ? { ...r, isNew: false } : r))
     }, 600)
     return () => clearTimeout(id)
-  }, [lastEvent])
+  }, [lastEvent, sessionId])
 
   if (liveRolls.length === 0) return null
 

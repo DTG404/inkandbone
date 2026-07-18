@@ -103,6 +103,14 @@ func (b *Bus) Publish(e Event) {
 	b.sequence++
 	e.Sequence = b.sequence
 	for _, subscriber := range b.subscribers {
+		if subscriber.lostFrom != 0 {
+			subscriber.lostTo = e.Sequence
+			select {
+			case subscriber.wake <- struct{}{}:
+			default:
+			}
+			continue
+		}
 		select {
 		case subscriber.ch <- e:
 		default:

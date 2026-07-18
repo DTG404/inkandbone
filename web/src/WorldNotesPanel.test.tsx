@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react'
 import { WorldNotesPanel } from './WorldNotesPanel'
 import type { WorldNote } from './types'
 
@@ -71,7 +71,7 @@ describe('WorldNotesPanel', () => {
     const { rerender } = render(<WorldNotesPanel campaignId={1} lastEvent={null} aiEnabled={false} />)
     await screen.findByText('No notes found.')
     const callsBefore = mockFetch.mock.calls.length
-    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', payload: { note_id: 1 } }} aiEnabled={false} />)
+    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', payload: { campaign_id: 1, note_id: 1 } }} aiEnabled={false} />)
     await waitFor(() => {
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore)
     })
@@ -83,10 +83,22 @@ describe('WorldNotesPanel', () => {
     const { rerender } = render(<WorldNotesPanel campaignId={1} lastEvent={null} aiEnabled={false} />)
     await screen.findByText('No notes found.')
     const callsBefore = mockFetch.mock.calls.length
-    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_created', payload: { note_id: 2 } }} aiEnabled={false} />)
+    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_created', payload: { campaign_id: 1, note_id: 2 } }} aiEnabled={false} />)
     await waitFor(() => {
       expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore)
     })
+  })
+
+  it('does not refetch for another campaign event', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
+    vi.stubGlobal('fetch', mockFetch)
+    const { rerender } = render(<WorldNotesPanel campaignId={1} lastEvent={null} aiEnabled={false} />)
+    await screen.findByText('No notes found.')
+    mockFetch.mockClear()
+
+    rerender(<WorldNotesPanel campaignId={1} lastEvent={{ type: 'world_note_updated', payload: { campaign_id: 2, note_id: 1 } }} aiEnabled={false} />)
+    await act(async () => {})
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 
   it('draft button not shown when aiEnabled=false', async () => {

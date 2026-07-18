@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { listAdventures, createAdventure, updateAdventure, deleteAdventure, fetchSessions } from './api'
 import type { Adventure, Session } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface AdventuresPanelProps {
   campaignId: number
@@ -27,6 +28,12 @@ export function AdventuresPanel({ campaignId, onSessionClick, lastEvent }: Adven
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   useEffect(() => {
+    listAdventures(campaignId).then(setAdventures).catch(() => {})
+    fetchSessions(campaignId).then(setSessions).catch(() => {})
+  }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'adventure_updated', 'campaign_id', campaignId)) return
     listAdventures(campaignId).then(setAdventures).catch(() => {})
     fetchSessions(campaignId).then(setSessions).catch(() => {})
   }, [campaignId, lastEvent])

@@ -194,9 +194,6 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 	if fullText.Len() == 0 {
 		return "", fmt.Errorf("empty response from DeepSeek")
 	}
-	if err := WriteSSE(w, SSEEvent{Type: "done"}); err != nil {
-		return fullText.String(), fmt.Errorf("write stream completion: %w", err)
-	}
 	return fullText.String(), nil
 }
 

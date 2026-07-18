@@ -25,20 +25,24 @@ export function useWebSocket(
   lastEvent: unknown
   status: WebSocketStatus
   needsReconcile: boolean
-  acknowledgeReconcile: () => void
+  reconcileGeneration: number
+  acknowledgeReconcile: (generation: number) => void
 } {
   const [lastEvent, setLastEvent] = useState<unknown>(null)
   const [status, setStatus] = useState<WebSocketStatus>(enabled ? 'connecting' : 'offline')
-  const [needsReconcile, setNeedsReconcile] = useState(false)
+  const [reconcileGeneration, setReconcileGeneration] = useState(0)
+  const [acknowledgedGeneration, setAcknowledgedGeneration] = useState(0)
   const onMessageRef = useRef(onMessage)
   const jitterRef = useRef(options.jitter ?? (() => 0.8 + Math.random() * 0.4))
   const lastSequenceRef = useRef<number | null>(null)
+  const reconcileGenerationRef = useRef(0)
   useEffect(() => { onMessageRef.current = onMessage })
   useEffect(() => { jitterRef.current = options.jitter ?? (() => 0.8 + Math.random() * 0.4) }, [options.jitter])
 
-  const acknowledgeReconcile = useCallback(() => {
+  const acknowledgeReconcile = useCallback((generation: number) => {
+    if (generation !== reconcileGenerationRef.current) return
     lastSequenceRef.current = null
-    setNeedsReconcile(false)
+    setAcknowledgedGeneration(generation)
   }, [])
 
   useEffect(() => {
@@ -53,6 +57,11 @@ export function useWebSocket(
     let generation = 0
     let attempt = 0
     let hasOpened = false
+    const requireReconciliation = () => {
+      const next = reconcileGenerationRef.current + 1
+      reconcileGenerationRef.current = next
+      setReconcileGeneration(next)
+    }
 
     function connect() {
       if (cancelled) return
@@ -67,7 +76,6 @@ export function useWebSocket(
 
       socket.onopen = () => {
         if (cancelled || ws !== socket || generation !== socketGeneration) return
-        if (hasOpened) setNeedsReconcile(true)
         hasOpened = true
         attempt = 0
         setStatus('open')
@@ -77,11 +85,12 @@ export function useWebSocket(
         if (cancelled || ws !== socket || generation !== socketGeneration) return
         try {
           const parsed = JSON.parse(e.data as string) as SequencedEvent
-          if (parsed.type === 'resync_required') setNeedsReconcile(true)
+          let reconcile = parsed.type === 'resync_required'
           if (typeof parsed.sequence === 'number') {
-            if (lastSequenceRef.current !== null && parsed.sequence !== lastSequenceRef.current + 1) setNeedsReconcile(true)
+            if (lastSequenceRef.current !== null && parsed.sequence !== lastSequenceRef.current + 1) reconcile = true
             lastSequenceRef.current = parsed.sequence
           }
+          if (reconcile) requireReconciliation()
           setLastEvent(parsed)
           onMessageRef.current(parsed)
         } catch {
@@ -92,7 +101,7 @@ export function useWebSocket(
       socket.onclose = () => {
         if (cancelled || ws !== socket || generation !== socketGeneration) return
         setStatus('reconnecting')
-        if (hasOpened) setNeedsReconcile(true)
+        if (hasOpened) requireReconciliation()
         const delay = Math.min(1000 * (2 ** attempt), 30000) * jitterRef.current()
         attempt++
         reconnectTimer = setTimeout(connect, delay)
@@ -105,6 +114,7 @@ export function useWebSocket(
       if (reconnectTimer !== null) clearTimeout(reconnectTimer)
       reconnectTimer = null
       setStatus('offline')
+      if (hasOpened) requireReconciliation()
       ws?.close()
     }
     const handleOnline = () => {
@@ -127,5 +137,11 @@ export function useWebSocket(
     }
   }, [url, enabled])
 
-  return { lastEvent, status, needsReconcile, acknowledgeReconcile }
+  return {
+    lastEvent,
+    status,
+    needsReconcile: reconcileGeneration !== acknowledgedGeneration,
+    reconcileGeneration,
+    acknowledgeReconcile,
+  }
 }

@@ -70,42 +70,7 @@ func extractSVG(s string) string {
 	if start == -1 || end == -1 || end < start {
 		return ""
 	}
-	svg := s[start : end+6]
-	// Ensure the xmlns attribute is present — browsers require it to render SVG via <img>.
-	openClose := strings.Index(svg, ">")
-	if openClose != -1 && !strings.Contains(svg[:openClose+1], "xmlns=") {
-		svg = strings.Replace(svg, "<svg ", `<svg xmlns="http://www.w3.org/2000/svg" `, 1)
-	}
-	// Escape bare & that AI embeds in text content (e.g. "Black & White") — unescaped
-	// ampersands make the SVG invalid XML, causing browsers to reject it as a broken image.
-	svg = escapeSVGAmpersands(svg)
-	return svg
-}
-
-// escapeSVGAmpersands replaces bare & characters in SVG text with &amp;, skipping
-// & that are already part of a valid XML entity reference (&amp; &lt; &gt; &apos; &quot; &#…).
-// Go's regexp does not support lookaheads, so we scan manually.
-func escapeSVGAmpersands(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] != '&' {
-			b.WriteByte(s[i])
-			continue
-		}
-		rest := s[i+1:]
-		if strings.HasPrefix(rest, "amp;") ||
-			strings.HasPrefix(rest, "lt;") ||
-			strings.HasPrefix(rest, "gt;") ||
-			strings.HasPrefix(rest, "apos;") ||
-			strings.HasPrefix(rest, "quot;") ||
-			strings.HasPrefix(rest, "#") {
-			b.WriteByte('&')
-		} else {
-			b.WriteString("&amp;")
-		}
-	}
-	return b.String()
+	return s[start : end+6]
 }
 
 // parseGeneratedNote extracts title and content from a "Title: ...\nContent: ..." response.

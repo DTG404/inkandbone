@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchWorldNotes, draftWorldNote, patchWorldNotePersonality, patchWorldNoteRevealed } from './api'
 import type { WorldNote } from './types'
+import { wsEvent } from './wsEvents'
 
 interface Props {
   campaignId: number
@@ -66,11 +67,11 @@ export function WorldNotesPanel({ campaignId, lastEvent, aiEnabled }: Props) {
   }, [loadNotes])
 
   useEffect(() => {
-    const ev = lastEvent as { type?: string } | null
-    if (ev?.type === 'world_note_revealed' || ev?.type === 'world_note_created' || ev?.type === 'world_note_updated') {
+    const ev = wsEvent(lastEvent)
+    if (ev && ['world_note_revealed', 'world_note_created', 'world_note_updated'].includes(ev.type ?? '') && ev.payload?.campaign_id === campaignId) {
       loadNotes()
     }
-  }, [lastEvent, loadNotes])
+  }, [lastEvent, campaignId, loadNotes])
 
   async function handleDraftWithAI() {
     const hint = window.prompt('Describe the note:')

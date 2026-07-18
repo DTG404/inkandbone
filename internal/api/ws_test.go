@@ -87,6 +87,32 @@ func TestBusOverflowEventuallyCoalescesLostSequenceRange(t *testing.T) {
 	}
 }
 
+func TestBusOverflowResyncPrecedesEventsPublishedAfterCapacityReturns(t *testing.T) {
+	bus := NewBus()
+	subscriber := &busSubscriber{ch: make(chan Event, 1), wake: make(chan struct{}, 1)}
+	bus.subscribers = append(bus.subscribers, subscriber)
+
+	bus.Publish(Event{Type: EventDiceRolled})
+	bus.Publish(Event{Type: EventMessageCreated})
+	require.Equal(t, EventDiceRolled, (<-subscriber.ch).Type)
+	bus.Publish(Event{Type: EventTyping})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	delivered := make(chan bool, 1)
+	go func() { delivered <- bus.deliverPendingResync(ctx, subscriber) }()
+
+	select {
+	case event := <-subscriber.ch:
+		require.Equal(t, EventResyncRequired, event.Type)
+		assert.Equal(t, uint64(3), event.Sequence)
+		assert.Equal(t, ResyncRequiredPayload{FromSequence: 2, ToSequence: 3}, event.Payload)
+	case <-time.After(time.Second):
+		t.Fatal("overflow reconciliation signal was not prioritized")
+	}
+	require.True(t, <-delivered)
+}
+
 func TestBusSubscriptionStopsOnContextCancellation(t *testing.T) {
 	bus := NewBus()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -131,6 +157,21 @@ func TestHubClientOverflowEventuallySignalsReconciliation(t *testing.T) {
 			t.Fatal("client overflow reconciliation signal was not delivered")
 		}
 	}
+}
+
+func TestHubClientOverflowResyncPrecedesEventsPublishedAfterCapacityReturns(t *testing.T) {
+	client := newHubClientWithIO(func(any) error { return nil }, func() error { return nil })
+	client.send = make(chan Event, 1)
+	require.True(t, client.enqueue(Event{Type: EventDiceRolled, Sequence: 1}))
+	require.True(t, client.enqueue(Event{Type: EventMessageCreated, Sequence: 2}))
+	require.Equal(t, EventDiceRolled, (<-client.send).Type)
+	require.True(t, client.enqueue(Event{Type: EventTyping, Sequence: 3}))
+
+	client.enqueuePendingResync()
+	event := <-client.send
+	require.Equal(t, EventResyncRequired, event.Type)
+	assert.Equal(t, uint64(3), event.Sequence)
+	assert.Equal(t, ResyncRequiredPayload{FromSequence: 2, ToSequence: 3}, event.Payload)
 }
 
 func TestWebSocketHandshakeIncludesRequestID(t *testing.T) {

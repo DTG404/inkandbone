@@ -159,11 +159,13 @@ func (s *Server) handleDrawCard(w http.ResponseWriter, r *http.Request) {
 	var card map[string]any
 	json.Unmarshal([]byte(cardJSON), &card) //nolint:errcheck
 	s.bus.Publish(Event{Type: EventCardDrawn, Payload: map[string]any{
-		"deck_id":    id,
-		"deck_name":  deck.Name,
-		"card":       card,
-		"draw_index": deck.DrawIndex + 1,
-		"total":      len(order),
+		"campaign_id": deck.CampaignID,
+		"session_id":  body.SessionID,
+		"deck_id":     id,
+		"deck_name":   deck.Name,
+		"card":        card,
+		"draw_index":  deck.DrawIndex + 1,
+		"total":       len(order),
 	}})
 	writeJSON(w, map[string]any{"card": card, "draw_index": deck.DrawIndex + 1, "total": len(order)})
 }

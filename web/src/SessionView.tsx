@@ -408,9 +408,10 @@ export function SessionView({
   useEffect(() => {
     const ev = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
     if (ev?.type !== 'secret_revealed' || !ev.payload) return
+    if (ev.payload.session_id !== ctx.session?.id) return
     const { title, content, category } = ev.payload as { title: string; content: string; category: string }
     setPendingHandout({ title, content, category })
-  }, [lastEvent])
+  }, [lastEvent, ctx.session?.id])
 
   // When the talents panel opens, fetch AI descriptions for any talent/power
   // that has no static description.

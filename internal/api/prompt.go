@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -12,6 +14,11 @@ const maxNarrativePreferenceBytes = 8 * 1024
 const maxPromptDisplayNameBytes = 256
 
 var narrativeLocalePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$`)
+
+var (
+	errPromptSessionNotFound  = errors.New("prompt session not found")
+	errPromptCampaignNotFound = errors.New("prompt campaign not found")
+)
 
 func validNarrativeLocale(locale string) bool {
 	return len(locale) <= 32 && narrativeLocalePattern.MatchString(locale)
@@ -78,14 +85,27 @@ func BuildSystemPrompt(base, ruleset, campaignGuidance, contentBoundaries, narra
 	return strings.Join(sections, "\n\n")
 }
 
-func (s *Server) buildGMSystemPrompt(sessionID int64, rulesetContext, reminder string) string {
-	guidance, boundaries, locale := "", "", "en"
-	if session, err := s.db.GetSession(sessionID); err == nil && session != nil {
-		if campaign, err := s.db.GetCampaign(session.CampaignID); err == nil && campaign != nil {
-			guidance = campaign.SystemPromptOverride
-			boundaries = campaign.ContentBoundaries
-			locale = campaign.NarrativeLocale
-		}
+func (s *Server) buildGMSystemPrompt(sessionID int64, rulesetContext, reminder string) (string, error) {
+	session, err := s.db.GetSession(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("load prompt session: %w", err)
 	}
-	return BuildSystemPrompt(gmSystemPrompt, rulesetContext, guidance, boundaries, locale, reminder)
+	if session == nil {
+		return "", errPromptSessionNotFound
+	}
+	campaign, err := s.db.GetCampaign(session.CampaignID)
+	if err != nil {
+		return "", fmt.Errorf("load prompt campaign: %w", err)
+	}
+	if campaign == nil {
+		return "", errPromptCampaignNotFound
+	}
+	return BuildSystemPrompt(
+		gmSystemPrompt,
+		rulesetContext,
+		campaign.SystemPromptOverride,
+		campaign.ContentBoundaries,
+		campaign.NarrativeLocale,
+		reminder,
+	), nil
 }

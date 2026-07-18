@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import type { CampaignMap, MapPin, MapToken, MapZone } from './api'
 import { fetchMaps, fetchMapPins, fetchMapTokens, placeToken, moveToken, removeToken, fetchMapZones, createMapZone, patchMapZone, deleteMapZone, mapAssetURL } from './api'
 import type { SessionNPC, Character } from './types'
+import { isScopedEvent } from './wsEvents'
 
 function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id: number } } {
   return (
@@ -11,10 +12,6 @@ function isMapPinAddedEvent(e: unknown): e is { type: string; payload: { map_id:
     typeof (e as Record<string, unknown>)['payload'] === 'object' &&
     (e as Record<string, { map_id: unknown }>)['payload']['map_id'] !== undefined
   )
-}
-
-function isMapCreatedEvent(e: unknown): boolean {
-  return typeof e === 'object' && e !== null && (e as Record<string, unknown>)['type'] === 'map_created'
 }
 
 interface MapPanelProps {
@@ -62,10 +59,10 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   }, [campaignId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isMapCreatedEvent(lastEvent)) {
+    if (isScopedEvent(lastEvent, 'map_created', 'campaign_id', campaignId)) {
       loadMaps(true)
     }
-  }, [lastEvent]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastEvent, campaignId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeMap = maps[activeMapIdx] ?? null
 

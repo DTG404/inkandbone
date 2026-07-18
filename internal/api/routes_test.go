@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
@@ -727,7 +729,7 @@ func TestPatchWorldNotePersonality(t *testing.T) {
 
 // stubCompleterStreamer implements both ai.Completer and ai.Streamer for testing
 // handleGMRespondStream. Generate returns a fixed response; StreamRespond
-// captures the system prompt and writes a minimal SSE response.
+// captures the system prompt and writes provider-owned delta events only.
 type stubCompleterStreamer struct {
 	mu               sync.Mutex
 	generateResp     string
@@ -750,9 +752,6 @@ func (s *stubCompleterStreamer) StreamRespond(_ context.Context, system string, 
 	s.capturedHistory = append([]ai.ChatMessage(nil), history...)
 	s.mu.Unlock()
 	if err := ai.WriteSSE(w, ai.SSEEvent{Type: "delta", Delta: s.streamResp}); err != nil {
-		return "", err
-	}
-	if err := ai.WriteSSE(w, ai.SSEEvent{Type: "done"}); err != nil {
 		return "", err
 	}
 	return s.streamResp, nil
@@ -780,6 +779,71 @@ func TestHandleGMRespondStreamPreservesExactMultilineUnicodeText(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, messages)
 	assert.Equal(t, want, messages[len(messages)-1].Content)
+}
+
+func TestHandleGMRespondStreamPersistenceFailureEmitsErrorWithoutDone(t *testing.T) {
+	stub := &stubCompleterStreamer{generateResp: `{"required":false}`, streamResp: "not persisted"}
+	s := newTestServerWithAI(t, stub)
+	_, sessionID := seedCampaign(t, s.db)
+	for _, setting := range AllAutomationSettings() {
+		require.NoError(t, s.db.SetSetting(setting.Key, "0"))
+	}
+	_, err := s.db.CreateMessage(sessionID, "user", "Continue", false, nil)
+	require.NoError(t, err)
+	_, err = s.db.SQL().Exec(`CREATE TRIGGER fail_stream_message BEFORE INSERT ON messages WHEN NEW.role = 'assistant' BEGIN SELECT RAISE(ABORT, 'forced'); END`)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/sessions/%d/gm-respond-stream", sessionID), nil)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	assert.Contains(t, rec.Body.String(), `"type":"delta"`)
+	assert.Contains(t, rec.Body.String(), `"type":"error","code":"persistence_failed"`)
+	assert.NotContains(t, rec.Body.String(), `"type":"done"`)
+	messages, listErr := s.db.ListMessages(sessionID)
+	require.NoError(t, listErr)
+	assert.Len(t, messages, 1)
+}
+
+type failDoneResponseWriter struct {
+	*httptest.ResponseRecorder
+}
+
+func (w failDoneResponseWriter) Write(payload []byte) (int, error) {
+	if bytes.Contains(payload, []byte(`"type":"done"`)) {
+		return 0, errors.New("completion write failed")
+	}
+	return w.ResponseRecorder.Write(payload)
+}
+
+func (w failDoneResponseWriter) Flush() {}
+
+func TestHandleGMRespondStreamDoneWriteFailureStillPublishesPersistedMessage(t *testing.T) {
+	stub := &stubCompleterStreamer{generateResp: `{"required":false}`, streamResp: "persisted"}
+	s := newTestServerWithAI(t, stub)
+	_, sessionID := seedCampaign(t, s.db)
+	for _, setting := range AllAutomationSettings() {
+		require.NoError(t, s.db.SetSetting(setting.Key, "0"))
+	}
+	_, err := s.db.CreateMessage(sessionID, "user", "Continue", false, nil)
+	require.NoError(t, err)
+	events := s.bus.SubscribeContext(t.Context())
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/sessions/%d/gm-respond-stream", sessionID), nil)
+	rec := failDoneResponseWriter{ResponseRecorder: httptest.NewRecorder()}
+	s.ServeHTTP(rec, req)
+
+	messages, listErr := s.db.ListMessages(sessionID)
+	require.NoError(t, listErr)
+	require.Len(t, messages, 2)
+	assert.Equal(t, "persisted", messages[1].Content)
+	select {
+	case event := <-events:
+		assert.Equal(t, EventMessageCreated, event.Type)
+		assert.Equal(t, messages[1].ID, event.Payload.(map[string]any)["message_id"])
+	case <-time.After(time.Second):
+		t.Fatal("persisted message event was skipped after completion write failure")
+	}
 }
 
 func (s *stubCompleterStreamer) providerInput() string {

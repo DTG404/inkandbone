@@ -36,4 +36,21 @@ describe('parseSSE', () => {
     ]), (event) => events.push(event))
     expect(events).toEqual([{ type: 'error', code: 'gm_failed', request_id: 'req-1' }])
   })
+
+  it('preserves a trailing CR until the next chunk resolves the CRLF boundary', async () => {
+    const encode = (value: string) => new TextEncoder().encode(value)
+    const events: SSEEvent[] = []
+    await parseSSE(responseFrom([
+      encode('data: {"type":"delta",\r'),
+      encode('\ndata: "delta":"line one\\nline two"}\r'),
+      encode('\n\r'),
+      encode('\ndata: {"type":"done"}\r'),
+      encode('\n\r'),
+      encode('\n'),
+    ]), (event) => events.push(event))
+    expect(events).toEqual([
+      { type: 'delta', delta: 'line one\nline two' },
+      { type: 'done' },
+    ])
+  })
 })

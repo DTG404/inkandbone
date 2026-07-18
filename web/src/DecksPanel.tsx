@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listDecks, createDeck, deleteDeck, shuffleDeck, drawCard, listDeckDraws } from './api'
 import type { Deck, DeckCard, DeckDraw } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface Props {
   campaignId: number
@@ -32,13 +33,13 @@ export function DecksPanel({ campaignId, sessionId, lastEvent }: Props) {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    const e = lastEvent as { type?: string; payload?: Record<string, unknown> } | null
-    if (e?.type === 'card_drawn' && e.payload) {
+    if (isScopedEvent(lastEvent, 'card_drawn', 'session_id', sessionId)) {
+      const e = lastEvent
       const p = e.payload
       setLastCard({ card: p['card'] as DeckCard, deckName: p['deck_name'] as string })
       load()
     }
-  }, [lastEvent, load])
+  }, [lastEvent, sessionId, load])
 
   async function handleShuffle(deckId: number) {
     await shuffleDeck(deckId)

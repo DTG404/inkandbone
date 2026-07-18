@@ -224,15 +224,26 @@ export async function gmRespondStream(
   if (!res.ok) throw new Error(`gmRespondStream failed: ${res.status}`)
   let accumulated = ''
   let streamError: Error | undefined
+  let protocolError: Error | undefined
+  let terminalCount = 0
   await parseSSE(res, (event) => {
+    if (terminalCount > 0) {
+      protocolError = new Error('GM stream sent multiple terminal events')
+      return
+    }
     if (event.type === 'delta') {
       accumulated += event.delta
       onChunk(event.delta)
     } else if (event.type === 'error') {
+      terminalCount++
       const request = event.request_id ? `; request ${event.request_id}` : ''
       streamError = new Error(`GM stream failed (${event.code}${request})`)
+    } else if (event.type === 'done') {
+      terminalCount++
     }
   })
+  if (protocolError || terminalCount > 1) throw protocolError ?? new Error('GM stream sent multiple terminal events')
+  if (terminalCount === 0) throw new Error('GM stream ended without completion')
   if (streamError) throw streamError
   return accumulated
 }

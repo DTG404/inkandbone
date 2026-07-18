@@ -106,11 +106,13 @@ func TestTimeoutGMStreamSurvivesPeriodicBytesBeyondHeaderTimeout(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
+	recorder := httptest.NewRecorder()
 	text, err := NewClientWithURL("test", upstream.URL).StreamRespond(
-		context.Background(), "system", []ChatMessage{{Role: "user", Content: "hello"}}, 16, httptest.NewRecorder(),
+		context.Background(), "system", []ChatMessage{{Role: "user", Content: "hello"}}, 16, recorder,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "xxxxx", text)
+	assert.NotContains(t, recorder.Body.String(), `"type":"done"`, "provider streamers emit deltas only")
 }
 
 func TestTimeoutGMStreamHasAbsoluteDeadline(t *testing.T) {

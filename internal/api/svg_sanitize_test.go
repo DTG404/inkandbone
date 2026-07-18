@@ -65,6 +65,15 @@ func TestSanitizeSVGPreservesNormalizedSafePrimitives(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGeneratedSVGExtractionDoesNotRepairMalformedXML(t *testing.T) {
+	raw := "```svg\n<svg><text>Black & White</text></svg>\n```"
+	extracted := extractSVG(raw)
+	require.Equal(t, `<svg><text>Black & White</text></svg>`, extracted)
+
+	_, err := sanitizeGeneratedSVGResponse(raw)
+	require.ErrorIs(t, err, ErrUnsafeSVG)
+}
+
 func TestGeneratedMapRejectsUnsafeSVGWithoutFileOrRecord(t *testing.T) {
 	var capturedLogs bytes.Buffer
 	previousLogOutput := log.Writer()
@@ -73,6 +82,7 @@ func TestGeneratedMapRejectsUnsafeSVGWithoutFileOrRecord(t *testing.T) {
 	responses := []string{
 		`<svg xmlns="http://www.w3.org/2000/svg"><script>HOSTILE_PAYLOAD</script></svg>`,
 		`<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///HOSTILE_PAYLOAD">]><svg xmlns="http://www.w3.org/2000/svg"><text>&xxe;</text></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg"><text>Black & White</text></svg>`,
 	}
 	for index, response := range responses {
 		stub := &stubCompleter{response: response}
@@ -139,7 +149,7 @@ func (c *detectThenUnsafeSVGCompleter) Generate(_ context.Context, prompt string
 	if strings.Contains(prompt, "map assistant") {
 		return `{"new_location":true,"name":"Ashen Tower","context":"ruin"}`, nil
 	}
-	return `<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///HOSTILE_PAYLOAD">]><svg xmlns="http://www.w3.org/2000/svg"><text>&xxe;</text></svg>`, nil
+	return `<svg xmlns="http://www.w3.org/2000/svg"><text>Black & White</text></svg>`, nil
 }
 
 type detectThenValidSVGCompleter struct{}

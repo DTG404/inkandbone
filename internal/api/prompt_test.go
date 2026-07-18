@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -60,4 +61,19 @@ func TestGMSystemPromptUsesNeutralContentDefault(t *testing.T) {
 	assert.NotContains(t, lower, "non-consensual")
 	assert.NotContains(t, lower, "explicit sexual content")
 	assert.Contains(t, lower, "content boundaries")
+}
+
+func TestBuildGMSystemPromptReturnsExplicitNotFound(t *testing.T) {
+	s := newTestServer(t)
+	_, err := s.buildGMSystemPrompt(99999, "context", "reminder")
+	assert.ErrorIs(t, err, errPromptSessionNotFound)
+}
+
+func TestBuildGMSystemPromptFailsClosedOnDatabaseError(t *testing.T) {
+	s := newTestServer(t)
+	_, sessionID := seedCampaign(t, s.db)
+	require.NoError(t, s.db.Close())
+	_, err := s.buildGMSystemPrompt(sessionID, "context", "reminder")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, errPromptSessionNotFound))
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	mathrand "math/rand"
@@ -188,11 +189,20 @@ func (s *Server) handlePatchWorldNote(w http.ResponseWriter, r *http.Request) {
 		respondError(w, "title and content are required", http.StatusBadRequest)
 		return
 	}
+	note, err := s.db.GetWorldNote(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if note == nil {
+		http.Error(w, "world note not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateWorldNote(id, body.Title, body.Content, body.TagsJSON); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"note_id": id}})
+	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"campaign_id": note.CampaignID, "note_id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -210,11 +220,20 @@ func (s *Server) handlePatchWorldNotePersonality(w http.ResponseWriter, r *http.
 		respondDecodeError(w, err)
 		return
 	}
+	note, err := s.db.GetWorldNote(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if note == nil {
+		http.Error(w, "world note not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateWorldNotePersonality(id, body.PersonalityJSON); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"note_id": id}})
+	s.bus.Publish(Event{Type: EventWorldNoteUpdated, Payload: map[string]any{"campaign_id": note.CampaignID, "note_id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -231,11 +250,21 @@ func (s *Server) handlePatchWorldNoteRevealed(w http.ResponseWriter, r *http.Req
 		respondDecodeError(w, err)
 		return
 	}
+	note, err := s.db.GetWorldNote(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if note == nil {
+		http.Error(w, "world note not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.PatchWorldNoteRevealed(id, body.IsRevealed); err != nil {
 		serverError(w, r, err)
 		return
 	}
 	s.bus.Publish(Event{Type: EventWorldNoteRevealed, Payload: map[string]any{
+		"campaign_id": note.CampaignID,
 		"id":          id,
 		"is_revealed": body.IsRevealed,
 	}})
@@ -801,7 +830,15 @@ The base prompt above says "the player controls only their character" — that r
 - CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly.
 `, formatCharNames(charNameMap))
 	}
-	systemPrompt := s.buildGMSystemPrompt(id, worldCtx+multiPrompt, reminder)
+	systemPrompt, err := s.buildGMSystemPrompt(id, worldCtx+multiPrompt, reminder)
+	if err != nil {
+		if errors.Is(err, errPromptSessionNotFound) || errors.Is(err, errPromptCampaignNotFound) {
+			respondError(w, "session or campaign not found", http.StatusNotFound)
+			return
+		}
+		serverError(w, r, err)
+		return
+	}
 
 	response, err := gmResponder.Respond(r.Context(), systemPrompt, history, 2048)
 	if err != nil {
@@ -1039,7 +1076,15 @@ The base prompt above says "the player controls only their character" — that r
 - CRITICAL: Follow the [REMINDER] at the bottom of this prompt exactly.
 `, formatCharNames(charNameMap))
 	}
-	systemPrompt := s.buildGMSystemPrompt(id, worldCtx+multiPrompt, reminder)
+	systemPrompt, err := s.buildGMSystemPrompt(id, worldCtx+multiPrompt, reminder)
+	if err != nil {
+		if errors.Is(err, errPromptSessionNotFound) || errors.Is(err, errPromptCampaignNotFound) {
+			respondError(w, "session or campaign not found", http.StatusNotFound)
+			return
+		}
+		serverError(w, r, err)
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1059,15 +1104,17 @@ The base prompt above says "the player controls only their character" — that r
 		if err := ai.WriteSSE(w, ai.SSEEvent{Type: "delta", Delta: fallback}); err != nil {
 			return
 		}
-		if err := ai.WriteSSE(w, ai.SSEEvent{Type: "done"}); err != nil {
-			return
-		}
 		fullText = fallback
 	}
 
 	msgID, err := s.db.CreateMessage(id, "assistant", fullText, false, nil)
 	if err != nil {
+		log.Printf("gm-respond-stream: persist assistant message failed (session %d): %v", id, err)
+		_ = ai.WriteSSE(w, ai.SSEEvent{Type: "error", Code: "persistence_failed", RequestID: requestID(r)})
 		return
+	}
+	if err := ai.WriteSSE(w, ai.SSEEvent{Type: "done"}); err != nil {
+		log.Printf("gm-respond-stream: completion write failed after persistence (session %d): %v", id, err)
 	}
 	s.bus.Publish(Event{Type: EventMessageCreated, Payload: map[string]any{
 		"session_id": id,
@@ -2476,11 +2523,20 @@ func (s *Server) handlePatchNPC(w http.ResponseWriter, r *http.Request) {
 		respondDecodeError(w, err)
 		return
 	}
+	npc, err := s.db.GetSessionNPC(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if npc == nil {
+		http.Error(w, "npc not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateSessionNPC(id, body.Note); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"npc_id": id}})
+	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"session_id": npc.SessionID, "npc_id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2490,11 +2546,20 @@ func (s *Server) handleDeleteNPC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid npc id", http.StatusBadRequest)
 		return
 	}
+	npc, err := s.db.GetSessionNPC(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if npc == nil {
+		http.Error(w, "npc not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteSessionNPC(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"npc_id": id}})
+	s.bus.Publish(Event{Type: EventNPCUpdated, Payload: map[string]any{"session_id": npc.SessionID, "npc_id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2584,11 +2649,20 @@ func (s *Server) handlePatchObjective(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid status", http.StatusBadRequest)
 		return
 	}
+	objective, err := s.db.GetObjective(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if objective == nil {
+		http.Error(w, "objective not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateObjectiveStatus(id, body.Status); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"objective_id": id}})
+	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"campaign_id": objective.CampaignID, "objective_id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2598,11 +2672,20 @@ func (s *Server) handleDeleteObjective(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid objective id", http.StatusBadRequest)
 		return
 	}
+	objective, err := s.db.GetObjective(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if objective == nil {
+		http.Error(w, "objective not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteObjective(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"objective_id": id}})
+	s.bus.Publish(Event{Type: EventObjectiveUpdated, Payload: map[string]any{"campaign_id": objective.CampaignID, "objective_id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 

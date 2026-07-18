@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchXP, createXP, deleteXP } from './api'
 import type { XPEntry } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface XPLogPanelProps {
   sessionId: number | null
@@ -19,7 +20,7 @@ export function XPLogPanel({ sessionId, lastEvent }: XPLogPanelProps) {
   }, [sessionId])
 
   useEffect(() => {
-    if (lastEvent && sessionId !== null) {
+    if (sessionId !== null && isScopedEvent(lastEvent, 'xp_added', 'session_id', sessionId)) {
       fetchXP(sessionId).then(setEntries).catch(console.error)
     }
   }, [lastEvent, sessionId])

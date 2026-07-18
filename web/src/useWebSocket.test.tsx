@@ -136,12 +136,29 @@ describe('useWebSocket', () => {
     expect(result.current.needsReconcile).toBe(false)
     act(() => instances[0].receive({ type: 'typing', sequence: 6 }))
     expect(result.current.needsReconcile).toBe(true)
-    act(() => result.current.acknowledgeReconcile())
+    act(() => result.current.acknowledgeReconcile(result.current.reconcileGeneration))
     expect(result.current.needsReconcile).toBe(false)
     act(() => instances[0].receive({ type: 'dice_rolled', sequence: 100 }))
     expect(result.current.needsReconcile).toBe(false)
     act(() => instances[0].receive({ type: 'resync_required', sequence: 101 }))
     expect(result.current.needsReconcile).toBe(true)
+  })
+
+  it('does not let an older reconciliation acknowledge a newer sequence gap', () => {
+    const { result } = renderHook(() => useWebSocket('/ws', vi.fn()))
+    act(() => instances[0].open())
+    act(() => instances[0].receive({ type: 'typing', sequence: 1 }))
+    act(() => instances[0].receive({ type: 'typing', sequence: 3 }))
+    const firstGeneration = result.current.reconcileGeneration
+    expect(result.current.needsReconcile).toBe(true)
+
+    act(() => instances[0].receive({ type: 'typing', sequence: 5 }))
+    const secondGeneration = result.current.reconcileGeneration
+    expect(secondGeneration).toBeGreaterThan(firstGeneration)
+    act(() => result.current.acknowledgeReconcile(firstGeneration))
+    expect(result.current.needsReconcile).toBe(true)
+    act(() => result.current.acknowledgeReconcile(secondGeneration))
+    expect(result.current.needsReconcile).toBe(false)
   })
 
   it('reports offline and reconnects when the browser returns online', () => {

@@ -96,14 +96,14 @@ test('app loads and shows session view', async ({ page }) => {
   await expect(page.locator('.h-session')).toContainText('Session Zero')
 
   // Main body (left + right panels) should be visible
-  await expect(page.locator('.grimoire-body')).toBeVisible()
+  await expect(page.locator('.workspace-body')).toBeVisible()
 })
 
 // ── Test 2: 10 RPG actions ────────────────────────────────────────────────────
 
 test('player sends 10 RPG actions via chat', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   for (const action of RPG_ACTIONS) {
     const field = page.locator('.player-input-field')
@@ -131,7 +131,7 @@ test('dice roll via API appears in live feed', async ({ page, request }) => {
   expect(roll.ok()).toBe(true)
 
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   // The dice compact panel populates from DB fetch on mount
   await expect(page.locator('.dice-compact')).toBeVisible({ timeout: 5_000 })
@@ -143,7 +143,7 @@ test('dice roll with character name shows name in live feed', async ({ page, req
   // The DB-backed fromDbRoll sets characterName:''; only WS events carry the name.
   // So we navigate first, wait for WS to connect, then roll.
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
   // Give WS connection time to fully open
   await page.waitForTimeout(800)
 
@@ -160,7 +160,7 @@ test('dice roll with character name shows name in live feed', async ({ page, req
 
 test('hidden dice roll shows [GM] in live feed', async ({ page, request }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
   await page.waitForTimeout(800)
 
   const roll = await request.post(`${BASE}/api/sessions/${sessionId}/dice-rolls`, {
@@ -177,10 +177,10 @@ test('hidden dice roll shows [GM] in live feed', async ({ page, request }) => {
 
 test('creating and revealing a secret triggers the handout modal', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   // Navigate to the Secrets right-panel tab
-  await page.locator('button.tab-btn', { hasText: 'Secrets' }).click()
+  await page.getByRole('tab', { name: 'Secrets', exact: true }).click()
   await expect(page.locator('.secrets-panel')).toBeVisible({ timeout: 5_000 })
 
   // Create a secret via the in-panel form
@@ -203,21 +203,20 @@ test('creating and revealing a secret triggers the handout modal', async ({ page
   await page.locator('.secret-item--hidden button', { hasText: 'Reveal' }).click()
 
   // Handout modal should appear
-  await expect(page.locator('.handout-modal-backdrop')).toBeVisible({ timeout: 5_000 })
-  await expect(page.locator('.handout-modal-title')).toContainText('The Hidden Map Fragment')
+  await expect(page.getByRole('dialog', { name: 'The Hidden Map Fragment' })).toBeVisible({ timeout: 5_000 })
   await expect(page.locator('.handout-modal-content')).toContainText('hidden passage')
 
   // Dismiss via the × button
   await page.locator('.handout-modal-close').click()
-  await expect(page.locator('.handout-modal-backdrop')).not.toBeVisible({ timeout: 3_000 })
+  await expect(page.getByRole('dialog', { name: 'The Hidden Map Fragment' })).not.toBeVisible({ timeout: 3_000 })
 })
 
 test('Push button re-triggers handout modal for already-revealed secret', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   // Navigate to Secrets tab
-  await page.locator('button.tab-btn', { hasText: 'Secrets' }).click()
+  await page.getByRole('tab', { name: 'Secrets', exact: true }).click()
   await expect(page.locator('.secrets-panel')).toBeVisible({ timeout: 5_000 })
 
   // Switch to "Revealed" filter so we see the secret from the prior test
@@ -231,12 +230,11 @@ test('Push button re-triggers handout modal for already-revealed secret', async 
   // The Push button re-fires the WS event
   await page.locator('.secret-item--revealed button', { hasText: 'Push' }).click()
 
-  await expect(page.locator('.handout-modal-backdrop')).toBeVisible({ timeout: 5_000 })
-  await expect(page.locator('.handout-modal-title')).toContainText('The Hidden Map Fragment')
+  await expect(page.getByRole('dialog', { name: 'The Hidden Map Fragment' })).toBeVisible({ timeout: 5_000 })
 
   // Dismiss via the × close button
   await page.locator('.handout-modal-close').click()
-  await expect(page.locator('.handout-modal-backdrop')).not.toBeVisible({ timeout: 3_000 })
+  await expect(page.getByRole('dialog', { name: 'The Hidden Map Fragment' })).not.toBeVisible({ timeout: 3_000 })
 })
 
 // ── Test 5: Map FX API endpoint (Group C feature) ────────────────────────────
@@ -259,11 +257,11 @@ test('map FX endpoint rejects out-of-range coordinates', async ({ request }) => 
 
 test('navigates all right-panel tabs without crashing', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   const tabs = ['Notes', 'NPCs', 'Objectives', 'Oracle', 'Secrets', 'Handouts', 'Journal']
   for (const tab of tabs) {
-    const btn = page.locator('button.tab-btn', { hasText: tab })
+    const btn = page.getByRole('tab', { name: tab, exact: true })
     // Some tabs may not exist in all rulesets — skip if absent
     if ((await btn.count()) === 0) continue
     await btn.click()
@@ -273,7 +271,7 @@ test('navigates all right-panel tabs without crashing', async ({ page }) => {
   }
 
   // Return to Notes — world notes search input should be visible
-  await page.locator('button.tab-btn', { hasText: 'Notes' }).click()
+  await page.getByRole('tab', { name: 'Notes', exact: true }).click()
   await expect(page.locator('.notes-search')).toBeVisible({ timeout: 3_000 })
 })
 
@@ -281,9 +279,9 @@ test('navigates all right-panel tabs without crashing', async ({ page }) => {
 
 test('creates an NPC via the right-panel', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
-  await page.locator('button.tab-btn', { hasText: 'NPCs' }).click()
+  await page.getByRole('tab', { name: 'NPCs', exact: true }).click()
   await expect(page.locator('.npcs-panel, .npc-list, [class*="npc"]').first()).toBeVisible({ timeout: 5_000 })
 
   // Add a new NPC via the API directly (avoids UI differences across rulesets)
@@ -299,8 +297,8 @@ test('creates an NPC via the right-panel', async ({ page }) => {
 
   // Reload the page — NPC should appear after the WS/reload cycle
   await page.reload()
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
-  await page.locator('button.tab-btn', { hasText: 'NPCs' }).click()
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
+  await page.getByRole('tab', { name: 'NPCs', exact: true }).click()
   await expect(page.locator('body')).toContainText('Gareth the Barkeep', { timeout: 5_000 })
 })
 
@@ -308,7 +306,7 @@ test('creates an NPC via the right-panel', async ({ page }) => {
 
 test('theme toggle switches between worn-grimoire and parchment', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   const html = page.locator('html')
   const initial = await html.getAttribute('data-theme')
@@ -326,7 +324,7 @@ test('theme toggle switches between worn-grimoire and parchment', async ({ page 
 
 test('all standard dice expressions roll successfully', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   // Roll each standard die and verify a result comes back via the live feed
   for (const expr of ['1d4', '1d6', '1d8', '1d10', '1d12', '1d20']) {
@@ -350,16 +348,16 @@ test('all standard dice expressions roll successfully', async ({ page }) => {
 
 test('manage panel opens, shows tabs, and closes', async ({ page }) => {
   await page.goto('/')
-  await page.locator('.grimoire-body').waitFor({ timeout: 10_000 })
+  await page.locator('.workspace-body').waitFor({ timeout: 10_000 })
 
   // The "⚙ Manage" button (not "🎭 GM Screen") opens the campaign manage panel
   await page.locator('button.h-manage[title*="Manage campaigns"]').click()
-  await expect(page.locator('.manage-backdrop')).toBeVisible({ timeout: 5_000 })
+  await expect(page.getByRole('dialog', { name: 'Manage Campaign' })).toBeVisible({ timeout: 5_000 })
 
   // The manage panel should show the existing campaign
   await expect(page.locator('.manage-panel')).toContainText('E2E Smoke Campaign')
 
   // Close via the × button inside the panel
   await page.locator('.manage-close').click()
-  await expect(page.locator('.manage-backdrop')).not.toBeVisible({ timeout: 3_000 })
+  await expect(page.getByRole('dialog', { name: 'Manage Campaign' })).not.toBeVisible({ timeout: 3_000 })
 })

@@ -3,10 +3,13 @@ import { render, screen, cleanup } from '@testing-library/react'
 import { waitFor } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
 import { AutomationSettingsPanel } from './AutomationSettingsPanel'
+import { ToastProvider } from './ui/ToastProvider'
+
+const renderPanel = () => render(<ToastProvider><AutomationSettingsPanel /></ToastProvider>)
 
 const mockSettings = [
-  { key: 'extractNPCs', label: 'Extract NPCs', enabled: true },
-  { key: 'autoGenerateMap', label: 'Auto Generate Map', enabled: false },
+  { key: 'extractNPCs', label: 'Extract NPCs', enabled: true, status: 'closed', failure_count: 0, cooling_down: false, queued: 1, running: 0, last_success: null, last_error: '' },
+  { key: 'autoGenerateMap', label: 'Auto Generate Map', enabled: false, status: 'open', failure_count: 3, cooling_down: true, queued: 0, running: 0, last_success: null, last_error: 'sanitized' },
 ]
 
 beforeEach(() => {
@@ -25,21 +28,29 @@ afterEach(() => {
 
 describe('AutomationSettingsPanel', () => {
   it('renders loading state initially', () => {
-    render(<AutomationSettingsPanel />)
+    renderPanel()
     expect(screen.getByText('Loading automation settings…')).toBeInTheDocument()
   })
 
   it('renders settings after fetch', async () => {
-    render(<AutomationSettingsPanel />)
+    renderPanel()
     await screen.findByText('Extract NPCs')
     expect(screen.getByText('Auto Generate Map')).toBeInTheDocument()
   })
 
   it('renders section title and hint', async () => {
-    render(<AutomationSettingsPanel />)
+    renderPanel()
     await screen.findByText('Extract NPCs')
     expect(screen.getByText('Automation')).toBeInTheDocument()
     expect(screen.getByText(/Enable or disable background automation goroutines/)).toBeInTheDocument()
+  })
+
+  it('explains cooling-down health and next probe behavior', async () => {
+    renderPanel()
+    await screen.findByText('Auto Generate Map')
+    expect(screen.getByText(/cooling down/i)).toBeInTheDocument()
+    expect(screen.getByText(/probe.*automatically/i)).toBeInTheDocument()
+    expect(screen.getByText(/1 queued/i)).toBeInTheDocument()
   })
 
   it('toggles setting on checkbox click', async () => {
@@ -51,7 +62,7 @@ describe('AutomationSettingsPanel', () => {
     })
     vi.stubGlobal('fetch', mockFetch)
 
-    render(<AutomationSettingsPanel />)
+    renderPanel()
     await screen.findByText('Extract NPCs')
 
     const toggles = screen.getAllByRole('checkbox')
@@ -81,7 +92,7 @@ describe('AutomationSettingsPanel', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
     })
     vi.stubGlobal('fetch', mockFetch)
-    render(<AutomationSettingsPanel />)
+    renderPanel()
     await screen.findByText('Extract NPCs')
 
     const toggles = screen.getAllByRole('checkbox')

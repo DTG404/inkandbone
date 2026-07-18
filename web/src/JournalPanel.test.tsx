@@ -91,6 +91,21 @@ describe('JournalPanel', () => {
     )
   })
 
+  it('announces a safe recoverable error when recap generation fails', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) })
+      .mockRejectedValueOnce(new Error('provider database secret'))
+    vi.stubGlobal('fetch', mockFetch)
+    render(
+      <JournalPanel session={makeSession(5, 'Old summary.')} lastEvent={null} aiEnabled />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /generate recap/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/recap could not be generated/i)
+    expect(screen.queryByText(/provider database secret/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate recap/i })).not.toBeDisabled()
+  })
+
   it('session_updated WS event updates draft', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }))
     const { rerender } = render(

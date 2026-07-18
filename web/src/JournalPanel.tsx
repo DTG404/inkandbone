@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { patchSessionSummary, generateRecap, patchSessionNotes, fetchXP, createXP, deleteXP, postImprovise, postPreSessionBrief, postDetectThreads, postCampaignAsk } from './api'
 import type { XPEntry } from './types'
+import { StatusRegion } from './ui/StatusRegion'
 
 interface JournalPanelProps {
   session: { id: number; summary: string; notes: string } | null
@@ -53,6 +54,7 @@ function isXPAddedEvent(ev: unknown): ev is XPAddedEvent {
 
 export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: JournalPanelProps) {
   const [draft, setDraft] = useState(session?.summary ?? '')
+  const [recapError, setRecapError] = useState('')
   const [notes, setNotes] = useState(session?.notes ?? '')
   const [xpEntries, setXpEntries] = useState<XPEntry[]>([])
   const [milestoneNote, setMilestoneNote] = useState('')
@@ -122,8 +124,14 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
   }
 
   async function handleGenerateRecap() {
-    const result = await generateRecap(session!.id)
-    setDraft(result.summary)
+    setRecapError('')
+    try {
+      const result = await generateRecap(session!.id)
+      setDraft(result.summary)
+    } catch (cause) {
+      console.error(cause)
+      setRecapError('The recap could not be generated. Try again.')
+    }
   }
 
   async function handleAddMilestone(e: React.FormEvent) {
@@ -179,6 +187,7 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
           Generate recap
         </button>
       )}
+      <StatusRegion message={recapError} priority="assertive" />
 
       <div className="scratchpad-section">
         <span className="scratchpad-label">Notes</span>
@@ -235,13 +244,15 @@ export function JournalPanel({ session, campaignId, lastEvent, aiEnabled }: Jour
 
       {aiEnabled && (
         <div className="gm-tools-section">
-          <div
+          <button
+            type="button"
             className="gm-tools-header"
             onClick={() => setGmToolsOpen(o => !o)}
+            aria-expanded={gmToolsOpen}
           >
             <span className="gm-tools-toggle">{gmToolsOpen ? '▼' : '▶'}</span>
             GM Tools
-          </div>
+          </button>
           {gmToolsOpen && (
             <div className="gm-tools-body">
               <div className="gm-tools-buttons">

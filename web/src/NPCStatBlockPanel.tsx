@@ -157,15 +157,15 @@ export function NPCStatBlockPanel({ campaignId, lastEvent }: NPCStatBlockPanelPr
       <ul className="npc-stats-list">
         {filtered.map(n => (
           <li key={n.id} className="npc-stat-item">
-            <div className="npc-stat-header" onClick={() => setExpandedId(expandedId === n.id ? null : n.id)}>
+            <button type="button" className="npc-stat-header" aria-label={`Toggle NPC stat block ${n.name}`} onClick={() => setExpandedId(expandedId === n.id ? null : n.id)}>
               <strong className="npc-stat-name">{n.name}</strong>
               {n.role && <span className="npc-stat-role-badge">{n.role}</span>}
-              <div className="npc-stat-hp-bar">
-                <div className="npc-stat-hp-fill" style={{ width: `${hpPercent(n.hp_max)}%` }} />
-              </div>
+              <span className="npc-stat-hp-bar">
+                <span className="npc-stat-hp-fill" style={{ width: `${hpPercent(n.hp_max)}%` }} />
+              </span>
               <span className="npc-stat-ac">{n.armor_class !== null ? `AC ${n.armor_class}` : '—'}</span>
               <span className="npc-stat-expand-icon">{expandedId === n.id ? '▴' : '▾'}</span>
-            </div>
+            </button>
             {expandedId === n.id && (
               <div className="npc-stat-body">
                 <div className="npc-stat-detail-row"><span className="npc-stat-label">HP:</span> {n.hp_max}</div>

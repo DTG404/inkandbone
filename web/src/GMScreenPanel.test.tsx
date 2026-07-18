@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GMScreenPanel } from './GMScreenPanel'
+import userEvent from '@testing-library/user-event'
 
 const config = {
   description: '',
@@ -19,6 +20,18 @@ afterEach(() => {
 })
 
 describe('GMScreenPanel narrative preferences', () => {
+  it('is a labelled modal that closes on Escape', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(config) }))
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    render(<GMScreenPanel campaignId={1} sessionId={1} aiEnabled={false} onClose={onClose} />)
+
+    expect(await screen.findByRole('dialog', { name: 'GM Screen' })).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByRole('button', { name: 'Close GM Screen' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('labels preference scope and persists boundaries without override authority', async () => {
     const fetchMock = vi.fn().mockImplementation((_input: string, init?: RequestInit) => {
       if (init?.method === 'PATCH') return Promise.resolve({ ok: true })

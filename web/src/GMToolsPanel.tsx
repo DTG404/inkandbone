@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { postImprovise, postPreSessionBrief, postDetectThreads, postCampaignAsk } from './api'
+import { StatusRegion } from './ui/StatusRegion'
 
 interface GMToolsPanelProps {
   sessionId: number | null
@@ -15,6 +16,7 @@ export function GMToolsPanel({ sessionId, campaignId, aiEnabled }: GMToolsPanelP
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState('')
   const [askQuestion, setAskQuestion] = useState('')
+  const [error, setError] = useState('')
 
   const hasSession = sessionId !== null
   const hasCampaign = campaignId !== null
@@ -24,6 +26,7 @@ export function GMToolsPanel({ sessionId, campaignId, aiEnabled }: GMToolsPanelP
     if (!aiEnabled) return
     setLoading(true)
     setResult('')
+    setError('')
     try {
       let text = ''
       switch (tool) {
@@ -42,8 +45,9 @@ export function GMToolsPanel({ sessionId, campaignId, aiEnabled }: GMToolsPanelP
           break
       }
       setResult(text)
-    } catch (e) {
-      setResult('Error: ' + (e instanceof Error ? e.message : 'Unknown error'))
+    } catch (cause) {
+      console.error(cause)
+      setError('The GM tool could not complete. Try again.')
     } finally {
       setLoading(false)
     }
@@ -105,6 +109,7 @@ export function GMToolsPanel({ sessionId, campaignId, aiEnabled }: GMToolsPanelP
         )}
 
         {loading && <p className="gm-tool-thinking">▸ Generating…</p>}
+        <StatusRegion message={error} priority="assertive" />
         {result && (
           <div className="gm-tool-result">
             <ReactMarkdown>{result}</ReactMarkdown>

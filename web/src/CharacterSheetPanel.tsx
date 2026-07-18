@@ -117,14 +117,18 @@ function PipRow({ label, value, max, onChange, color = 'gold' }: {
       <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--gold-dim)', width: '72px', flexShrink: 0 }}>{label}</span>
       <div style={{ display: 'flex', gap: '3px' }}>
         {Array.from({ length: max }, (_, i) => (
-          <div
+          <button
+            type="button"
             key={i}
+            aria-label={`Set ${label} to ${i < value ? i : i + 1}`}
+            disabled={!onChange}
             onClick={() => onChange?.(i < value ? i : i + 1)}
             style={{
               width: 12, height: 12, borderRadius: '50%',
               background: i < value ? (color === 'red' ? '#c0392b' : 'var(--gold)') : 'transparent',
               border: `1px solid ${color === 'red' ? '#c0392b' : 'var(--gold-dim)'}`,
               cursor: onChange ? 'pointer' : 'default',
+              padding: 0,
             }}
           />
         ))}
@@ -146,19 +150,22 @@ function DamageTrack({ label, max, superficial, aggravated, onClickBox }: {
           const isAgg = fromRight < aggravated
           const isSup = !isAgg && fromRight < aggravated + superficial
           return (
-            <div
+            <button
+              type="button"
               key={i}
+              aria-label={`Toggle ${label} damage box ${i + 1}`}
+              disabled={!onClickBox}
               onClick={() => onClickBox?.(i)}
               style={{
                 width: 14, height: 14, border: '1px solid var(--gold-dim)',
                 background: isAgg ? '#8b0000' : isSup ? '#555' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '9px', color: isAgg ? '#fff' : isSup ? '#ccc' : 'transparent',
-                cursor: onClickBox ? 'pointer' : 'default',
+                cursor: onClickBox ? 'pointer' : 'default', padding: 0,
               }}
             >
               {isAgg ? 'X' : isSup ? '/' : ''}
-            </div>
+            </button>
           )
         })}
       </div>
@@ -225,15 +232,17 @@ function VtMCharacterSheet({ character, fields, onChange, afterTracks }: VtMShee
           </div>
           <div style={{ display: 'flex', gap: '4px' }}>
             {[1, 2, 3, 4, ...(isVampire ? [5] : [])].map((i) => (
-              <div
+              <button
+                type="button"
                 key={i}
+                aria-label={`Set Hunger to ${i === n('hunger') ? i - 1 : i}`}
                 onClick={() => onChange('hunger', String(i === n('hunger') ? i - 1 : i))}
                 style={{
                   width: 20, height: 20,
                   background: i <= n('hunger') ? '#c0392b' : 'transparent',
                   border: '1px solid #c0392b',
                   cursor: 'pointer',
-                  animation: n('hunger') >= (isVampire ? 5 : 4) && i <= (isVampire ? 5 : 4) ? 'pulse 1s infinite' : undefined,
+                  animation: n('hunger') >= (isVampire ? 5 : 4) && i <= (isVampire ? 5 : 4) ? 'pulse 1s infinite' : undefined, padding: 0,
                 }}
               />
             ))}
@@ -677,10 +686,12 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
       {attributeFields.length > 0 && (
         <div>
           {attributeFields.map((f) => (
-            <div
+            <button
+              type="button"
               key={f.key}
               className="attr-row"
-              onClick={onRollField ? () => { onRollField(f.label || f.key); dismissHint() } : undefined}
+              disabled={!onRollField}
+              onClick={() => { onRollField?.(f.label || f.key); dismissHint() }}
               style={onRollField ? { cursor: 'pointer', position: 'relative' } : undefined}
               title={onRollField ? `Click to roll ${f.label || f.key}` : undefined}
             >
@@ -689,7 +700,7 @@ export function CharacterSheetPanel({ character, rulesetId, lastEvent, afterTrac
               {onRollField && (
                 <span className="roll-hint-icon" aria-hidden>🎲</span>
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}

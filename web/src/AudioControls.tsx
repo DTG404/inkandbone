@@ -69,7 +69,7 @@ export default function AudioControls() {
         value={volume}
         onChange={e => setVolume(parseFloat(e.target.value))}
         disabled={muted}
-        title="Volume"
+        aria-label="Volume"
         className="audio-volume-slider"
       />
       <button

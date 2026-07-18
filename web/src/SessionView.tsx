@@ -31,6 +31,12 @@ import { CharacterSelector } from './CharacterSelector'
 import { setAmbientTrack } from './audio/ambient'
 import { MacroBar } from './MacroBar'
 import { wgTalentDescription } from './wgTalentData'
+import { WorkspaceShell } from './layout/WorkspaceShell'
+import { WorkspaceNavigation } from './navigation/WorkspaceNavigation'
+import { PANEL_DEFINITIONS, type MobileDestination, type PanelID } from './navigation/panelRegistry'
+import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
+import { useToast } from './ui/ToastProvider'
 import './App.css'
 
 // ── Turn Order Strip ────────────────────────────────────────
@@ -96,11 +102,10 @@ function PinPlacementModal({ mapId, defaultLabel, onClose }: PinPlacementModalPr
   }
 
   return (
-    <div className="pin-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="pin-modal">
+    <Dialog open title="Place Map Pin" onClose={onClose} className="pin-modal">
         <div className="pin-modal-header">
           <span>Place Map Pin</span>
-          <button className="pin-modal-close" onClick={onClose}>×</button>
+          <IconButton className="pin-modal-close" label="Close map pin dialog" icon="×" onClick={onClose} />
         </div>
         <p className="pin-modal-hint">Click on the map to place the pin</p>
         <div className="pin-modal-map-wrap">
@@ -140,8 +145,7 @@ function PinPlacementModal({ mapId, defaultLabel, onClose }: PinPlacementModalPr
         >
           {saving ? 'Saving…' : 'Place Pin'}
         </button>
-      </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -310,8 +314,8 @@ export interface SessionViewProps {
   activeMapImagePath: string | null
   setActiveMapId: (id: number | null) => void
   setActiveMapImagePath: (path: string | null) => void
-  rightTab: string
-  setRightTab: React.Dispatch<React.SetStateAction<string>>
+  rightTab: PanelID
+  setRightTab: React.Dispatch<React.SetStateAction<PanelID>>
   showPlayerHistory: boolean
   setShowPlayerHistory: (show: boolean) => void
   showTalentsPanel: boolean
@@ -329,7 +333,7 @@ export interface SessionViewProps {
   aiTalentDescs: Record<string, string>
   setAiTalentDescs: React.Dispatch<React.SetStateAction<Record<string, string>>>
   handleSend: () => Promise<void>
-  onSendText: (text: string) => Promise<void>
+  onSendText: (text: string) => Promise<boolean>
   handleGenerateMap: () => Promise<void>
   handleSpendXP: (characterId: number, field: string, newValue: number) => Promise<void>
   lastEvent: unknown
@@ -385,8 +389,10 @@ export function SessionView({
   onCharacterSelect,
   typingNames,
 }: SessionViewProps) {
+  const toast = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [journalSubTab, setJournalSubTab] = useState<'notes' | 'timeline'>('notes')
+  const [mobileDestination, setMobileDestination] = useState<MobileDestination>('story')
   const [sessionNpcs, setSessionNpcs] = useState<SessionNPC[]>([])
   const [pendingHandout, setPendingHandout] = useState<{
     title: string
@@ -439,31 +445,32 @@ export function SessionView({
   const sessionDate = ctx.session?.date
     ? new Date(ctx.session.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     : ''
+  const changeMobileDestination = (destination: MobileDestination) => {
+    setMobileDestination(destination)
+    const currentGroup = PANEL_DEFINITIONS.find((panel) => panel.id === rightTab)?.group
+    if (destination === 'gm' && currentGroup !== 'GM') setRightTab('objectives')
+    if (destination === 'world' && currentGroup === 'GM') setRightTab('notes')
+  }
 
   return (
     <>
     {pendingHandout && (
-      <div className="handout-modal-backdrop" onClick={() => setPendingHandout(null)}>
-        <div className="handout-modal" onClick={(e) => e.stopPropagation()}>
+      <Dialog open title={pendingHandout.title} onClose={() => setPendingHandout(null)} className="handout-modal">
           <div className="handout-modal-header">
             <span className="handout-modal-category">{pendingHandout.category}</span>
-            <h2 className="handout-modal-title">{pendingHandout.title}</h2>
-            <button className="handout-modal-close" onClick={() => setPendingHandout(null)}>×</button>
+            <IconButton className="handout-modal-close" label="Close handout" icon="×" onClick={() => setPendingHandout(null)} />
           </div>
           <div className="handout-modal-body">
             <p className="handout-modal-content">{pendingHandout.content}</p>
           </div>
-        </div>
-      </div>
+      </Dialog>
     )}
-    <div className="grimoire-body">
-
       {/* Player History Overlay */}
       {showPlayerHistory && (
-        <div className="player-history-overlay">
+        <Dialog open title="Your Actions" onClose={() => setShowPlayerHistory(false)} className="player-history-overlay">
           <div className="player-history-header">
             <span>Your Actions</span>
-            <button onClick={() => setShowPlayerHistory(false)}>×</button>
+            <IconButton label="Close action history" icon="×" onClick={() => setShowPlayerHistory(false)} />
           </div>
           <div className="player-history-list">
             {messages.filter(m => m.role === 'user' && !m.whisper).map(m => (
@@ -472,7 +479,7 @@ export function SessionView({
               </div>
             ))}
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Talents & Powers Overlay */}
@@ -508,10 +515,10 @@ export function SessionView({
           const bloodPotency = Number(charData.blood_potency ?? 1)
 
           return (
-            <div className="talents-overlay">
+            <Dialog open title={`Disciplines & Powers — ${ctx.character.name}`} onClose={() => setShowTalentsPanel(false)} className="talents-overlay">
               <div className="talents-overlay-header">
                 <span>Disciplines &amp; Powers — {ctx.character.name}</span>
-                <button onClick={() => setShowTalentsPanel(false)}>×</button>
+                <IconButton label="Close disciplines and powers" icon="×" onClick={() => setShowTalentsPanel(false)} />
               </div>
               <div className="talents-overlay-body">
                 <div className="talents-section">
@@ -567,7 +574,7 @@ export function SessionView({
                   </div>
                 )}
               </div>
-            </div>
+            </Dialog>
           )
         }
 
@@ -576,10 +583,10 @@ export function SessionView({
         const powers = String(charData.powers ?? '').trim()
         const talentRanks = (charData.talent_ranks ?? {}) as Record<string, number>
         return (
-          <div className="talents-overlay">
+          <Dialog open title={`Talents & Powers — ${ctx.character.name}`} onClose={() => setShowTalentsPanel(false)} className="talents-overlay">
             <div className="talents-overlay-header">
               <span>Talents &amp; Powers — {ctx.character.name}</span>
-              <button onClick={() => setShowTalentsPanel(false)}>×</button>
+              <IconButton label="Close talents and powers" icon="×" onClick={() => setShowTalentsPanel(false)} />
             </div>
             <div className="talents-overlay-body">
               <div className="talents-section">
@@ -623,12 +630,23 @@ export function SessionView({
                 </div>
               )}
             </div>
-          </div>
+          </Dialog>
         )
       })()}
 
-      {/* Left Sidebar */}
-      <aside className="sidebar-left">
+      <WorkspaceShell
+        mobileDestination={mobileDestination}
+        mobileNav={(
+          <WorkspaceNavigation
+            activePanel={rightTab}
+            onPanelChange={setRightTab}
+            mobileDestination={mobileDestination}
+            onMobileDestinationChange={changeMobileDestination}
+            mobile
+          />
+        )}
+        left={(
+          <aside className="sidebar-left">
         <CharacterSelector
           characters={charactersList}
           selectedId={selectedCharacterId}
@@ -661,10 +679,12 @@ export function SessionView({
         )}
         <hr className="sidebar-rule" />
         <XPLogPanel sessionId={ctx?.session?.id ?? null} lastEvent={lastEvent} />
-      </aside>
+          </aside>
+        )}
 
-      {/* Center Column */}
-      <main className="story-center">
+        story={(
+          <>
+            <main className="story-center">
         {ctx.active_combat && (
           <TurnOrderStrip combatants={ctx.active_combat.combatants} />
         )}
@@ -799,110 +819,32 @@ export function SessionView({
             </div>
           </div>
         </div>
-      </main>
+            </main>
 
-      <XPSuggestionsPanel
-        event={xpPanelDismissed ? null : xpSuggestionsEvent}
-        onDismiss={() => { setXPSuggestionsEvent(null); setXpPanelDismissed(false) }}
-        onHide={() => setXpPanelDismissed(true)}
-        onSpend={handleSpendXP}
-      />
+            <XPSuggestionsPanel
+              event={xpPanelDismissed ? null : xpSuggestionsEvent}
+              onDismiss={() => { setXPSuggestionsEvent(null); setXpPanelDismissed(false) }}
+              onHide={() => setXpPanelDismissed(true)}
+              onSpend={handleSpendXP}
+            />
+          </>
+        )}
 
-      {/* Right Sidebar */}
-      <aside className="sidebar-right">
-        <div className="tab-bar">
-          <button
-            className={`tab-btn${rightTab === 'handouts' ? ' active' : ''}`}
-            onClick={() => setRightTab('handouts')}
-          >
-            Handouts
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'compendium' ? ' active' : ''}`}
-            onClick={() => setRightTab('compendium')}
-          >
-            Compendium
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'decks' ? ' active' : ''}`}
-            onClick={() => setRightTab('decks')}
-          >
-            Decks
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'notes' ? ' active' : ''}`}
-            onClick={() => setRightTab('notes')}
-          >
-            Notes
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'journal' ? ' active' : ''}`}
-            onClick={() => setRightTab('journal')}
-          >
-            Journal
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'npcs' ? ' active' : ''}`}
-            onClick={() => setRightTab('npcs')}
-          >
-            NPCs
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'objectives' ? ' active' : ''}`}
-            onClick={() => setRightTab('objectives')}
-          >
-            Objectives
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'oracle' ? ' active' : ''}`}
-            onClick={() => setRightTab('oracle')}
-          >
-            Oracle
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'relationships' ? ' active' : ''}`}
-            onClick={() => setRightTab('relationships')}
-          >
-            Relations
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'factions' ? ' active' : ''}`}
-            onClick={() => setRightTab('factions')}
-          >
-            Factions
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'calendar' ? ' active' : ''}`}
-            onClick={() => setRightTab('calendar')}
-          >
-            Calendar
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'npcstats' ? ' active' : ''}`}
-            onClick={() => setRightTab('npcstats')}
-          >
-            Stat Blocks
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'adventures' ? ' active' : ''}`}
-            onClick={() => setRightTab('adventures')}
-          >
-            Adventures
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'secrets' ? ' active' : ''}`}
-            onClick={() => setRightTab('secrets')}
-          >
-            Secrets
-          </button>
-          <button
-            className={`tab-btn${rightTab === 'gmtools' ? ' active' : ''}`}
-            onClick={() => setRightTab('gmtools')}
-          >
-            GM Tools
-          </button>
-        </div>
-        <div className="tab-content">
+        right={(
+          <aside className="sidebar-right">
+            <WorkspaceNavigation
+              activePanel={rightTab}
+              onPanelChange={setRightTab}
+              mobileDestination={mobileDestination}
+              onMobileDestinationChange={changeMobileDestination}
+              mobile={false}
+            />
+        <div
+          className="tab-content"
+          id="workspace-active-panel"
+          role="tabpanel"
+          aria-label={`${PANEL_DEFINITIONS.find((panel) => panel.id === rightTab)?.label ?? 'Workspace'} panel`}
+        >
           {rightTab === 'handouts' && ctx.campaign && (
             <HandoutsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
           )}
@@ -931,8 +873,10 @@ export function SessionView({
                   if (!ctx?.session?.id) return
                   try {
                     await reanalyzeSession(ctx.session.id)
-                  } catch (e) {
-                    console.error(e)
+                    toast.success('Session reanalysis started.')
+                  } catch (cause) {
+                    console.error(cause)
+                    toast.error('The session could not be reanalyzed. Try again.')
                   }
                 }}
                 title="Re-analyze session for objectives and NPCs"
@@ -1003,9 +947,9 @@ export function SessionView({
             />
           )}
         </div>
-      </aside>
-
-    </div>
+          </aside>
+        )}
+      />
     </>
   )
 }

@@ -73,6 +73,54 @@ describe('App', () => {
     expect(await screen.findByText('Greyhawk')).toBeInTheDocument()
   })
 
+  it('keeps connection recovery status visibly announced', async () => {
+    render(<App />)
+    expect(await screen.findByRole('status', { name: 'Connection status' })).toHaveTextContent(/connecting/i)
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+    await act(async () => socket.drop())
+    expect(screen.getByRole('status', { name: 'Connection status' })).toHaveTextContent(/reconnecting/i)
+  })
+
+  it('shows first-run steps and opens campaign management', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/auth/session') return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      if (url === '/api/context') return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...mockCtx, campaign: null, character: null, session: null, recent_messages: [] }) })
+      if (url === '/api/health') return Promise.resolve({ ok: true, json: () => Promise.resolve({ ai_enabled: true }) })
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByText(/create a campaign/i)).toBeInTheDocument()
+    expect(screen.getByText(/create or select a character/i)).toBeInTheDocument()
+    expect(screen.getByText(/create or select a session/i)).toBeInTheDocument()
+    expect(screen.getByText(/AI backend is available/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open campaign management' }))
+    expect(await screen.findByRole('dialog', { name: 'Manage Campaign' })).toBeInTheDocument()
+  })
+
+  it('reports a safe reanalysis failure without exposing provider details', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === '/api/auth/session') return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      if (url === '/api/context') return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+      if (url === '/api/sessions/1/messages') return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      if (url === '/api/sessions/1/reanalyze' && init?.method === 'POST') {
+        return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({ detail: 'provider-secret' }) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('tab', { name: 'Journal' }))
+    await user.click(screen.getByRole('button', { name: /reanalyze/i }))
+
+    const safeMessage = await screen.findByText('The session could not be reanalyzed. Try again.')
+    expect(safeMessage.closest('[role="alert"]')).not.toBeNull()
+    expect(screen.queryByText(/provider-secret|502|Reanalyze failed/)).not.toBeInTheDocument()
+  })
+
   it('shows login without opening the API or WebSocket before authentication', async () => {
     const webSocket = vi.fn().mockImplementation(() => new MockWebSocket())
     const fetchMock = vi.fn().mockImplementation((url: string) => {

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import type { CampaignConfig } from './api'
 import { fetchCampaignConfig, patchCampaignConfig, postImprovise, postPreSessionBrief, postDetectThreads, postCampaignAsk } from './api'
 import ReactMarkdown from 'react-markdown'
+import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
 
 interface GMScreenPanelProps {
   campaignId: number | null
@@ -73,8 +75,9 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
           break
       }
       setToolsResult(text)
-    } catch (e) {
-      setToolsResult('Error: ' + (e instanceof Error ? e.message : 'Unknown error'))
+    } catch (cause) {
+      console.error(cause)
+      setToolsResult('The GM tool could not complete. Try again.')
     } finally {
       setToolsLoading(false)
     }
@@ -82,26 +85,23 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
 
   if (!campaignId) {
     return (
-      <div className="manage-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-        <div className="manage-panel">
+      <Dialog open title="GM Screen" onClose={onClose} className="manage-panel">
           <div className="manage-header">
             <span className="manage-title">GM Screen</span>
-            <button className="manage-close" onClick={onClose}>×</button>
+            <IconButton className="manage-close" label="Close GM Screen" icon="×" onClick={onClose} />
           </div>
           <div className="manage-content">
             <p className="gm-tool-disabled">No campaign selected.</p>
           </div>
-        </div>
-      </div>
+      </Dialog>
     )
   }
 
   return (
-    <div className="manage-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="manage-panel gm-screen-panel">
+    <Dialog open title="GM Screen" onClose={onClose} className="manage-panel gm-screen-panel">
         <div className="manage-header">
           <span className="manage-title">GM Screen</span>
-          <button className="manage-close" onClick={onClose}>×</button>
+          <IconButton className="manage-close" label="Close GM Screen" icon="×" onClick={onClose} />
         </div>
 
         {error && <div className="manage-error">{error}</div>}
@@ -276,7 +276,6 @@ export function GMScreenPanel({ campaignId, sessionId, aiEnabled, onClose }: GMS
             <p className="gm-tool-disabled">Could not load campaign data.</p>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }

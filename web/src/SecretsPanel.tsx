@@ -150,11 +150,11 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
           <ul className="secret-list">
             {hidden.map(s => (
               <li key={s.id} className={`secret-item secret-item--hidden`}>
-                <div className="secret-header" onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
+                <button type="button" className="secret-header" aria-label={`Toggle secret ${s.title}`} onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
                   <span className="secret-category-badge secret-category--{s.category}">{s.category}</span>
                   <span className="secret-title secret-title--dimmed">{s.title}</span>
                   <span className="secret-expand-icon">{expandedId === s.id ? '▴' : '▾'}</span>
-                </div>
+                </button>
                 {expandedId === s.id && (
                   <div className="secret-body">
                     <p className="secret-content-hidden">Content hidden — reveal to view</p>
@@ -179,11 +179,11 @@ export function SecretsPanel({ campaignId, sessionId, lastEvent }: SecretsPanelP
           <ul className="secret-list">
             {revealed.map(s => (
               <li key={s.id} className="secret-item secret-item--revealed">
-                <div className="secret-header" onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
+                <button type="button" className="secret-header" aria-label={`Toggle secret ${s.title}`} onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}>
                   <span className="secret-category-badge">{s.category}</span>
                   <span className="secret-title">{s.title}</span>
                   <span className="secret-expand-icon">{expandedId === s.id ? '▴' : '▾'}</span>
-                </div>
+                </button>
                 {expandedId === s.id && (
                   <div className="secret-body">
                     <p className="secret-content">{s.content}</p>

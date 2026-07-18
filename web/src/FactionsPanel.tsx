@@ -131,18 +131,18 @@ export function FactionsPanel({ campaignId, lastEvent }: FactionsPanelProps) {
       <ul className="faction-list">
         {factions.map(f => (
           <li key={f.id} className="faction-item">
-            <div className="faction-header" onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>
+            <button type="button" className="faction-header" aria-label={`Toggle faction ${f.name}`} onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>
               <span className="faction-color-dot" style={{ backgroundColor: f.color }} />
               <strong className="faction-name">{f.name}</strong>
               <span className="faction-type-badge">{f.faction_type}</span>
-              <div className="faction-influence-bar">
-                <div
+              <span className="faction-influence-bar">
+                <span
                   className="faction-influence-fill"
                   style={{ width: `${(f.influence / 10) * 100}%`, backgroundColor: f.color }}
                 />
-              </div>
+              </span>
               <span className="faction-expand-icon">{expandedId === f.id ? '▴' : '▾'}</span>
-            </div>
+            </button>
             {expandedId === f.id && (
               <div className="faction-body">
                 {f.description && <p className="faction-description">{f.description}</p>}

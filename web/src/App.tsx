@@ -10,8 +10,15 @@ import { setAmbientTrack } from './audio/ambient'
 import { SessionView } from './SessionView'
 import { CharacterSelector } from './CharacterSelector'
 import { LoginScreen } from './LoginScreen'
+import type { PanelID } from './navigation/panelRegistry'
+import { ToastProvider, useToast } from './ui/ToastProvider'
 import { fetchSessionInfo, request, setCSRFToken, type SessionInfo } from './transport'
+import './styles/tokens.css'
 import './App.css'
+import './styles/primitives.css'
+import './styles/layout.css'
+import './styles/navigation.css'
+import './styles/responsive.css'
 
 const appOwnedContextEvents = new Set([
   'campaign_updated', 'campaign_config_updated', 'context_updated',
@@ -98,16 +105,32 @@ export default function App() {
   if (!session.authenticated) {
     return <LoginScreen onAuthenticated={setSession} />
   }
-  return <GameApp />
+  return <ToastProvider><GameApp /></ToastProvider>
+}
+
+function FirstRunEmptyState({ onOpenManage, aiEnabled }: { onOpenManage: () => void; aiEnabled: boolean }) {
+  return (
+    <main className="first-run-empty-state">
+      <h1>Begin your chronicle</h1>
+      <ol>
+        <li>Create a campaign.</li>
+        <li>Create or select a character.</li>
+        <li>Create or select a session.</li>
+      </ol>
+      <p>{aiEnabled ? 'An AI backend is available for configured game features.' : 'No AI backend is currently available; non-AI campaign tools still work.'}</p>
+      <button type="button" onClick={onOpenManage}>Open campaign management</button>
+    </main>
+  )
 }
 
 function GameApp() {
+  const toast = useToast()
   const [ctx, setCtx] = useState<GameContext | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [error, setError] = useState<string | null>(null)
   const [aiEnabled, setAiEnabled] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
-  const [rightTab, setRightTab] = useState<string>('notes')
+  const [rightTab, setRightTab] = useState<PanelID>('notes')
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [gmResponding, setGmResponding] = useState(false)
@@ -119,6 +142,7 @@ function GameApp() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') ?? 'worn-grimoire')
   const [activeMapId, setActiveMapId] = useState<number | null>(null)
   const [activeMapImagePath, setActiveMapImagePath] = useState<string | null>(null)
+  const generateMapRetryRef = useRef<() => void>(() => undefined)
   const [manageOpen, setManageOpen] = useState(false)
   const [gmScreenOpen, setGmScreenOpen] = useState(false)
   const [manageTab, setManageTab] = useState<'campaigns' | 'characters' | 'sessions' | 'rulebooks' | 'automation'>('campaigns')
@@ -338,11 +362,13 @@ function GameApp() {
     }
   }, [needsReconcile, reconcileGeneration, webSocketStatus, loadContext, acknowledgeReconcile])
 
-  const handleSendText = useCallback(async (text: string) => {
-    if (!text || !ctx?.session || sending) return
+  const handleSendText = useCallback(async (text: string): Promise<boolean> => {
+    if (!text || !ctx?.session || sending) return false
     setSending(true)
+    let submitted = false
     try {
       await sendMessage(ctx.session.id, text, false, selectedCharacterId)
+      submitted = true
       loadContext(true)
       setGmResponding(true)
       setStreamingText('')
@@ -351,13 +377,21 @@ function GameApp() {
       })
       setStreamingText('')
       loadContext(true)
+      return true
     } catch (err) {
       console.error(err)
+      if (submitted) {
+        toast.error('The GM response was interrupted. The story is being refreshed; your action was not resubmitted.')
+        loadContext(true)
+        return true
+      }
+      toast.error('Your action could not be sent. Your text has been restored so you can try again.')
+      return false
     } finally {
       setSending(false)
       setGmResponding(false)
     }
-  }, [ctx, sending, loadContext, selectedCharacterId])
+  }, [ctx, sending, loadContext, selectedCharacterId, toast])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -372,13 +406,15 @@ function GameApp() {
         loadContext(true)
       } catch {
         setInput(text)
+        toast.error('Your whisper could not be sent. Your text has been restored so you can try again.')
       } finally {
         setSending(false)
       }
       return
     }
-    await handleSendText(text).catch(() => setInput(text))
-  }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId, handleSendText])
+    const sent = await handleSendText(text)
+    if (!sent) setInput(text)
+  }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId, handleSendText, toast])
 
   const handleGenerateMap = useCallback(async () => {
     if (!ctx?.campaign || !aiEnabled || generatingMap) return
@@ -389,10 +425,18 @@ function GameApp() {
     const mapName = ctx.session?.title ?? ctx.campaign.name
     try {
       await generateMap(ctx.campaign.id, mapName, context)
+      toast.success('Map generation started.')
+    } catch (err) {
+      console.error(err)
+      toast.error('The map could not be generated.', { label: 'Retry', onClick: () => generateMapRetryRef.current() })
     } finally {
       setGeneratingMap(false)
     }
-  }, [ctx, aiEnabled, generatingMap, messages])
+  }, [ctx, aiEnabled, generatingMap, messages, toast])
+
+  useEffect(() => {
+    generateMapRetryRef.current = () => { void handleGenerateMap() }
+  }, [handleGenerateMap])
 
   const handleSpendXP = useCallback(async (characterId: number, field: string, newValue: number) => {
     const res = await request(`/api/characters/${characterId}/advance`, {
@@ -533,6 +577,16 @@ function GameApp() {
         <AudioControls />
       </header>
 
+      {webSocketStatus !== 'open' && (
+        <div className={`connection-banner connection-${webSocketStatus}`} role="status" aria-label="Connection status" aria-live="polite">
+          {webSocketStatus === 'offline'
+            ? 'Offline. Changes from other clients will refresh when the connection returns.'
+            : webSocketStatus === 'reconnecting'
+              ? 'Reconnecting to live updates…'
+              : 'Connecting to live updates…'}
+        </div>
+      )}
+
       {gmScreenOpen && (
         <GMScreenPanel
           campaignId={ctx?.campaign?.id ?? null}
@@ -554,7 +608,12 @@ function GameApp() {
         />
       )}
 
-      <SessionView
+      {!ctx.campaign ? (
+        <FirstRunEmptyState
+          aiEnabled={aiEnabled}
+          onOpenManage={() => { setManageTab('campaigns'); setManageOpen(true) }}
+        />
+      ) : <SessionView
         ctx={ctx}
         messages={messages}
         displayMessages={displayMessages}
@@ -598,7 +657,7 @@ function GameApp() {
         charactersList={charactersList}
         selectedCharacterId={selectedCharacterId}
         onCharacterSelect={setSelectedCharacterId}
-      />
+      />}
     </div>
   )
 }

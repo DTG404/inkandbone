@@ -1060,19 +1060,18 @@ The base prompt above says "the player controls only their character" — that r
 	if err != nil {
 		// Headers already sent; can't send HTTP error status, just log and return
 		log.Printf("gm-respond-stream: StreamRespond error (session %d): %v", id, err)
-		fmt.Fprintf(w, "data: [The GM encountered an error. Please try again.]\n\n") //nolint:errcheck
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
+		_ = ai.WriteSSE(w, ai.SSEEvent{Type: "error", Code: "gm_failed", RequestID: requestID(r)})
 		return
 	}
 
 	if fullText == "" {
 		log.Printf("gm-respond-stream: empty response from model (session %d) — model may have refused or produced only a think block", id)
 		fallback := "The GM pauses, seeming lost in thought. **What do you do?**"
-		fmt.Fprintf(w, "data: %s\n\n", fallback) //nolint:errcheck
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+		if err := ai.WriteSSE(w, ai.SSEEvent{Type: "delta", Delta: fallback}); err != nil {
+			return
+		}
+		if err := ai.WriteSSE(w, ai.SSEEvent{Type: "done"}); err != nil {
+			return
 		}
 		fullText = fallback
 	}

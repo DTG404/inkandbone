@@ -114,7 +114,6 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 		return "", fmt.Errorf("deepseek returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	flusher, canFlush := w.(http.Flusher)
 	var (
 		fullText     strings.Builder
 		thinkBuf     strings.Builder
@@ -153,9 +152,8 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 				thinkBuf.Reset()
 				text := stripEmDash(buf)
 				fullText.WriteString(text)
-				fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-				if canFlush {
-					flusher.Flush()
+				if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+					return fullText.String(), fmt.Errorf("write stream: %w", err)
 				}
 				continue
 			}
@@ -167,9 +165,8 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 				if after != "" {
 					after = stripEmDash(after)
 					fullText.WriteString(after)
-					fmt.Fprintf(w, "data: %s\n\n", after) //nolint:errcheck
-					if canFlush {
-						flusher.Flush()
+					if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: after}); err != nil {
+						return fullText.String(), fmt.Errorf("write stream: %w", err)
 					}
 				}
 			}
@@ -178,9 +175,8 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 
 		text := stripEmDash(chunk)
 		fullText.WriteString(text)
-		fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-		if canFlush {
-			flusher.Flush()
+		if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+			return fullText.String(), fmt.Errorf("write stream: %w", err)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -190,11 +186,16 @@ func (c *DeepSeekClient) StreamRespond(ctx context.Context, system string, histo
 		if !strings.HasPrefix(thinkBuf.String(), "<think>") {
 			text := stripEmDash(thinkBuf.String())
 			fullText.WriteString(text)
-			fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-			if canFlush {
-				flusher.Flush()
+			if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+				return fullText.String(), fmt.Errorf("write stream: %w", err)
 			}
 		}
+	}
+	if fullText.Len() == 0 {
+		return "", fmt.Errorf("empty response from DeepSeek")
+	}
+	if err := WriteSSE(w, SSEEvent{Type: "done"}); err != nil {
+		return fullText.String(), fmt.Errorf("write stream completion: %w", err)
 	}
 	return fullText.String(), nil
 }

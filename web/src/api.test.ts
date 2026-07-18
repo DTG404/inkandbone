@@ -1,7 +1,41 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchContext, fetchMessages, fetchWorldNotes, fetchDiceRolls, fetchTimeline, fetchMaps, fetchMapPins, patchSessionSummary, generateRecap, draftWorldNote, uploadMap } from './api'
+import { fetchContext, fetchMessages, fetchWorldNotes, fetchDiceRolls, fetchTimeline, fetchMaps, fetchMapPins, patchSessionSummary, generateRecap, draftWorldNote, uploadMap, gmRespondStream } from './api'
 
 afterEach(() => vi.restoreAllMocks())
+
+function chunkedResponse(payload: string, cuts: number[]): Response {
+  const bytes = new TextEncoder().encode(payload)
+  let offset = 0
+  return new Response(new ReadableStream({
+    start(controller) {
+      for (const cut of cuts) {
+        controller.enqueue(bytes.slice(offset, cut))
+        offset = cut
+      }
+      controller.enqueue(bytes.slice(offset))
+      controller.close()
+    },
+  }))
+}
+
+describe('gmRespondStream', () => {
+  it('returns and callbacks the exact multiline Unicode deltas across adversarial chunks', async () => {
+    const payload = 'data: {"type":"delta","delta":"first\\nsecond ☃"}\n\n' +
+      'data: {"type":"delta","delta":"!"}\n\n' +
+      'data: {"type":"done"}\n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [1, 7, 48, 49, 57])))
+    const chunks: string[] = []
+    const result = await gmRespondStream(7, (chunk) => chunks.push(chunk))
+    expect(result).toBe('first\nsecond ☃!')
+    expect(chunks.join('')).toBe(result)
+  })
+
+  it('surfaces only the stable error code and opaque request ID', async () => {
+    const payload = 'data: {"type":"error","code":"gm_failed","request_id":"req-opaque","provider_detail":"secret"}\n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chunkedResponse(payload, [20, 61])))
+    await expect(gmRespondStream(7, vi.fn())).rejects.toThrow('GM stream failed (gm_failed; request req-opaque)')
+  })
+})
 
 describe('fetchContext', () => {
   it('returns parsed GameContext on success', async () => {

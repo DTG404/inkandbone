@@ -703,8 +703,37 @@ func (s *stubCompleterStreamer) StreamRespond(_ context.Context, system string, 
 	s.capturedSys = system
 	s.capturedHistory = append([]ai.ChatMessage(nil), history...)
 	s.mu.Unlock()
-	fmt.Fprintf(w, "data: %s\n\n", s.streamResp)
+	if err := ai.WriteSSE(w, ai.SSEEvent{Type: "delta", Delta: s.streamResp}); err != nil {
+		return "", err
+	}
+	if err := ai.WriteSSE(w, ai.SSEEvent{Type: "done"}); err != nil {
+		return "", err
+	}
 	return s.streamResp, nil
+}
+
+func TestHandleGMRespondStreamPreservesExactMultilineUnicodeText(t *testing.T) {
+	want := "first\nsecond ☃"
+	stub := &stubCompleterStreamer{generateResp: `{"required":false}`, streamResp: want}
+	s := newTestServerWithAI(t, stub)
+	_, sessionID := seedCampaign(t, s.db)
+	for _, setting := range AllAutomationSettings() {
+		require.NoError(t, s.db.SetSetting(setting.Key, "0"))
+	}
+	_, err := s.db.CreateMessage(sessionID, "user", "Continue", false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/sessions/%d/gm-respond-stream", sessionID), nil)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `data: {"type":"delta","delta":"first\nsecond ☃"}`)
+	assert.Equal(t, 1, strings.Count(rec.Body.String(), `"type":"done"`))
+	messages, err := s.db.ListMessages(sessionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, messages)
+	assert.Equal(t, want, messages[len(messages)-1].Content)
 }
 
 func (s *stubCompleterStreamer) providerInput() string {

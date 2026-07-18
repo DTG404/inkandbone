@@ -205,8 +205,6 @@ func (c *Client) StreamRespond(ctx context.Context, system string, history []Cha
 		return "", fmt.Errorf("anthropic API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	flusher, canFlush := w.(http.Flusher)
-
 	var fullText strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -228,14 +226,19 @@ func (c *Client) StreamRespond(ctx context.Context, system string, history []Cha
 		if event.Type == "content_block_delta" && event.Delta.Type == "text_delta" && event.Delta.Text != "" {
 			text := stripEmDash(event.Delta.Text)
 			fullText.WriteString(text)
-			fmt.Fprintf(w, "data: %s\n\n", text) //nolint:errcheck
-			if canFlush {
-				flusher.Flush()
+			if err := WriteSSE(w, SSEEvent{Type: "delta", Delta: text}); err != nil {
+				return fullText.String(), fmt.Errorf("write stream: %w", err)
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fullText.String(), fmt.Errorf("read stream: %w", err)
+	}
+	if fullText.Len() == 0 {
+		return "", fmt.Errorf("empty response from Anthropic")
+	}
+	if err := WriteSSE(w, SSEEvent{Type: "done"}); err != nil {
+		return fullText.String(), fmt.Errorf("write stream completion: %w", err)
 	}
 	return fullText.String(), nil
 }

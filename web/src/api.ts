@@ -1,4 +1,5 @@
 import { request } from './transport'
+import { parseSSE } from './sse'
 import type { GameContext, Message, WorldNote, DiceRoll, TimelineEntry, SessionNPC, Objective, Item, XPEntry, Adventure, Faction, Relationship, NpcStat, Secret, Macro, Deck, DeckCard, DeckDraw } from './types'
 
 export interface CampaignMap {
@@ -221,31 +222,18 @@ export async function gmRespondStream(
 ): Promise<string> {
   const res = await request(`/api/sessions/${sessionId}/gm-respond-stream`, { method: 'POST' })
   if (!res.ok) throw new Error(`gmRespondStream failed: ${res.status}`)
-  const reader = res.body?.getReader()
-  if (!reader) return ''
-  const decoder = new TextDecoder()
   let accumulated = ''
-  let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const chunk = line.slice(6)
-        accumulated += chunk
-        onChunk(chunk)
-      }
+  let streamError: Error | undefined
+  await parseSSE(res, (event) => {
+    if (event.type === 'delta') {
+      accumulated += event.delta
+      onChunk(event.delta)
+    } else if (event.type === 'error') {
+      const request = event.request_id ? `; request ${event.request_id}` : ''
+      streamError = new Error(`GM stream failed (${event.code}${request})`)
     }
-  }
-  // flush remaining buffer
-  if (buffer.startsWith('data: ')) {
-    const chunk = buffer.slice(6)
-    accumulated += chunk
-    onChunk(chunk)
-  }
+  })
+  if (streamError) throw streamError
   return accumulated
 }
 

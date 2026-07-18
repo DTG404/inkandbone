@@ -135,11 +135,20 @@ func (s *Server) handleUpdateRelationship(w http.ResponseWriter, r *http.Request
 	if body.RelationshipType == "" {
 		body.RelationshipType = "neutral"
 	}
+	relationship, err := s.db.GetRelationship(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if relationship == nil {
+		http.Error(w, "relationship not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateRelationship(id, body.RelationshipType, body.Description); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"campaign_id": relationship.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -150,10 +159,20 @@ func (s *Server) handleDeleteRelationship(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	relationship, err := s.db.GetRelationship(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if relationship == nil {
+		http.Error(w, "relationship not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteRelationship(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
+	s.bus.Publish(Event{Type: EventRelationshipUpdated, Payload: map[string]any{"campaign_id": relationship.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 

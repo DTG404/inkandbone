@@ -9,6 +9,7 @@ import (
 
 	"github.com/digitalghost404/inkandbone/internal/ai"
 	"github.com/digitalghost404/inkandbone/internal/db"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,6 +31,14 @@ func newTestServerWithOptions(t *testing.T, options ServerOptions) *Server {
 	s := NewServerWithOptions(d, t.TempDir(), nil, options)
 	cleanupTestServer(t, s)
 	return s
+}
+
+func TestServerOptionsConfigureAutomationBreakerCooldownWithoutChangingDefault(t *testing.T) {
+	defaultServer := newTestServer(t)
+	assert.Equal(t, time.Minute, defaultServer.breakers.cooldown)
+
+	configured := newTestServerWithOptions(t, ServerOptions{AutomationBreakerCooldown: 100 * time.Millisecond})
+	assert.Equal(t, 100*time.Millisecond, configured.breakers.cooldown)
 }
 
 func newTestServerWithDir(t *testing.T, dir string) *Server {

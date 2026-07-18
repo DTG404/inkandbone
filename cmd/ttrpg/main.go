@@ -63,6 +63,10 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 	if err := api.ValidateListenSecurity(*listenFlag, securityConfig); err != nil {
 		return fmt.Errorf("listen security: %w", err)
 	}
+	breakerCooldown, err := configuredAutomationBreakerCooldown(os.Getenv("TTRPG_TEST_AUTOMATION_BREAKER_COOLDOWN"))
+	if err != nil {
+		return fmt.Errorf("automation breaker cooldown: %w", err)
+	}
 
 	dbPath := *dbFlag
 	dataDir := filepath.Dir(dbPath)
@@ -118,8 +122,9 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 	}
 
 	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{
-		Security:    securityConfig,
-		RootContext: rootCtx,
+		Security:                  securityConfig,
+		RootContext:               rootCtx,
+		AutomationBreakerCooldown: breakerCooldown,
 	})
 	httpServer.RegisterStatic(http.FS(distFS))
 
@@ -145,6 +150,21 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 
 func configuredOllamaURL(value string) string {
 	return strings.TrimRight(strings.TrimSpace(value), "/")
+}
+
+func configuredAutomationBreakerCooldown(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	cooldown, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, errors.New("must be a duration between 1ms and 1m")
+	}
+	if cooldown < time.Millisecond || cooldown > time.Minute {
+		return 0, errors.New("must be between 1ms and 1m")
+	}
+	return cooldown, nil
 }
 
 type httpLifecycle interface {

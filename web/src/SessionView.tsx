@@ -964,10 +964,10 @@ export function SessionView({
             <OraclePanel sessionId={ctx.session.id} />
           )}
           {rightTab === 'relationships' && ctx.campaign && (
-            <RelationshipsPanel campaignId={ctx.campaign.id} />
+            <RelationshipsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
           )}
           {rightTab === 'factions' && ctx.campaign && (
-            <FactionsPanel campaignId={ctx.campaign.id} />
+            <FactionsPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
           )}
           {rightTab === 'calendar' && ctx.campaign && (
             <CalendarPanel
@@ -977,7 +977,7 @@ export function SessionView({
             />
           )}
           {rightTab === 'npcstats' && ctx.campaign && (
-            <NPCStatBlockPanel campaignId={ctx.campaign.id} />
+            <NPCStatBlockPanel campaignId={ctx.campaign.id} lastEvent={lastEvent} />
           )}
           {rightTab === 'adventures' && ctx.campaign && (
             <AdventuresPanel

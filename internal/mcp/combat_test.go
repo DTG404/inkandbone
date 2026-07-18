@@ -26,6 +26,7 @@ func setupActiveSession(t *testing.T, s *Server) int64 {
 func TestStartCombat(t *testing.T) {
 	s := newTestMCP(t)
 	sessID := setupActiveSession(t, s)
+	events := s.bus.SubscribeContext(t.Context())
 
 	req := mcplib.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
@@ -47,11 +48,14 @@ func TestStartCombat(t *testing.T) {
 	// ListCombatants returns ORDER BY sort_order ASC; insertion order preserved
 	assert.Equal(t, "Goblin", combatants[0].Name)
 	assert.Equal(t, "Hero", combatants[1].Name)
+	event := <-events
+	require.Equal(t, sessID, event.Payload.(map[string]any)["session_id"])
 }
 
 func TestUpdateCombatant(t *testing.T) {
 	s := newTestMCP(t)
 	sessID := setupActiveSession(t, s)
+	events := s.bus.SubscribeContext(t.Context())
 
 	encID, err := s.db.CreateEncounter(sessID, "Fight")
 	require.NoError(t, err)
@@ -73,6 +77,8 @@ func TestUpdateCombatant(t *testing.T) {
 	require.Len(t, combatants, 1)
 	assert.Equal(t, 8, combatants[0].HPCurrent)
 	assert.Equal(t, `["poisoned"]`, combatants[0].ConditionsJSON)
+	event := <-events
+	require.Equal(t, sessID, event.Payload.(map[string]any)["session_id"])
 }
 
 func TestUpdateCombatant_missingHP(t *testing.T) {
@@ -93,6 +99,7 @@ func TestUpdateCombatant_missingHP(t *testing.T) {
 func TestEndCombat(t *testing.T) {
 	s := newTestMCP(t)
 	sessID := setupActiveSession(t, s)
+	events := s.bus.SubscribeContext(t.Context())
 
 	_, err := s.db.CreateEncounter(sessID, "Fight")
 	require.NoError(t, err)
@@ -106,4 +113,6 @@ func TestEndCombat(t *testing.T) {
 	enc, err := s.db.GetActiveEncounter(sessID)
 	require.NoError(t, err)
 	assert.Nil(t, enc)
+	event := <-events
+	require.Equal(t, sessID, event.Payload.(map[string]any)["session_id"])
 }

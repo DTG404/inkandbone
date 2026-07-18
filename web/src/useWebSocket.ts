@@ -41,7 +41,6 @@ export function useWebSocket(
 
   const acknowledgeReconcile = useCallback((generation: number) => {
     if (generation !== reconcileGenerationRef.current) return
-    lastSequenceRef.current = null
     setAcknowledgedGeneration(generation)
   }, [])
 

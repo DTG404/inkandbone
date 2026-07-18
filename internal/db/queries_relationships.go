@@ -1,6 +1,9 @@
 package db
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // Relationship represents a named relationship between two characters/NPCs in a campaign.
 type Relationship struct {
@@ -11,6 +14,21 @@ type Relationship struct {
 	RelationshipType string    `json:"relationship_type"`
 	Description      string    `json:"description"`
 	CreatedAt        time.Time `json:"created_at"`
+}
+
+func (db *DB) GetRelationship(id int64) (*Relationship, error) {
+	var relationship Relationship
+	err := db.db.QueryRow(
+		`SELECT id, campaign_id, from_name, to_name, relationship_type, description, created_at
+		 FROM relationships WHERE id = ?`, id,
+	).Scan(&relationship.ID, &relationship.CampaignID, &relationship.FromName, &relationship.ToName, &relationship.RelationshipType, &relationship.Description, &relationship.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &relationship, nil
 }
 
 // CreateRelationship inserts a new relationship and returns its ID.

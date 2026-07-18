@@ -138,9 +138,10 @@ describe('useWebSocket', () => {
     expect(result.current.needsReconcile).toBe(true)
     act(() => result.current.acknowledgeReconcile(result.current.reconcileGeneration))
     expect(result.current.needsReconcile).toBe(false)
-    act(() => instances[0].receive({ type: 'dice_rolled', sequence: 100 }))
-    expect(result.current.needsReconcile).toBe(false)
-    act(() => instances[0].receive({ type: 'resync_required', sequence: 101 }))
+    act(() => instances[0].receive({ type: 'dice_rolled', sequence: 8 }))
+    expect(result.current.needsReconcile).toBe(true)
+    act(() => result.current.acknowledgeReconcile(result.current.reconcileGeneration))
+    act(() => instances[0].receive({ type: 'resync_required', sequence: 9 }))
     expect(result.current.needsReconcile).toBe(true)
   })
 

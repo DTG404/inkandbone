@@ -218,3 +218,18 @@ func TestConfiguredOllamaURL(t *testing.T) {
 	assert.Equal(t, "", configuredOllamaURL(" \t"))
 	assert.Equal(t, "http://127.0.0.1:43123", configuredOllamaURL(" http://127.0.0.1:43123/ "))
 }
+
+func TestConfiguredAutomationBreakerCooldown(t *testing.T) {
+	duration, err := configuredAutomationBreakerCooldown("")
+	require.NoError(t, err)
+	assert.Zero(t, duration)
+
+	duration, err = configuredAutomationBreakerCooldown("100ms")
+	require.NoError(t, err)
+	assert.Equal(t, 100*time.Millisecond, duration)
+
+	for _, value := range []string{"garbage", "0s", "-1s", "61s"} {
+		_, err := configuredAutomationBreakerCooldown(value)
+		assert.Error(t, err, value)
+	}
+}

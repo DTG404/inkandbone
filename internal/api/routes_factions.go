@@ -127,11 +127,20 @@ func (s *Server) handleUpdateFaction(w http.ResponseWriter, r *http.Request) {
 	if color == "" {
 		color = "#c9a84c"
 	}
+	faction, err := s.db.GetFaction(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if faction == nil {
+		http.Error(w, "faction not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.UpdateFaction(id, body.Name, body.Description, factionType, influence, body.ResourcesJSON, color); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"campaign_id": faction.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -142,9 +151,19 @@ func (s *Server) handleDeleteFaction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	faction, err := s.db.GetFaction(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if faction == nil {
+		http.Error(w, "faction not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteFaction(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
+	s.bus.Publish(Event{Type: EventFactionUpdated, Payload: map[string]any{"campaign_id": faction.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }

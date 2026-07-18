@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 import { listNpcStats, createNpcStat, updateNpcStat, deleteNpcStat } from './api'
 import type { NpcStat } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface NPCStatBlockPanelProps {
   campaignId: number
+  lastEvent: unknown
 }
 
 const ROLE_OPTIONS = ['brute', 'scout', 'caster', 'leader', 'support', 'minion', 'elite', 'solo', 'other']
 
-export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
+export function NPCStatBlockPanel({ campaignId, lastEvent }: NPCStatBlockPanelProps) {
   const [stats, setStats] = useState<NpcStat[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -28,6 +30,11 @@ export function NPCStatBlockPanel({ campaignId }: NPCStatBlockPanelProps) {
   useEffect(() => {
     listNpcStats(campaignId).then(setStats).catch(() => {})
   }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'npc_stat_updated', 'campaign_id', campaignId)) return
+    listNpcStats(campaignId).then(setStats).catch(() => {})
+  }, [campaignId, lastEvent])
 
   function resetForm() {
     setName('')

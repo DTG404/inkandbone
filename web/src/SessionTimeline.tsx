@@ -23,7 +23,7 @@ function wsToEntry(ev: WsEvent): TimelineEntry | null {
         timestamp: now,
         data: {
           expression: p.expression as string,
-          result: p.total as number,
+          result: p.result as number,
           breakdown_json: JSON.stringify(p.breakdown ?? []),
         },
       }

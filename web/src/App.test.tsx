@@ -17,6 +17,8 @@ const mockCtx: GameContext = {
 
 class MockWebSocket {
   static instances: MockWebSocket[] = []
+  readyState = 0
+  onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
   onerror = null
@@ -24,6 +26,16 @@ class MockWebSocket {
 
   constructor() {
     MockWebSocket.instances.push(this)
+  }
+
+  open() {
+    this.readyState = 1
+    this.onopen?.()
+  }
+
+  drop() {
+    this.readyState = 3
+    this.onclose?.()
   }
 }
 
@@ -114,6 +126,42 @@ describe('App', () => {
     })
 
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('authoritatively reloads context for cross-client combat and session state events', async () => {
+    let contextCalls = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        contextCalls++
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByText('Greyhawk')).toBeInTheDocument()
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+
+    for (const type of ['combat_started', 'combatant_updated', 'combat_ended', 'turn_advanced', 'tension_updated']) {
+      const expected = contextCalls + 1
+      await act(async () => {
+        socket.onmessage?.({ data: JSON.stringify({ type, payload: { session_id: 1 } }) })
+      })
+      await waitFor(() => expect(contextCalls).toBe(expected))
+    }
+
+    const beforeTyping = contextCalls
+    await act(async () => {
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', payload: { character_name: 'Zara', status: 'done' } }) })
+    })
+    expect(contextCalls).toBe(beforeTyping)
   })
 
   it('reloads the authorized transcript so a submitted whisper remains visibly marked', async () => {
@@ -293,6 +341,7 @@ describe('App', () => {
     expect(await screen.findByText('ORIGINAL_PUBLIC')).toBeInTheDocument()
     const socket = MockWebSocket.instances.at(-1)
     requireSocket(socket)
+    act(() => socket.open())
 
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'message_created' }) })
@@ -333,6 +382,7 @@ describe('App', () => {
     expect(await screen.findByText('Could not load game state')).toBeInTheDocument()
     const socket = MockWebSocket.instances.at(-1)
     requireSocket(socket)
+    act(() => socket.open())
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'future_event' }) })
     })
@@ -451,6 +501,9 @@ describe('App', () => {
       if (input === '/api/sessions/1/messages') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
       }
+      if (input === '/api/rulesets/1') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 1, name: 'vtm' }) })
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
     }))
 
@@ -459,6 +512,7 @@ describe('App', () => {
     expect(contextCalls).toBe(1)
     const socket = MockWebSocket.instances.at(-1)
     requireSocket(socket)
+    act(() => socket.open())
 
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 1, payload: { character_name: 'Zara', status: 'done' } }) })
@@ -467,8 +521,8 @@ describe('App', () => {
     await waitFor(() => expect(contextCalls).toBe(2))
 
     await act(async () => {
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 100, payload: { character_name: 'Zara', status: 'done' } }) })
-      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 101, payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 4, payload: { character_name: 'Zara', status: 'done' } }) })
+      socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 5, payload: { character_name: 'Zara', status: 'done' } }) })
     })
     expect(contextCalls).toBe(2)
   })
@@ -495,6 +549,7 @@ describe('App', () => {
     expect(await screen.findByText('You enter the tavern.')).toBeInTheDocument()
     const socket = MockWebSocket.instances.at(-1)
     requireSocket(socket)
+    act(() => socket.open())
     await act(async () => {
       socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 1 }) })
       socket.onmessage?.({ data: JSON.stringify({ type: 'typing', sequence: 3 }) })
@@ -512,6 +567,45 @@ describe('App', () => {
       pending[0]?.({ ok: true, json: () => Promise.resolve(mockCtx) })
     })
     expect(contextCalls).toBe(3)
+  })
+
+  it('waits for a successful reopen and retries failed reconciliation until state is visible', async () => {
+    let contextCalls = 0
+    const reconciled = {
+      ...mockCtx,
+      campaign: { ...mockCtx.campaign!, chronicle_night: 2 },
+    }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: string) => {
+      if (input === '/api/auth/session') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ authenticated: true, csrf_token: 'test-csrf' }) })
+      }
+      if (input === '/api/context') {
+        contextCalls++
+        if (contextCalls === 1) return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx) })
+        if (contextCalls === 2) return Promise.reject(new Error('temporary reconnect failure'))
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(reconciled) })
+      }
+      if (input === '/api/sessions/1/messages') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(mockCtx.recent_messages) })
+      }
+      if (input === '/api/rulesets/1') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 1, name: 'vtm' }) })
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    }))
+
+    render(<App />)
+    expect(await screen.findByTitle('Chronicle night 1')).toBeInTheDocument()
+    const socket = MockWebSocket.instances.at(-1)
+    requireSocket(socket)
+    act(() => socket.open())
+    act(() => socket.drop())
+    await act(async () => {})
+    expect(contextCalls).toBe(1)
+
+    act(() => socket.open())
+    await waitFor(() => expect(contextCalls).toBe(3))
+    expect(await screen.findByTitle('Chronicle night 2')).toBeInTheDocument()
   })
 
   it('ignores a stale transcript response after the active session changes', async () => {

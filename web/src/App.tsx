@@ -20,13 +20,13 @@ const appOwnedContextEvents = new Set([
   'character_created', 'character_updated',
 ])
 
-const knownPanelEvents = new Set([
-  'message_created', 'typing', 'dice_rolled', 'combat_started', 'combatant_updated', 'combat_ended',
+const locallyOwnedEvents = new Set([
+  'message_created', 'typing', 'dice_rolled',
   'world_note_created', 'world_note_updated', 'world_note_revealed', 'map_pin_added', 'map_created',
-  'npc_updated', 'objective_updated', 'item_updated', 'turn_advanced', 'xp_added', 'oracle_rolled',
-  'tension_updated', 'relationship_updated', 'faction_updated', 'xp_spend_suggestions',
-  'adventure_updated', 'npc_stat_updated', 'secrets_updated', 'secret_revealed', 'calendar_updated',
-  'expected_action', 'card_drawn', 'token_placed', 'token_moved', 'token_removed', 'zone_revealed', 'map_fx',
+  'npc_updated', 'objective_updated', 'item_updated', 'xp_added', 'xp_spend_suggestions',
+  'relationship_updated', 'faction_updated', 'adventure_updated', 'npc_stat_updated',
+  'secrets_updated', 'secret_revealed', 'calendar_updated', 'card_drawn',
+  'token_placed', 'token_moved', 'token_removed', 'zone_revealed', 'map_fx',
   'resync_required',
 ])
 
@@ -271,7 +271,7 @@ function GameApp() {
       void refreshTranscript()
     } else if (event.type && appOwnedContextEvents.has(event.type)) {
       void loadContext(false)
-    } else if (event.type && !knownPanelEvents.has(event.type)) {
+    } else if (event.type && !locallyOwnedEvents.has(event.type)) {
       void loadContext(false)
     }
     if (!getAudioMuted()) {
@@ -313,15 +313,30 @@ function GameApp() {
       }
     }
   }, [loadContext, refreshTranscript])
-  const { lastEvent, needsReconcile, reconcileGeneration, acknowledgeReconcile } = useWebSocket(webSocketURL(window.location), handleEvent)
+  const { lastEvent, status: webSocketStatus, needsReconcile, reconcileGeneration, acknowledgeReconcile } = useWebSocket(webSocketURL(window.location), handleEvent)
 
   useEffect(() => {
-    if (!needsReconcile) return
+    if (!needsReconcile || webSocketStatus !== 'open') return
     const generation = reconcileGeneration
-    void loadContext(true).then((loaded) => {
-      if (loaded) acknowledgeReconcile(generation)
-    })
-  }, [needsReconcile, reconcileGeneration, loadContext, acknowledgeReconcile])
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryDelay = 250
+    const reconcile = async () => {
+      const loaded = await loadContext(true)
+      if (cancelled) return
+      if (loaded) {
+        acknowledgeReconcile(generation)
+        return
+      }
+      retryTimer = setTimeout(() => { void reconcile() }, retryDelay)
+      retryDelay = Math.min(retryDelay * 2, 30000)
+    }
+    void reconcile()
+    return () => {
+      cancelled = true
+      if (retryTimer !== null) clearTimeout(retryTimer)
+    }
+  }, [needsReconcile, reconcileGeneration, webSocketStatus, loadContext, acknowledgeReconcile])
 
   const handleSendText = useCallback(async (text: string) => {
     if (!text || !ctx?.session || sending) return

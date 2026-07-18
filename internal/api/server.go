@@ -48,6 +48,9 @@ type Server struct {
 // ServerOptions configures optional security behavior for the HTTP server.
 type ServerOptions struct {
 	Security ListenSecurityConfig
+	// AutomationBreakerCooldown overrides the one-minute production default.
+	// Zero preserves the default and is intended for process-scoped reliability tests.
+	AutomationBreakerCooldown time.Duration
 	// RootContext owns request and startup-background lifetimes. A nil context
 	// defaults to context.Background.
 	RootContext context.Context
@@ -71,6 +74,10 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 	if embedText == nil {
 		embedText = ai.EmbedText
 	}
+	breakerCooldown := options.AutomationBreakerCooldown
+	if breakerCooldown <= 0 {
+		breakerCooldown = defaultAutomationCooldown
+	}
 	bus := NewBus()
 	hub := NewHub(bus)
 	s := &Server{
@@ -80,7 +87,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		mux:             http.NewServeMux(),
 		dataDir:         dataDir,
 		aiClient:        aiClient,
-		breakers:        NewBreakerRegistry(time.Now, defaultAutomationFailureThreshold, defaultAutomationCooldown),
+		breakers:        NewBreakerRegistry(time.Now, defaultAutomationFailureThreshold, breakerCooldown),
 		automations:     NewDispatcher(parentCtx, DispatcherOptions{}),
 		secureCookies:   options.Security.TLSCertFile != "" && options.Security.TLSKeyFile != "",
 		rootCtx:         rootCtx,

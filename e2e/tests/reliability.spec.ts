@@ -194,7 +194,11 @@ async function startApp(root: string, providerOrigin: string): Promise<RunningSe
   const origin = `http://127.0.0.1:${port}`
   const dbPath = path.join(root, 'reliability.db')
   const child = spawn(BINARY, ['-db', dbPath, '-listen', `127.0.0.1:${port}`], {
-    env: sanitizedE2EEnvironment({ OLLAMA_HOST: providerOrigin, OLLAMA_MODEL: 'owned-e2e-stub' }),
+    env: sanitizedE2EEnvironment({
+      OLLAMA_HOST: providerOrigin,
+      OLLAMA_MODEL: 'owned-e2e-stub',
+      TTRPG_TEST_AUTOMATION_BREAKER_COOLDOWN: '100ms',
+    }),
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   let output = ''
@@ -250,11 +254,11 @@ async function createFixture(api: APIRequestContext): Promise<{ campaignId: numb
   const rulesetsResponse = await api.get('/api/rulesets')
   expect(rulesetsResponse.ok()).toBe(true)
   const rulesets = await rulesetsResponse.json() as Array<{ id: number; name: string }>
-  const ironsworn = rulesets.find((ruleset) => ruleset.name === 'ironsworn')
-  expect(ironsworn).toBeDefined()
+  const vtm = rulesets.find((ruleset) => ruleset.name === 'vtm')
+  expect(vtm).toBeDefined()
 
   const campaignResponse = await api.post('/api/campaigns', {
-    data: { description: 'Disposable reliability fixture', name: 'Reliability Campaign', ruleset_id: ironsworn!.id },
+    data: { description: 'Disposable reliability fixture', name: 'Reliability Campaign', ruleset_id: vtm!.id },
   })
   expect(campaignResponse.status()).toBe(201)
   const campaignId = (await campaignResponse.json() as { id: number }).id
@@ -366,7 +370,7 @@ test('reports truthful queue saturation and request backpressure, then drains', 
   expect(healthByKey(drained, 'auto_detect_objectives')).toMatchObject({ queued: 0, running: 0 })
 })
 
-test('reports an open recoverable breaker with exact sanitized failure health', async () => {
+test('recovers an open breaker through one half-open probe and resets health', async () => {
   state.provider.setFailure(true)
   for (let index = 0; index < 3; index++) {
     const response = await state.api.post(`/api/sessions/${state.sessionId}/reanalyze`)
@@ -382,6 +386,41 @@ test('reports an open recoverable breaker with exact sanitized failure health', 
   expect(objective.last_error).toContain('automation provider request failed')
   expect(objective.last_error).not.toContain('owned provider unavailable')
   state.provider.setFailure(false)
+  state.provider.setHold(true)
+  await eventually(
+    () => automationHealth(state.api),
+    (items) => healthByKey(items, 'auto_detect_objectives').status === 'half-open',
+    'breaker cooldown to half-open',
+  )
+  const probe = await state.api.post(`/api/sessions/${state.sessionId}/reanalyze`)
+  expect(probe.status()).toBe(202)
+  const probing = await eventually(
+    () => automationHealth(state.api),
+    (items) => {
+      const item = healthByKey(items, 'auto_detect_objectives')
+      return item.status === 'half-open' && item.running === 1
+    },
+    'half-open probe admission',
+  )
+  expect(healthByKey(probing, 'auto_detect_objectives')).toMatchObject({
+    cooling_down: false,
+    failure_count: 3,
+    running: 1,
+    status: 'half-open',
+  })
+  state.provider.release()
+  const recovered = await eventually(
+    () => automationHealth(state.api),
+    (items) => healthByKey(items, 'auto_detect_objectives').status === 'closed',
+    'breaker recovery',
+  )
+  expect(healthByKey(recovered, 'auto_detect_objectives')).toMatchObject({
+    cooling_down: false,
+    failure_count: 0,
+    last_error: '',
+    running: 0,
+    status: 'closed',
+  })
 })
 
 test('streams exact multiline Unicode and persists the identical assistant message', async () => {
@@ -428,12 +467,13 @@ test('reconciles one offline event gap without context-fetch storms', async ({ p
   expect(patch.ok()).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(() => contextFetches).toBe(baseline + 1)
+  await expect(page.getByTitle('Chronicle night 2')).toBeVisible()
 
-  for (let index = 0; index < 8; index++) {
-    await addMessage('user', `Transcript-only update ${index}`)
-  }
+  await addMessage('user', 'Transcript-only update 0')
+  await expect.poll(() => contextFetches).toBe(baseline + 2)
+  for (let index = 1; index < 8; index++) await addMessage('user', `Transcript-only update ${index}`)
   await page.waitForTimeout(300)
-  expect(contextFetches).toBe(baseline + 1)
+  expect(contextFetches).toBe(baseline + 2)
 })
 
 test('persists narrative preferences as quoted data below mandatory prompt authority', async () => {

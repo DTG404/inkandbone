@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 import { listFactions, createFaction, updateFaction, deleteFaction } from './api'
 import type { Faction } from './types'
+import { isScopedEvent } from './wsEvents'
 
 interface FactionsPanelProps {
   campaignId: number
+  lastEvent: unknown
 }
 
 const FACTION_TYPE_OPTIONS = ['faction', 'guild', 'clan', 'cult', 'kingdom', 'order', 'gang', 'corporation', 'tribe', 'other']
 
-export function FactionsPanel({ campaignId }: FactionsPanelProps) {
+export function FactionsPanel({ campaignId, lastEvent }: FactionsPanelProps) {
   const [factions, setFactions] = useState<Faction[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -22,6 +24,11 @@ export function FactionsPanel({ campaignId }: FactionsPanelProps) {
   useEffect(() => {
     listFactions(campaignId).then(setFactions).catch(() => {})
   }, [campaignId])
+
+  useEffect(() => {
+    if (!isScopedEvent(lastEvent, 'faction_updated', 'campaign_id', campaignId)) return
+    listFactions(campaignId).then(setFactions).catch(() => {})
+  }, [campaignId, lastEvent])
 
   function resetForm() {
     setName('')

@@ -56,12 +56,13 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'dice_rolled', payload: { session_id: 1, expression: '2d6', total: 8, breakdown: [3, 5] } }}
+        lastEvent={{ type: 'dice_rolled', payload: { session_id: 1, expression: '2d6', result: 8, breakdown: [3, 5] } }}
       />,
     )
 
     await waitFor(() => {
       expect(screen.getByText('2d6')).toBeInTheDocument()
+      expect(screen.getByText('8')).toBeInTheDocument()
     })
   })
 
@@ -91,7 +92,7 @@ describe('SessionTimeline', () => {
     rerender(
       <SessionTimeline
         sessionId={1}
-        lastEvent={{ type: 'dice_rolled', payload: { session_id: 2, expression: '2d6', total: 8 } }}
+        lastEvent={{ type: 'dice_rolled', payload: { session_id: 2, expression: '2d6', result: 8 } }}
       />,
     )
     expect(screen.queryByText('2d6')).not.toBeInTheDocument()

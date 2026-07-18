@@ -9,6 +9,7 @@ export const E2E_RUN_DIRECTORY_PREFIX = 'inkandbone-playwright-'
 // accidentally select a real AI provider.
 export const TTRPG_SERVER_ENVIRONMENT_KEYS = [
   'TTRPG_AUTH_SECRET',
+  'TTRPG_TEST_AUTOMATION_BREAKER_COOLDOWN',
   'ANTHROPIC_API_KEY',
   'DEEPSEEK_API_KEY',
   'DEEPSEEK_AUTO_MODEL',

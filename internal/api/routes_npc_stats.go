@@ -119,12 +119,21 @@ func (s *Server) handleUpdateNpcStat(w http.ResponseWriter, r *http.Request) {
 	if hpMax < 1 {
 		hpMax = 1
 	}
+	npcStat, err := s.db.GetNpcStat(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if npcStat == nil {
+		http.Error(w, "npc stat not found", http.StatusNotFound)
+		return
+	}
 
 	if err := s.db.UpdateNpcStats(id, body.Name, body.Role, body.DataJSON, hpMax, body.ArmorClass, body.InitiativeMod, body.Skills, body.Abilities, body.Loot, body.Notes); err != nil {
 		serverError(w, r, err)
 		return
 	}
-	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"id": id}})
+	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"campaign_id": npcStat.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -135,9 +144,19 @@ func (s *Server) handleDeleteNpcStat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	npcStat, err := s.db.GetNpcStat(id)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if npcStat == nil {
+		http.Error(w, "npc stat not found", http.StatusNotFound)
+		return
+	}
 	if err := s.db.DeleteNpcStat(id); err != nil {
 		serverError(w, r, err)
 		return
 	}
+	s.bus.Publish(Event{Type: EventNpcStatUpdated, Payload: map[string]any{"campaign_id": npcStat.CampaignID, "id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }

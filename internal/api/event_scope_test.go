@@ -68,6 +68,27 @@ func TestPanelMutationEventsIncludeOwningScope(t *testing.T) {
 	s.handleUpdateSecret(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	scopedEvent(t, events, EventSecretsUpdated, "campaign_id", campaignID)
+
+	relationshipID, err := s.db.CreateRelationship(campaignID, "A", "B", "ally", "")
+	require.NoError(t, err)
+	w, req = handlerRequest(t, http.MethodPatch, `{"relationship_type":"rival"}`, fmt.Sprint(relationshipID))
+	s.handleUpdateRelationship(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	scopedEvent(t, events, EventRelationshipUpdated, "campaign_id", campaignID)
+
+	factionID, err := s.db.CreateFaction(campaignID, "Guild", "", "guild", 5, "{}", "#fff")
+	require.NoError(t, err)
+	w, req = handlerRequest(t, http.MethodPut, `{"name":"Guild","faction_type":"guild","influence":6,"resources_json":"{}","color":"#fff"}`, fmt.Sprint(factionID))
+	s.handleUpdateFaction(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	scopedEvent(t, events, EventFactionUpdated, "campaign_id", campaignID)
+
+	npcStatID, err := s.db.CreateNpcStat(campaignID, "Guard", "brute", "{}", 10, nil, 0, "", "", "", "")
+	require.NoError(t, err)
+	w, req = handlerRequest(t, http.MethodPut, `{"name":"Guard","role":"brute","data_json":"{}","hp_max":12}`, fmt.Sprint(npcStatID))
+	s.handleUpdateNpcStat(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	scopedEvent(t, events, EventNpcStatUpdated, "campaign_id", campaignID)
 }
 
 func TestPanelDeleteEventsIncludeOwningScope(t *testing.T) {
@@ -102,6 +123,27 @@ func TestPanelDeleteEventsIncludeOwningScope(t *testing.T) {
 	s.handleDeleteSecret(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 	scopedEvent(t, events, EventSecretsUpdated, "campaign_id", campaignID)
+
+	relationshipID, err := s.db.CreateRelationship(campaignID, "A", "B", "ally", "")
+	require.NoError(t, err)
+	w, req = handlerRequest(t, http.MethodDelete, "", fmt.Sprint(relationshipID))
+	s.handleDeleteRelationship(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+	scopedEvent(t, events, EventRelationshipUpdated, "campaign_id", campaignID)
+
+	factionID, err := s.db.CreateFaction(campaignID, "Guild", "", "guild", 5, "{}", "#fff")
+	require.NoError(t, err)
+	w, req = handlerRequest(t, http.MethodDelete, "", fmt.Sprint(factionID))
+	s.handleDeleteFaction(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+	scopedEvent(t, events, EventFactionUpdated, "campaign_id", campaignID)
+
+	npcStatID, err := s.db.CreateNpcStat(campaignID, "Guard", "brute", "{}", 10, nil, 0, "", "", "", "")
+	require.NoError(t, err)
+	w, req = handlerRequest(t, http.MethodDelete, "", fmt.Sprint(npcStatID))
+	s.handleDeleteNpcStat(w, req)
+	require.Equal(t, http.StatusNoContent, w.Code)
+	scopedEvent(t, events, EventNpcStatUpdated, "campaign_id", campaignID)
 }
 
 func TestSecretRevealEventsIncludeCampaignAndSessionScope(t *testing.T) {

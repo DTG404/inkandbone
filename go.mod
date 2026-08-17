@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/gorilla/websocket v1.5.3
-	github.com/mark3labs/mcp-go v0.55.1
+	github.com/mark3labs/mcp-go v0.58.0
 	github.com/pdfcpu/pdfcpu v0.13.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.44.0

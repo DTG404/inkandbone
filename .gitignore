@@ -34,3 +34,9 @@ docs/superpowers/
 graphify-out/
 .playwright-mcp/
 node_modules/
+
+# Compiled e2e harness (build artifact)
+ttrpg-e2e
+
+# Local editor settings
+.claude/settings.local.json

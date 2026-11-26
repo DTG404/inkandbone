@@ -126,7 +126,7 @@ func TestGeneratedMapPersistsOnlySanitizedSVG(t *testing.T) {
 	stub := &stubCompleter{response: "```svg\n" + `<svg viewBox="0 0 10 10"><rect id="room" x="0" y="0" width="10" height="10" fill="#fff"/></svg>` + "\n```"}
 	s := newTestServerWithAI(t, stub)
 	campaignID, _ := seedCampaign(t, s.db)
-	body := bytes.NewBufferString(`{"name":"Safe","context":"test"}`)
+	body := bytes.NewBufferString(`{"name":"Safe","context":"` + strings.Repeat("Recent public narration. ", 400) + `"}`)
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/campaigns/%d/maps/generate", campaignID), body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

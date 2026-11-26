@@ -1,0 +1,14 @@
+[Unit]
+Description=Ink & Bone private map illustration socket
+
+[Socket]
+ListenStream=/run/inkandbone-map.sock
+SocketUser=inkandbone-map
+SocketGroup=inkandbone
+SocketMode=0660
+Accept=yes
+MaxConnections=3
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

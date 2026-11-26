@@ -106,6 +106,16 @@ Story passage:
 		}
 	}
 
+	if s.mapSocket != "" {
+		mapID, err := s.illustrateMap(ctx, sess.CampaignID, loc.Name, loc.Context)
+		permit.Complete(err)
+		if err != nil {
+			log.Printf("autoGenerateMap: illustration failed (session %d): %v", sessionID, err)
+			return
+		}
+		s.bus.Publish(Event{Type: EventMapCreated, Payload: &MapCreatedPayload{CampaignID: RealtimeInt64(sess.CampaignID), MapID: RealtimeInt64(mapID)}})
+		return
+	}
 	// Map generation requires precise SVG output — use the structured AI client,
 	// not the narrative GM model.
 	mapPrompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + loc.Context

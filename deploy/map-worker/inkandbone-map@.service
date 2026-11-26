@@ -1,0 +1,22 @@
+[Unit]
+Description=Illustrate an Ink & Bone map
+
+[Service]
+User=inkandbone-map
+Group=inkandbone-map
+StateDirectory=inkandbone-map
+StateDirectoryMode=0700
+Environment=HOME=/var/lib/inkandbone-map
+Environment=INK_MAP_CODEX=/opt/inkandbone/map-tools/0.172.0/codex
+WorkingDirectory=/var/lib/inkandbone-map
+ExecStart=/usr/bin/python3 -BI /opt/inkandbone/map-worker/worker.py
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=300
+UMask=0077
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=-/var/lib/inkandbone -/etc/inkandbone

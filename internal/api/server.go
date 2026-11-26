@@ -22,6 +22,7 @@ type Server struct {
 	hub             *Hub
 	bus             *Bus
 	mux             *http.ServeMux
+	mapSocket       string
 	dataDir         string
 	aiClient        ai.Completer // nil when ANTHROPIC_API_KEY is unset
 	xpSuggestCounts sync.Map     // sessionID int64 → int
@@ -47,7 +48,8 @@ type Server struct {
 
 // ServerOptions configures optional security behavior for the HTTP server.
 type ServerOptions struct {
-	Security ListenSecurityConfig
+	MapWorkerSocket string
+	Security        ListenSecurityConfig
 	// AutomationBreakerCooldown overrides the one-minute production default.
 	// Zero preserves the default and is intended for process-scoped reliability tests.
 	AutomationBreakerCooldown time.Duration
@@ -86,6 +88,7 @@ func NewServerWithOptions(database *db.DB, dataDir string, aiClient ai.Completer
 		bus:             bus,
 		mux:             http.NewServeMux(),
 		dataDir:         dataDir,
+		mapSocket:       options.MapWorkerSocket,
 		aiClient:        aiClient,
 		breakers:        NewBreakerRegistry(time.Now, defaultAutomationFailureThreshold, breakerCooldown),
 		automations:     NewDispatcher(parentCtx, DispatcherOptions{}),
@@ -453,8 +456,9 @@ func (s *Server) registerRoutes() {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"status":     "ok",
-		"ai_enabled": s.aiClient != nil,
+		"status":                 "ok",
+		"ai_enabled":             s.aiClient != nil,
+		"map_generation_enabled": s.aiClient != nil || s.mapSocket != "",
 	})
 }
 

@@ -1,6 +1,6 @@
 .PHONY: dev build install test e2e clean lint audit secrets-scan check verify verify-e2e generate
 
-GO_VERSION ?= 1.26.5
+GO_VERSION ?= 1.26.11
 NODE_VERSION ?= 24.18.0
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOVULNCHECK_VERSION ?= v1.3.0

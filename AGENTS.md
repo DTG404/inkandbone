@@ -5,7 +5,7 @@ A local-first AI Game Master for 14 tabletop RPG systems. Single-binary Go serve
 ## Tech Stack
 
 **Backend:**
-- Go 1.26.5
+- Go 1.26.11
 - SQLite (persisted to `~/.ttrpg`)
 - HTTP + WebSocket + SSE
 - AI clients: DeepSeek Flash (primary), Anthropic Claude Haiku (fallback), Ollama (local)

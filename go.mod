@@ -1,6 +1,6 @@
 module github.com/digitalghost404/inkandbone
 
-go 1.26.5
+go 1.26.11
 
 require (
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4

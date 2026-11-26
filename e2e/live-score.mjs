@@ -34,6 +34,7 @@ try {
   await page.goto(origin)
   await page.getByLabel('Master secret').fill(secret)
   await page.getByRole('button', { name: 'Unlock' }).click()
+  await page.getByRole('button', { name: 'Manage', exact: true }).waitFor()
   for (const table of fixtures) {
     const { cid, sid, rule, title, action } = table
     const context = () => page.evaluate(() => fetch('/api/context').then(r => r.json()))

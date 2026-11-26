@@ -1,0 +1,23 @@
+[Unit]
+Description=Ink & Bone Syrinscape playback
+After=network-online.target inkandbone.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=inkandbone-sound-test
+StateDirectoryMode=0700
+Environment=INK_SCORE_CAMPAIGN_ID=all
+EnvironmentFile=/etc/inkandbone/sound.env
+LoadCredential=syrinscape:/etc/inkandbone/syrinscape-token
+ExecStart=/usr/bin/python3 -B /opt/inkandbone/sound-test/server.py
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

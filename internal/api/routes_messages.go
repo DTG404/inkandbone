@@ -397,6 +397,7 @@ The base prompt above says "the player controls only their character" — that r
 		_ = ai.WriteSSE(w, ai.SSEEvent{Type: SSEEventError, Code: "persistence_failed", RequestID: requestID(r)})
 		return
 	}
+	s.prepareLiveScore(r, id, fullText)
 	if err := ai.WriteSSE(w, ai.SSEEvent{Type: SSEEventDone}); err != nil {
 		log.Printf("gm-respond-stream: completion write failed after persistence (session %d): %v", id, err)
 	}

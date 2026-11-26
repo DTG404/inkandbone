@@ -79,6 +79,7 @@ export interface CombatSnapshot {
 }
 
 export interface GameContext {
+  live_score?: boolean
   campaign: Campaign | null
   character: Character | null
   session: Session | null

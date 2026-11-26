@@ -286,6 +286,7 @@ export function ManagePanel({
     try {
       // Also activate the parent campaign so header never shows "No campaign"
       const patch: Parameters<typeof patchSettings>[0] = { session_id: id }
+      if (selectedCampaignId !== activeCampaignId) patch.character_id = 0
       if (selectedCampaignId) patch.campaign_id = selectedCampaignId
       await patchSettings(patch)
       onContextChanged()

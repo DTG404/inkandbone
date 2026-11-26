@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { setAmbientVolume, setAmbientMuted, pauseAmbient, resumeAmbient } from './audio/ambient';
 
+import { setScoreLevel } from './audio/liveScore';
+
 const STORAGE_KEY_MUTED = 'inkandbone_audio_muted';
 const STORAGE_KEY_VOLUME = 'inkandbone_audio_volume';
 const STORAGE_KEY_PAUSED = 'inkandbone_ambient_paused';
@@ -40,6 +42,8 @@ export default function AudioControls() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => { setScoreLevel(muted || ambientPaused ? 0 : volume); }, [muted, ambientPaused, volume]);
 
   function toggleAmbientPause() {
     const next = !ambientPaused;

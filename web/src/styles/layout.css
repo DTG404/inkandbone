@@ -37,9 +37,29 @@
   background: var(--surface2);
 }
 
-.workspace-command-bar button {
-  min-height: 2.75rem;
-  padding-inline: 0.75rem;
+.workspace-command-bar button,
+.workspace-collapse,
+.workspace-restore {
+  min-height: 1.75rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--gold-dim);
+  border-radius: 0;
+  background: var(--surface2);
+  color: var(--gold);
+  font: 600 0.8rem var(--serif);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+:is(.workspace-command-bar button, .workspace-collapse, .workspace-restore):hover {
+  background: var(--gold-dim);
+  color: var(--bg);
+}
+
+:is(.workspace-command-bar button, .workspace-collapse, .workspace-restore):focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .workspace-body {
@@ -91,20 +111,17 @@
   outline-offset: -2px;
 }
 
-.workspace-collapse,
-.workspace-restore {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-}
-
 .workspace-collapse {
   position: absolute;
   top: 0.25rem;
+  right: 0.25rem;
   z-index: 10;
+  min-width: 1.75rem;
+  padding: 0;
+  font-size: 1.25rem;
+  line-height: 1;
+  letter-spacing: 0;
 }
-
-.workspace-left .workspace-collapse { right: 0.25rem; }
-.workspace-right .workspace-collapse { left: 0.25rem; }
 
 .workspace-restore {
   position: absolute;
@@ -114,6 +131,15 @@
 
 .workspace-restore-left { left: 0.5rem; }
 .workspace-restore-right { right: 0.5rem; }
+
+@media (pointer: coarse) {
+  .workspace-command-bar button,
+  .workspace-collapse,
+  .workspace-restore {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
 
 .workspace-mobile-nav {
   display: none;

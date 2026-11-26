@@ -12,7 +12,7 @@ const domainGoldens: Record<string, string> = {
   'macros.ts': 'abe4056b659a993a8eddfcd43afdbaf5f6d18d7c87867715abe92db691503db1',
   'management.ts': '6fb9af9257cd401279cfe87dde1783f71d0aad33c22b27b0590939b5b1a9649f',
   'rules.ts': '1422b1e80675bd66418b3ae50b1af7cd35ebbcddb4d0e489696af17a8be054ff',
-  'sessions.ts': '087c4c65b919686e8d754d27f77ff6b46815ceefd46858f9a2a7dc6bf311c32e',
+  'sessions.ts': '1da835558f7960eac6b5dda3c4e88c55de228a53d4a0f2acacd4d811b13ceefc',
   'transport.ts': 'e526bc66b5db1b062b906cad31b4bbb53b07bd829cf9a608db40e43c561f9053',
   'world.ts': '2bc868a6744d6c8a1725b4782e1ae98e4ba5bb60b10f6a719db67592accc0879',
   'worldCatalog.ts': '8b576bed5fb18c044839317c990ec20798a42b2375424ea54b5091ed66a38686',

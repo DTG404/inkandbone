@@ -8,6 +8,7 @@ import { GMScreenPanel } from './GMScreenPanel'
 import AudioControls, { getAudioMuted } from './AudioControls'
 import { playDiceRoll, playNotification, playCombatStart } from './audio/sounds'
 import { setAmbientTrack } from './audio/ambient'
+import { joinScore, leaveScore, revealScoredTurn, scoringTurn } from './audio/liveScore'
 import { SessionView } from './SessionView'
 import { CharacterSelector } from './CharacterSelector'
 import { LoginScreen } from './LoginScreen'
@@ -214,7 +215,16 @@ function GameApp() {
       .catch(() => setAdvancementConfig(null))
   }, [ctx?.campaign?.ruleset_id])
 
+  const scoreSession = ctx?.live_score ? ctx.session?.id : undefined
+  const [scoredTurn, setScoredTurn] = useState<{session: number; after: number} | null>(null)
   useEffect(() => {
+    if (!scoreSession) return
+    void joinScore(scoreSession).catch(() => console.warn('Could not join live score'))
+    return leaveScore
+  }, [scoreSession])
+
+  useEffect(() => {
+    if (scoreSession || !ctx?.session) { setAmbientTrack(null); return }
     if (rulesetName === 'vtm') {
       // VtM uses a single fixed ambient track regardless of scene tags.
       setAmbientTrack('vtm/ambient')
@@ -223,7 +233,7 @@ function GameApp() {
     const tags = ctx?.session?.scene_tags ?? ''
     const firstTag = tags.split(',').filter(Boolean)[0] ?? null
     setAmbientTrack(firstTag)
-  }, [ctx?.session?.scene_tags, rulesetName])
+  }, [ctx?.session, rulesetName, scoreSession])
 
   useEffect(() => {
     fetch('/api/health')
@@ -391,11 +401,19 @@ function GameApp() {
       loadContext(true)
       setGmResponding(true)
       setStreamingText('')
-      await gmRespondStream(ctx.session.id, (chunk) => {
+      if (scoreSession) {
+        scoringTurn(scoreSession)
+        setScoredTurn({session: scoreSession, after: messages.at(-1)?.id ?? 0})
+      }
+      const narration = await gmRespondStream(ctx.session.id, (chunk) => {
+        if (scoreSession) return
         setStreamingText((prev) => prev + chunk)
-      })
+      }, !!scoreSession)
+      if (scoreSession && activeSessionRef.current === scoreSession) {
+        await revealScoredTurn(scoreSession, narration, setStreamingText)
+        await loadContext(true)
+      } else { void loadContext(true) }
       setStreamingText('')
-      loadContext(true)
       return true
     } catch (err) {
       console.error(err)
@@ -407,10 +425,12 @@ function GameApp() {
       toast.error('Your action could not be sent. Your text has been restored so you can try again.')
       return false
     } finally {
+      scoringTurn(null)
+      setScoredTurn(null)
       setSending(false)
       setGmResponding(false)
     }
-  }, [ctx, sending, loadContext, selectedCharacterId, toast])
+  }, [ctx, sending, loadContext, selectedCharacterId, toast, scoreSession, messages])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -507,9 +527,11 @@ function GameApp() {
   if (error) return <div className="error">{error}</div>
   if (!ctx) return <div className="loading">Loading…</div>
 
+  const visibleMessages = scoredTurn?.session === ctx.session?.id && scoredTurn
+    ? messages.filter(m => m.role !== 'assistant' || m.id <= scoredTurn.after) : messages
   const displayMessages = searchQuery
-    ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
-    : messages
+    ? visibleMessages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
+    : visibleMessages
 
   return (
     <div className="grimoire">

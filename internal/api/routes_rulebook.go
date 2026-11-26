@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -76,7 +75,7 @@ func (s *Server) handleIngestRulebook(w http.ResponseWriter, r *http.Request) {
 		}
 		defer file.Close()
 
-		extracted, err := extractPDFText(file)
+		extracted, err := extractPDFText(r.Context(), file)
 		if err != nil {
 			if errors.Is(err, errInvalidPDF) {
 				http.Error(w, "invalid PDF", http.StatusUnprocessableEntity)
@@ -311,9 +310,15 @@ func (s *Server) handleSearchRulebook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, response{Results: out, Mode: "keyword"})
 }
 
+// A server only validates PDFs. It does not need per-user fonts or a writable
+// pdfcpu configuration directory. Set this once before serving requests.
+func init() {
+	pdfapi.DisableConfigDir()
+}
+
 // extractPDFText validates the PDF then extracts text using pdftotext (poppler),
 // which correctly handles CIDFont/hex-encoded PDFs used by commercial TTRPG books.
-func extractPDFText(r io.ReadSeeker) (string, error) {
+func extractPDFText(ctx context.Context, r io.ReadSeeker) (string, error) {
 	conf := model.NewDefaultConfiguration()
 	if err := pdfapi.Validate(r, conf); err != nil {
 		return "", fmt.Errorf("%w: %v", errInvalidPDF, err)
@@ -322,21 +327,9 @@ func extractPDFText(r io.ReadSeeker) (string, error) {
 		return "", err
 	}
 
-	// Write to a temp file so pdftotext can read it by path.
-	tmp, err := os.CreateTemp("", "rulebook-*.pdf")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := io.Copy(tmp, r); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	tmp.Close()
-
-	// pdftotext with "-" as output writes to stdout.
-	out, err := exec.Command("pdftotext", tmp.Name(), "-").Output()
+	cmd := exec.CommandContext(ctx, "pdftotext", "-", "-")
+	cmd.Stdin = r
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("pdftotext: %w (install poppler-utils)", err)
 	}

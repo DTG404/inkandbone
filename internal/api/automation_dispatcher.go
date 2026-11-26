@@ -36,6 +36,20 @@ type AutomationJob struct {
 	// HealthKinds attributes one composite job to each affected automation
 	// setting. Kind remains the scheduling/snapshot identity.
 	HealthKinds []string
+	// Subscription illustrations serialize with other illustrations, independently of session bookkeeping.
+	illustration bool
+}
+
+type automationLane struct {
+	sessionID    int64
+	illustration bool
+}
+
+func (j AutomationJob) lane() automationLane {
+	if j.illustration {
+		return automationLane{illustration: true}
+	}
+	return automationLane{sessionID: j.SessionID}
 }
 
 type DispatcherOptions struct {
@@ -71,15 +85,15 @@ type Dispatcher struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu             sync.Mutex
-	notify         chan struct{}
-	accepting      bool
-	forced         bool
-	queueSize      int
-	queue          []*queuedAutomation
-	runningSession map[int64]bool
-	health         map[string]*dispatchHealth
-	nextKey        uint64
+	mu        sync.Mutex
+	notify    chan struct{}
+	accepting bool
+	forced    bool
+	queueSize int
+	queue     []*queuedAutomation
+	running   map[automationLane]bool
+	health    map[string]*dispatchHealth
+	nextKey   uint64
 
 	workers sync.WaitGroup
 	done    chan struct{}
@@ -99,14 +113,14 @@ func NewDispatcher(parent context.Context, options DispatcherOptions) *Dispatche
 	}
 	ctx, cancel := context.WithCancel(parent)
 	d := &Dispatcher{
-		ctx:            ctx,
-		cancel:         cancel,
-		notify:         make(chan struct{}),
-		accepting:      true,
-		queueSize:      queueSize,
-		runningSession: make(map[int64]bool),
-		health:         make(map[string]*dispatchHealth),
-		done:           make(chan struct{}),
+		ctx:       ctx,
+		cancel:    cancel,
+		notify:    make(chan struct{}),
+		accepting: true,
+		queueSize: queueSize,
+		running:   make(map[automationLane]bool),
+		health:    make(map[string]*dispatchHealth),
+		done:      make(chan struct{}),
 	}
 	d.workers.Add(workers)
 	for i := 0; i < workers; i++ {
@@ -311,9 +325,7 @@ func (d *Dispatcher) worker() {
 		} else {
 			d.setRunErrorLocked(job.healthKinds, sanitizeAutomationError(err))
 		}
-		if job.job.SessionID != 0 {
-			delete(d.runningSession, job.job.SessionID)
-		}
+		delete(d.running, job.job.lane())
 		d.signalLocked()
 		d.mu.Unlock()
 	}
@@ -324,14 +336,15 @@ func (d *Dispatcher) takeLocked() (*queuedAutomation, bool) {
 		return nil, true
 	}
 	for index, pending := range d.queue {
-		if pending.job.SessionID != 0 && d.runningSession[pending.job.SessionID] {
+		lane := pending.job.lane()
+		if d.running[lane] {
 			continue
 		}
 		d.queue = append(d.queue[:index], d.queue[index+1:]...)
 		d.adjustQueuedLocked(pending.healthKinds, -1)
 		d.adjustRunningLocked(pending.healthKinds, 1)
-		if pending.job.SessionID != 0 {
-			d.runningSession[pending.job.SessionID] = true
+		if lane != (automationLane{}) {
+			d.running[lane] = true
 		}
 		d.signalLocked()
 		return pending, false

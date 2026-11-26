@@ -475,11 +475,12 @@ The base prompt above says "the player controls only their character" — that r
 
 func (s *Server) submitPostStreamAutomation(sessionID int64, kind string, mode JobMode, run func(context.Context) error) {
 	job := AutomationJob{
-		Key:       fmt.Sprintf("%d:%s", sessionID, kind),
-		SessionID: sessionID,
-		Kind:      kind,
-		Mode:      mode,
-		Run:       run,
+		Key:          fmt.Sprintf("%d:%s", sessionID, kind),
+		SessionID:    sessionID,
+		Kind:         kind,
+		Mode:         mode,
+		Run:          run,
+		illustration: s.mapSocket != "" && kind == settingAutoGenerateMap,
 	}
 	if err := s.automations.Submit(s.rootCtx, job); err != nil {
 		log.Printf("automation dispatch rejected (session %d, kind %s): %s", sessionID, kind, automationDispatchError(err))

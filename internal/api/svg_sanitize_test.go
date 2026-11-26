@@ -194,3 +194,14 @@ func TestAutoGenerateMapDBFailureCountsBreakerFailureAndRemovesFile(t *testing.T
 	require.NoError(t, err)
 	assert.Empty(t, files)
 }
+
+func TestAutoGenerateMapRecognizesExistingLocationWithDefiniteArticle(t *testing.T) {
+	s := newTestServerWithAI(t, detectThenValidSVGCompleter{})
+	cid, sid := seedCampaign(t, s.db)
+	_, err := s.db.CreateMap(cid, "The   Ashen Tower", "maps/existing.png")
+	require.NoError(t, err)
+	s.autoGenerateMap(t.Context(), sid, "You return to Ashen Tower.")
+	maps, err := s.db.ListMaps(cid)
+	require.NoError(t, err)
+	require.Len(t, maps, 1, "visiting a known location must reuse its map")
+}

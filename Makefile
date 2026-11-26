@@ -1,6 +1,6 @@
 .PHONY: dev build install test e2e clean lint audit secrets-scan check verify verify-e2e generate
 
-GO_VERSION ?= 1.26.5
+GO_VERSION ?= 1.26.11
 NODE_VERSION ?= 24.18.0
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOVULNCHECK_VERSION ?= v1.3.0
@@ -41,6 +41,7 @@ e2e: build
 
 # Reproduce the checks enforced by CI from a clean checkout.
 verify:
+	cd pilots/syrinscape && python3 -B -m unittest test_live_score
 	cd web && npm ci && npm run build
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.git/*' -not -path './.worktrees/*' -not -path '*/node_modules/*'))" || { gofmt -l $$(find . -name '*.go' -not -path './.git/*' -not -path './.worktrees/*' -not -path '*/node_modules/*'); exit 1; }
 	./scripts/verify-generated.sh

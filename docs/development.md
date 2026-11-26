@@ -6,7 +6,7 @@ This file is the canonical supported-toolchain and verification reference. Versi
 
 | Tool | Version |
 |---|---|
-| Go | 1.26.5 |
+| Go | 1.26.11 |
 | Node.js | 24.18.0 |
 | React / React DOM | 19.2.x |
 | TypeScript | 6.0.x |

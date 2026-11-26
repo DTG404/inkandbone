@@ -1,9 +1,9 @@
 module github.com/digitalghost404/inkandbone
 
-go 1.26.5
+go 1.26.11
 
 require (
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/mark3labs/mcp-go v0.55.1
 	github.com/pdfcpu/pdfcpu v0.13.0
 	github.com/stretchr/testify v1.11.1
@@ -31,8 +31,9 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/image v0.43.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.73.4 // indirect

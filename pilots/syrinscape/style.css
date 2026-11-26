@@ -1,0 +1,7 @@
+:root { color-scheme:dark; background:#0f0e0a; color:#e3d8bd; font-family:Georgia,serif; }
+body { margin:0; } main { max-width:46rem; padding:clamp(1rem,5vw,4rem); margin:auto; }
+header,footer { display:flex; justify-content:space-between; align-items:center; gap:1rem; border-bottom:1px solid #806b42; padding:1rem 0; color:#b9a683; }
+a,h1 { color:#d9b85a; } h1 { font-size:clamp(2rem,5vw,3.5rem); font-weight:400; }
+p { font:1.16rem/1.8 Georgia,serif; } #status { min-height:1.6em; font: .95rem/1.6 system-ui,sans-serif; color:#b9a683; }
+button,input { font:inherit; } button { padding:.55rem 1rem; background:#1a1710; color:#d9b85a; border:1px solid #ad9257; cursor:pointer; } button:disabled { opacity:.55; }
+footer { justify-content:flex-start; border:0; border-top:1px solid #806b42; margin-top:3rem; } input { accent-color:#d9b85a; } [hidden] { display:none; }

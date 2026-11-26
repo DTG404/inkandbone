@@ -12,7 +12,6 @@ import { wsEvent } from './wsEvents'
 import { XPSuggestionsPanel } from './XPSuggestionsPanel'
 import { XPLogPanel } from './XPLogPanel'
 import { CharacterSelector } from './CharacterSelector'
-import { setAmbientTrack } from './audio/ambient'
 import { wgTalentDescription } from './wgTalentData'
 import { WorkspaceShell } from './layout/WorkspaceShell'
 import { WorkspaceNavigation } from './navigation/WorkspaceNavigation'
@@ -43,7 +42,6 @@ function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
     try {
       await patchSession(session.id, { scene_tags: tagsStr })
       onUpdate(tagsStr)
-      setAmbientTrack(newTags[0] ?? null)
     } catch (err) {
       console.error('Failed to update scene tags:', err)
       toast.error('Could not update scene tags.')

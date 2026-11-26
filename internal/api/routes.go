@@ -90,6 +90,8 @@ type contextCombatSnapshot struct {
 }
 
 type contextResponse struct {
+	ScoreRuleset   string                 `json:"score_ruleset,omitempty"`
+	LiveScore      bool                   `json:"live_score,omitempty"`
 	Campaign       *db.Campaign           `json:"campaign"`
 	Character      *db.Character          `json:"character"`
 	Session        *db.Session            `json:"session"`
@@ -266,7 +268,7 @@ func (s *Server) handleGetContext(w http.ResponseWriter, _ *http.Request) {
 	if sessIDStr, err := s.db.GetSetting("active_session_id"); err == nil && sessIDStr != "" {
 		if sessID, err := strconv.ParseInt(sessIDStr, 10, 64); err == nil {
 			resp.Session, _ = s.db.GetSession(sessID)
-			if msgs, err := s.db.ListAIVisibleMessages(sessID); err == nil {
+			if msgs, err := s.db.ListAIVisibleMessages(sessID); err == nil && msgs != nil {
 				if len(msgs) > 20 {
 					msgs = msgs[len(msgs)-20:]
 				}
@@ -282,6 +284,14 @@ func (s *Server) handleGetContext(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
+	if resp.Campaign != nil && resp.Session != nil && resp.Session.CampaignID == resp.Campaign.ID {
+		resp.LiveScore = scoreEnabled(resp.Campaign.ID)
+		if resp.LiveScore {
+			if rule, err := s.db.GetRuleset(resp.Campaign.RulesetID); err == nil && rule != nil {
+				resp.ScoreRuleset = rule.Name
+			}
+		}
+	}
 	writeJSON(w, resp)
 }
 

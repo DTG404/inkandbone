@@ -81,8 +81,9 @@ export async function sendMessage(sessionId: number, content: string, whisper?: 
 export async function gmRespondStream(
   sessionId: number,
   onChunk: (text: string) => void,
+  scored = false,
 ): Promise<string> {
-  const res = await request(`/api/sessions/${sessionId}/gm-respond-stream`, { method: 'POST' })
+  const res = await request(`/api/sessions/${sessionId}/gm-respond-stream`, { method: 'POST', ...(scored ? {headers:{'X-Ink-Live-Score':'1'}} : {}) })
   if (!res.ok) throw new Error(`gmRespondStream failed: ${res.status}`)
   let accumulated = ''
   let streamError: Error | undefined

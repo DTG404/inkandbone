@@ -114,7 +114,7 @@ Choose one AI backend:
 - **Local Ollama:** Install [Ollama](https://ollama.ai) and run a model on an Ollama service you control.
 
 Other tools:
-- **Go 1.26.5 and Node.js 24.18.0** — See the canonical [development and verification guide](docs/development.md).
+- **Go 1.26.11 and Node.js 24.18.0** — See the canonical [development and verification guide](docs/development.md).
 
 ### Quick Start
 
@@ -775,7 +775,7 @@ Supported scene tags (13 total): `tavern`, `dungeon`, `forest`, `city`, `ocean`,
 
 ### Tech Stack
 
-- **Go 1.26.5:** HTTP server, SQLite database layer, MCP integration.
+- **Go 1.26.11:** HTTP server, SQLite database layer, MCP integration.
 - **SQLite:** Persistent session, character, and campaign data in `~/.ttrpg/ttrpg.db`, with 57 ordered migrations.
 - **React 19 + TypeScript 6:** Vite-bundled frontend, embedded in the binary.
 - **WebSocket:** Live dashboard updates from server to browser.

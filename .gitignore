@@ -40,3 +40,7 @@ ttrpg-e2e
 
 # Local editor settings
 .claude/settings.local.json
+
+# Local Python sound-service caches
+__pycache__/
+.ruff_cache/

@@ -1,0 +1,58 @@
+{
+  "cues": {
+    "market": {
+      "id": 304,
+      "title": "Alley Market"
+    },
+    "knock": {
+      "id": 718212,
+      "title": "Door knock"
+    },
+    "machinery": {
+      "id": 234,
+      "title": "Retrofit in Progress"
+    }
+  },
+  "beats": [
+    {
+      "action": "Enter the lower-hive market",
+      "lines": [
+        "You step into the lower-hive market, surrounded by the press of bodies and the glow of neon signage.",
+        "The air is thick with the murmur of loiterers, the rhythmic shuffling of foot traffic, and the distant, echoing hum of advertisement speakers.",
+        "You navigate the crowd, keeping your head down as you move deeper into the sector."
+      ],
+      "location": "market",
+      "event": null
+    },
+    {
+      "action": "Listen at the sealed door",
+      "lines": [
+        "You pause before a sealed bulkhead door, the metal cold against your fingertips, while the market noise continues around you.",
+        "A single, dull physical knock resonates from inside the sealed door, distinct against the ambient vendor chatter.",
+        "You hold your breath, listening for a second sound, but only the market's indifferent roar remains."
+      ],
+      "location": "market",
+      "event": "knock"
+    },
+    {
+      "action": "Follow the service passage into the machine room",
+      "lines": [
+        "You slip through a narrow service passage, leaving the open market behind for a cramped maintenance corridor.",
+        "The space is filled with the grinding of factory machinery, the sharp crack of electric shocks, and the hiss of welding sparks.",
+        "You press forward, the heat from the equipment warming your face as you follow the conduit lines."
+      ],
+      "location": "machinery",
+      "event": null
+    },
+    {
+      "action": "Return to the market",
+      "lines": [
+        "You emerge from the service passage back into the open plaza, the transition abrupt and disorienting.",
+        "The familiar, layered soundscape of the market returns, with crowd ambience and vehicle traffic washing over you once more.",
+        "You blend into the flow of pedestrians, the machine room's intensity fading into the background."
+      ],
+      "location": "market",
+      "event": null
+    }
+  ]
+}

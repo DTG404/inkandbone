@@ -816,3 +816,23 @@ func settingByKey(items []map[string]any) map[string]map[string]any {
 	}
 	return result
 }
+
+func TestSlowSubscriptionIllustrationDoesNotBlockSessionBookkeeping(t *testing.T) {
+	s := newTestServer(t)
+	s.mapSocket = "/test/worker.sock"
+	started := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	s.submitPostStreamAutomation(1, settingAutoGenerateMap, JobModeEvent, func(context.Context) error {
+		close(started)
+		<-release
+		return nil
+	})
+	receiveWithin(t, started, time.Second, "map job")
+	updated := make(chan struct{})
+	s.submitPostStreamAutomation(1, settingAutoUpdateStats, JobModeEvent, func(context.Context) error {
+		close(updated)
+		return nil
+	})
+	receiveWithin(t, updated, time.Second, "character update while illustration is rendering")
+}

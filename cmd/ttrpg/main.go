@@ -123,6 +123,7 @@ func run(args []string, stdin *os.File, stdout io.Writer) error {
 
 	httpServer := api.NewServerWithOptions(database, dataDir, aiClient, api.ServerOptions{
 		Security:                  securityConfig,
+		MapWorkerSocket:           os.Getenv("INK_MAP_WORKER_SOCKET"),
 		RootContext:               rootCtx,
 		AutomationBreakerCooldown: breakerCooldown,
 	})

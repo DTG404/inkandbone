@@ -312,172 +312,174 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
             onMouseUp={(e) => { handleMapMouseUp(e); handleZoneMouseUp() }}
             onMouseLeave={() => { setDragging(null); setZoneDrawing(null) }}
           >
-            <img
-              ref={mapImgRef}
-              src={mapAssetURL(activeMap.id)}
-              alt={activeMap.name}
-              style={{ width: '100%', display: 'block', minWidth: '400px' }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleMapDrop}
-              onMouseDown={(e) => { if (zoneEditMode) handleZoneMouseDown(e) }}
-            />
-            {pins.map((pin) => (
-              <button
-                key={pin.id}
-                className="map-pin-btn"
-                style={{
-                  position: 'absolute',
-                  left: `${pin.x * 100}%`,
-                  top: `${pin.y * 100}%`,
-                  transform: 'translate(-50%,-50%)',
-                  background: pin.color || 'var(--gold)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '18px',
-                  height: '18px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 700,
-                }}
-                title={pin.note || pin.label}
-                onClick={() => setSelectedPin(selectedPin?.id === pin.id ? null : pin)}
-              >
-                ✦
-              </button>
-            ))}
-            {tokens.map((token) => (
-              <div
-                key={token.id}
-                style={{
-                  position: 'absolute',
-                  left: `${token.x * 100}%`,
-                  top: `${token.y * 100}%`,
-                  transform: 'translate(-50%,-50%)',
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  background: '#1a1710',
-                  border: `2px solid ${token.entity_type === 'character' ? '#c9a84c' : '#c0392b'}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'grab',
-                  zIndex: 10,
-                }}
-                title={token.name}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  setDragging({ tokenId: token.id })
-                }}
-                onMouseEnter={() => setHoveredToken(token.id)}
-                onMouseLeave={() => setHoveredToken(null)}
-              >
-                {token.name ? token.name[0].toUpperCase() : '?'}
-                {hoveredToken === token.id && (
-                  <button
-                    style={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      width: 16,
-                      height: 16,
-                      borderRadius: '50%',
-                      background: '#c0392b',
-                      border: 'none',
-                      color: '#fff',
-                      fontSize: 10,
-                      cursor: 'pointer',
-                      lineHeight: 1,
-                      padding: 0,
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={async (e) => {
-                      e.stopPropagation()
-                      try {
-                        await removeToken(token.id)
-                        if (activeMap) loadTokens(activeMap.id)
-                      } catch (cause) {
-                        console.error(cause)
-                        toast.error('Could not remove map token.')
-                      }
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-            {/* Fog layer — unrevealed zones */}
-            {zones.map((zone) => (
-              <div
-                key={zone.id}
-                style={{
-                  position: 'absolute',
-                  left: `${zone.x * 100}%`,
-                  top: `${zone.y * 100}%`,
-                  width: `${zone.width * 100}%`,
-                  height: `${zone.height * 100}%`,
-                  background: zoneEditMode
-                    ? 'rgba(201,168,76,0.2)'
-                    : zone.is_revealed ? 'transparent' : 'rgba(0,0,0,0.75)',
-                  border: zoneEditMode ? '2px dashed #c9a84c' : 'none',
-                  transition: 'background 0.6s ease-out',
-                  pointerEvents: zoneEditMode ? 'auto' : 'none',
-                  zIndex: zone.is_revealed ? 0 : 5,
-                  boxSizing: 'border-box',
-                }}
-                title={zoneEditMode ? zone.name : undefined}
+            <div className="map-surface">
+              <img
+                ref={mapImgRef}
+                src={mapAssetURL(activeMap.id)}
+                alt={activeMap.name}
+                style={{ width: '100%', display: 'block' }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleMapDrop}
+                onMouseDown={(e) => { if (zoneEditMode) handleZoneMouseDown(e) }}
               />
-            ))}
-            {/* Zone draw preview */}
-            {zoneEditMode && zoneDrawing && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `${Math.min(zoneDrawing.startX, zoneDrawing.endX) * 100}%`,
-                  top: `${Math.min(zoneDrawing.startY, zoneDrawing.endY) * 100}%`,
-                  width: `${Math.abs(zoneDrawing.endX - zoneDrawing.startX) * 100}%`,
-                  height: `${Math.abs(zoneDrawing.endY - zoneDrawing.startY) * 100}%`,
-                  border: '2px dashed #fff',
-                  background: 'rgba(255,255,255,0.1)',
-                  pointerEvents: 'none',
-                  zIndex: 20,
-                }}
-              />
-            )}
-            {/* Pending zone name prompt */}
-            {pendingZoneName && (
-              <div className="zone-name-prompt">
-                <input
-                  autoFocus
-                  placeholder="Zone name"
-                  value={newZoneName}
-                  onChange={e => setNewZoneName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCreateZone() }}
+              {pins.map((pin) => (
+                <button
+                  key={pin.id}
+                  className="map-pin-btn"
+                  style={{
+                    position: 'absolute',
+                    left: `${pin.x * 100}%`,
+                    top: `${pin.y * 100}%`,
+                    transform: 'translate(-50%,-50%)',
+                    background: pin.color || 'var(--gold)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '18px',
+                    height: '18px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                  }}
+                  title={pin.note || pin.label}
+                  onClick={() => setSelectedPin(selectedPin?.id === pin.id ? null : pin)}
+                >
+                  ✦
+                </button>
+              ))}
+              {tokens.map((token) => (
+                <div
+                  key={token.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${token.x * 100}%`,
+                    top: `${token.y * 100}%`,
+                    transform: 'translate(-50%,-50%)',
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: '#1a1710',
+                    border: `2px solid ${token.entity_type === 'character' ? '#c9a84c' : '#c0392b'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'grab',
+                    zIndex: 10,
+                  }}
+                  title={token.name}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setDragging({ tokenId: token.id })
+                  }}
+                  onMouseEnter={() => setHoveredToken(token.id)}
+                  onMouseLeave={() => setHoveredToken(null)}
+                >
+                  {token.name ? token.name[0].toUpperCase() : '?'}
+                  {hoveredToken === token.id && (
+                    <button
+                      style={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        width: 16,
+                        height: 16,
+                        borderRadius: '50%',
+                        background: '#c0392b',
+                        border: 'none',
+                        color: '#fff',
+                        fontSize: 10,
+                        cursor: 'pointer',
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try {
+                          await removeToken(token.id)
+                          if (activeMap) loadTokens(activeMap.id)
+                        } catch (cause) {
+                          console.error(cause)
+                          toast.error('Could not remove map token.')
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              {/* Fog layer — unrevealed zones */}
+              {zones.map((zone) => (
+                <div
+                  key={zone.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${zone.x * 100}%`,
+                    top: `${zone.y * 100}%`,
+                    width: `${zone.width * 100}%`,
+                    height: `${zone.height * 100}%`,
+                    background: zoneEditMode
+                      ? 'rgba(201,168,76,0.2)'
+                      : zone.is_revealed ? 'transparent' : 'rgba(0,0,0,0.75)',
+                    border: zoneEditMode ? '2px dashed #c9a84c' : 'none',
+                    transition: 'background 0.6s ease-out',
+                    pointerEvents: zoneEditMode ? 'auto' : 'none',
+                    zIndex: zone.is_revealed ? 0 : 5,
+                    boxSizing: 'border-box',
+                  }}
+                  title={zoneEditMode ? zone.name : undefined}
                 />
-                <button onClick={handleCreateZone}>Add</button>
-                <button onClick={() => setPendingZoneName(null)}>Cancel</button>
-              </div>
-            )}
-            {selectedPin && (
-              <div className="map-pin-tooltip">
-                <strong>{selectedPin.label}</strong>
-                {selectedPin.note && <p>{selectedPin.note}</p>}
-                <button className="map-pin-tooltip-close" onClick={() => setSelectedPin(null)}>×</button>
-              </div>
-            )}
-            <canvas
-              ref={fxCanvasRef}
-              className="map-fx-canvas"
-              style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 20 }}
-            />
+              ))}
+              {/* Zone draw preview */}
+              {zoneEditMode && zoneDrawing && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${Math.min(zoneDrawing.startX, zoneDrawing.endX) * 100}%`,
+                    top: `${Math.min(zoneDrawing.startY, zoneDrawing.endY) * 100}%`,
+                    width: `${Math.abs(zoneDrawing.endX - zoneDrawing.startX) * 100}%`,
+                    height: `${Math.abs(zoneDrawing.endY - zoneDrawing.startY) * 100}%`,
+                    border: '2px dashed #fff',
+                    background: 'rgba(255,255,255,0.1)',
+                    pointerEvents: 'none',
+                    zIndex: 20,
+                  }}
+                />
+              )}
+              {/* Pending zone name prompt */}
+              {pendingZoneName && (
+                <div className="zone-name-prompt">
+                  <input
+                    autoFocus
+                    placeholder="Zone name"
+                    value={newZoneName}
+                    onChange={e => setNewZoneName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleCreateZone() }}
+                  />
+                  <button onClick={handleCreateZone}>Add</button>
+                  <button onClick={() => setPendingZoneName(null)}>Cancel</button>
+                </div>
+              )}
+              {selectedPin && (
+                <div className="map-pin-tooltip">
+                  <strong>{selectedPin.label}</strong>
+                  {selectedPin.note && <p>{selectedPin.note}</p>}
+                  <button className="map-pin-tooltip-close" onClick={() => setSelectedPin(null)}>×</button>
+                </div>
+              )}
+              <canvas
+                ref={fxCanvasRef}
+                className="map-fx-canvas"
+                style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 20 }}
+              />
+            </div>
           </div>
           <div className="token-palette-section">
             <button className="token-palette-toggle" onClick={() => setShowPalette(!showPalette)}>

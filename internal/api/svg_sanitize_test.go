@@ -126,7 +126,7 @@ func TestGeneratedMapPersistsOnlySanitizedSVG(t *testing.T) {
 	stub := &stubCompleter{response: "```svg\n" + `<svg viewBox="0 0 10 10"><rect id="room" x="0" y="0" width="10" height="10" fill="#fff"/></svg>` + "\n```"}
 	s := newTestServerWithAI(t, stub)
 	campaignID, _ := seedCampaign(t, s.db)
-	body := bytes.NewBufferString(`{"name":"Safe","context":"test"}`)
+	body := bytes.NewBufferString(`{"name":"Safe","context":"` + strings.Repeat("Recent public narration. ", 400) + `"}`)
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/campaigns/%d/maps/generate", campaignID), body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -193,4 +193,15 @@ func TestAutoGenerateMapDBFailureCountsBreakerFailureAndRemovesFile(t *testing.T
 	files, err := filepath.Glob(filepath.Join(s.dataDir, "maps", "*"))
 	require.NoError(t, err)
 	assert.Empty(t, files)
+}
+
+func TestAutoGenerateMapRecognizesExistingLocationWithDefiniteArticle(t *testing.T) {
+	s := newTestServerWithAI(t, detectThenValidSVGCompleter{})
+	cid, sid := seedCampaign(t, s.db)
+	_, err := s.db.CreateMap(cid, "The   Ashen Tower", "maps/existing.png")
+	require.NoError(t, err)
+	s.autoGenerateMap(t.Context(), sid, "You return to Ashen Tower.")
+	maps, err := s.db.ListMaps(cid)
+	require.NoError(t, err)
+	require.Len(t, maps, 1, "visiting a known location must reuse its map")
 }

@@ -89,6 +89,10 @@ function successfulAutomationContent(request: ChatRequest): string {
   if (prompt.includes('NPC roster manager')) return '{"add":[],"remove":[]}'
   if (prompt.includes('map assistant')) return '{"new_location":false}'
   if (prompt.includes('Generate a map for')) {
+    if (prompt.includes('Market gate lanterns')) {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><text x="20" y="20">Market gate</text></svg>' +
+        '[ZONES][{"name":"Market gate","x":0.1,"y":0.2,"width":0.3,"height":0.4}][/ZONES]'
+    }
     return '<svg xmlns="http://www.w3.org/2000/svg"><script>HOSTILE_E2E_SVG</script></svg>'
   }
   return '[]'
@@ -518,4 +522,31 @@ test('rejects unsafe generated SVG without persisting a map record', async () =>
   expect(mapsResponse.ok()).toBe(true)
   expect(await mapsResponse.json()).toEqual([])
   expect(state.app.output()).not.toContain('HOSTILE_E2E_SVG')
+})
+
+
+test('a long played session generates a visible map with persistent interactive zones', async ({ page }) => {
+  await addMessage('assistant', 'Market gate lanterns. '.repeat(310))
+  await page.goto(state.app.origin)
+  const created = page.waitForResponse(r => r.url().endsWith('/maps/generate'))
+  await page.getByRole('button', { name: /Generate Map/ }).click()
+  const response = await created
+  expect(response.status()).toBe(201)
+  const { id } = await response.json()
+  const image = page.locator(`img[src="/api/assets/maps/${id}"]`)
+  await expect(image).toBeVisible()
+  await image.evaluate(async el => { await (el as HTMLImageElement).decode() })
+  await page.getByTitle('Toggle zone editor').click()
+  const area = await image.boundingBox()
+  const overlay = await page.locator('.map-scroll').getByTitle('Market gate', { exact: true }).boundingBox()
+  expect(area).toBeTruthy()
+  expect(overlay!.height).toBeCloseTo(area!.height * 0.4, 0)
+  const zone = page.locator('.zone-list-row').filter({ hasText: 'Market gate' })
+  await zone.getByRole('button', { name: 'Reveal' }).click()
+  await expect(zone.getByRole('button', { name: 'Hide' })).toBeVisible()
+  await page.reload()
+  await page.locator('.map-drawer-handle').click()
+  await expect(image).toBeVisible()
+  await page.getByTitle('Toggle zone editor').click()
+  await expect(zone.getByRole('button', { name: 'Hide' })).toBeVisible()
 })

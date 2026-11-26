@@ -11,7 +11,7 @@ The maintained browser tree is `e2e/tests/`; `cd e2e && npm test` is its only su
 | 3.1-3.14 character attributes, tracks, inventory, currency, XP entries | `CharacterSheetPanel.test.tsx`; `smoke.spec.ts`; `workspace-workflows.spec.ts` XP workflow | Covered at component and user-workflow levels. |
 | 3b.1-3b.2 XP add and amount | `workspace-workflows.spec.ts` XP add/delete | Covered through the visible form and persisted refresh. |
 | 4.1-4.5 session title, messages, composer, search, scene tags | `smoke.spec.ts`; `workspace-workflows.spec.ts` story search | Covered with accessible selectors. |
-| 5.1 map drawer | `responsive.spec.ts` visual/layout checks | Obsolete as an assertion: the old script clicked open/close and then called `assert(true)` without inspecting state. Current viewport screenshots and overflow checks cover the rendered drawer boundary. |
+| 5.1 map drawer | `reliability.spec.ts` generates from a long played session, decodes the map, reveals a zone, checks overlay geometry, and reloads it | Covered through the browser, persisted asset, and zone state. |
 | 6.1-6.12 legacy sidebar tabs | `smoke.spec.ts` right-panel destinations; `responsive.spec.ts` destination availability | Covered by the current Play/World/GM navigation model; the old twelve-tab layout is obsolete. |
 | 7 Notes panel | `smoke.spec.ts` Notes navigation and search | Covered. |
 | 8 NPCs panel | `smoke.spec.ts` NPC creation | Covered through API setup plus visible roster. |
@@ -91,3 +91,7 @@ The maintained browser tree is `e2e/tests/`; `cd e2e && npm test` is its only su
 - Lifecycle: `e2e/lifecycle.test.mjs` proves exact process and temporary-directory cleanup on success, failure, and signals.
 - Backend/API-only contracts: Go tests remain authoritative where a browser adds no user-visible assertion.
 - External model quality and prose wording are deliberately outside deterministic CI.
+
+## Live campaign rehearsal
+
+Run `node e2e/live-campaign.mjs /path/to/fixture.json` on a **disposable deployment** with `TTRPG_AUTH_SECRET` supplied privately to the process. The fixture contains the deployment `origin`, numeric `campaign` and `session` IDs, and `actions`, an ordered list of 30 distinct, setting-appropriate player actions. Start with that session selected. The runner uses the browser composer, checks each persisted GM response and its visible text, and checks the full sequence after reload. A restarted run recognizes completed pairs. Each turn uses the deployment's configured providers and automations.

@@ -141,6 +141,7 @@ function GameApp() {
   const [messages, setMessages] = useState<Message[]>([])
   const [error, setError] = useState<string | null>(null)
   const [aiEnabled, setAiEnabled] = useState(false)
+  const [mapEnabled, setMapEnabled] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   const [rightTab, setRightTab] = useState<PanelID>('notes')
   const [input, setInput] = useState('')
@@ -238,7 +239,10 @@ function GameApp() {
   useEffect(() => {
     fetch('/api/health')
       .then((r) => r.json())
-      .then((data: { ai_enabled: boolean }) => setAiEnabled(data.ai_enabled))
+      .then((data: { ai_enabled: boolean; map_generation_enabled?: boolean }) => {
+        setAiEnabled(data.ai_enabled)
+        setMapEnabled(data.map_generation_enabled ?? data.ai_enabled)
+      })
       .catch(() => setAiEnabled(false))
   }, [])
 
@@ -456,22 +460,22 @@ function GameApp() {
   }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId, handleSendText, toast])
 
   const handleGenerateMap = useCallback(async () => {
-    if (!ctx?.campaign || !aiEnabled || generatingMap) return
+    if (!ctx?.campaign || !mapEnabled || generatingMap) return
     setGeneratingMap(true)
     setMapOpen(true)
     const recentText = messages.filter(m => !m.whisper).slice(-6).map(m => `[${m.role}]: ${m.content}`).join('\n')
-    const context = `Campaign: ${ctx.campaign.name}\n\n${recentText}`
+    const context = `Campaign: ${ctx.campaign.name.slice(0, 200)}\n\n${recentText.slice(-8000)}`
     const mapName = ctx.session?.title ?? ctx.campaign.name
     try {
       await generateMap(ctx.campaign.id, mapName, context)
-      toast.success('Map generation started.')
+      toast.success('Map ready.')
     } catch (err) {
       console.error(err)
       toast.error('The map could not be generated.', { label: 'Retry', onClick: () => generateMapRetryRef.current() })
     } finally {
       setGeneratingMap(false)
     }
-  }, [ctx, aiEnabled, generatingMap, messages, toast])
+  }, [ctx, mapEnabled, generatingMap, messages, toast])
 
   useEffect(() => {
     generateMapRetryRef.current = () => { void handleGenerateMap() }
@@ -666,6 +670,7 @@ function GameApp() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         aiEnabled={aiEnabled}
+        mapEnabled={mapEnabled}
         gmResponding={gmResponding}
         streamingText={streamingText}
         generatingMap={generatingMap}

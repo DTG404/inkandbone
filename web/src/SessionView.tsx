@@ -72,6 +72,7 @@ export interface SessionViewProps {
   displayMessages: Message[]
   searchQuery: string
   setSearchQuery: (q: string) => void
+  mapEnabled: boolean
   aiEnabled: boolean
   gmResponding: boolean
   streamingText: string
@@ -118,6 +119,7 @@ export function SessionView({
   displayMessages,
   searchQuery,
   setSearchQuery,
+  mapEnabled,
   aiEnabled,
   gmResponding,
   streamingText,
@@ -532,7 +534,7 @@ export function SessionView({
                 ? '[ ▴ COLLAPSE ]'
                 : `[ ${ctx.campaign?.name?.toUpperCase() ?? 'THE IRONLANDS'} ▾ ]`}
             </button>
-            {aiEnabled && (
+            {mapEnabled && (
               <button
                 type="button"
                 className="map-generate-btn"
@@ -540,7 +542,7 @@ export function SessionView({
                 disabled={generatingMap}
                 title="Generate a map with AI"
               >
-                {generatingMap ? '…' : '✦ Generate Map'}
+                {generatingMap ? 'Generating map…' : '✦ Generate Map'}
               </button>
             )}
           </div>

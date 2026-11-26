@@ -158,3 +158,9 @@ func TestSearchRulebook_keywordFallback(t *testing.T) {
 	require.Len(t, resp.Results, 1)
 	assert.Equal(t, "Combat", resp.Results[0].Heading)
 }
+
+func TestRulebookValidationWithoutWritableUserConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/dev/null")
+	_, err := extractPDFText(t.Context(), strings.NewReader("not a PDF"))
+	require.ErrorIs(t, err, errInvalidPDF)
+}

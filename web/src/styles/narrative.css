@@ -661,6 +661,11 @@
   overflow: auto;
 }
 
+.map-surface {
+  position: relative;
+  min-width: 400px;
+}
+
 .story-scroll::-webkit-scrollbar,
 .sidebar-left::-webkit-scrollbar,
 .tab-content::-webkit-scrollbar,

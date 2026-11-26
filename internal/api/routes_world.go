@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -248,12 +249,12 @@ func (s *Server) handleDraftWorldNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
-	if s.aiClient == nil {
+	if s.aiClient == nil && s.mapSocket == "" {
 		http.Error(w, "AI not configured — set ANTHROPIC_API_KEY", http.StatusServiceUnavailable)
 		return
 	}
 	completer, ok := s.aiClient.(ai.Completer)
-	if !ok {
+	if !ok && s.mapSocket == "" {
 		http.Error(w, "AI client does not support generation", http.StatusServiceUnavailable)
 		return
 	}
@@ -268,7 +269,7 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		Name    string `json:"name"`
 		Context string `json:"context"`
 	}
-	if err := decodeJSON(w, r, &body, shortJSONLimit); err != nil {
+	if err := decodeJSON(w, r, &body, ordinaryJSONLimit); err != nil {
 		respondDecodeError(w, err)
 		return
 	}
@@ -276,13 +277,42 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		body.Name = "Generated Map"
 	}
 
-	// Map generation requires precise SVG output — use the structured AI client,
-	// not the narrative GM model.
-	prompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + body.Context
-	svgRaw, err := completer.Generate(r.Context(), prompt, 4096)
+	var mapID int64
+	var err error
+	if s.mapSocket != "" {
+		mapID, err = s.illustrateMap(r.Context(), id, body.Name, body.Context)
+	} else {
+		mapID, err = s.generateManualSVG(r.Context(), completer, id, body.Name, body.Context)
+	}
 	if err != nil {
 		serverError(w, r, err)
 		return
+	}
+
+	m, err := s.db.GetMap(mapID)
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	if m == nil {
+		serverErrorText(w, r, "fetch created map")
+		return
+	}
+
+	s.bus.Publish(Event{Type: EventMapCreated, Payload: &MapCreatedPayload{CampaignID: RealtimeInt64(id), MapID: RealtimeInt64(mapID)}})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(m) //nolint:errcheck
+}
+
+func (s *Server) generateManualSVG(ctx context.Context, completer ai.Completer, id int64, name, scene string) (int64, error) {
+
+	// Map generation requires precise SVG output — use the structured AI client,
+	// not the narrative GM model.
+	prompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + scene
+	svgRaw, err := completer.Generate(ctx, prompt, 4096)
+	if err != nil {
+		return 0, err
 	}
 
 	// Split at </svg> boundary: SVG content before, zones block after.
@@ -296,14 +326,12 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 	}
 	svgContent, err := sanitizeGeneratedSVGResponse(svgPart)
 	if err != nil {
-		serverError(w, r, err)
-		return
+		return 0, err
 	}
 
-	mapID, err := s.persistGeneratedSVG(id, body.Name, svgContent)
+	mapID, err := s.persistGeneratedSVG(id, name, svgContent)
 	if err != nil {
-		serverError(w, r, err)
-		return
+		return 0, err
 	}
 
 	// Parse optional [ZONES] block and create zones.
@@ -334,20 +362,7 @@ func (s *Server) handleGenerateMap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	m, err := s.db.GetMap(mapID)
-	if err != nil {
-		serverError(w, r, err)
-		return
-	}
-	if m == nil {
-		serverErrorText(w, r, "fetch created map")
-		return
-	}
-
-	s.bus.Publish(Event{Type: EventMapCreated, Payload: &MapCreatedPayload{CampaignID: RealtimeInt64(id), MapID: RealtimeInt64(mapID)}})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(m) //nolint:errcheck
+	return mapID, nil
 }
 
 func (s *Server) handleCreateMapPin(w http.ResponseWriter, r *http.Request) {

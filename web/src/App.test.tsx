@@ -341,7 +341,7 @@ describe('App', () => {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([publicMessage, privateMessage]) })
       }
       if (input === '/api/health') {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ai_enabled: true }) })
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ai_enabled: false, map_generation_enabled: true }) })
       }
       if (input === '/api/campaigns/1/maps/generate') {
         generatedContext = (JSON.parse(String(init?.body)) as { context: string }).context

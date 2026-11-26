@@ -32,12 +32,21 @@ func (s *Server) autoGenerateMap(ctx context.Context, sessionID int64, gmText st
 		return
 	}
 
-	existing, _ := s.db.ListMaps(sess.CampaignID)
+	existing, err := s.db.ListMaps(sess.CampaignID)
+	if err != nil {
+		log.Printf("autoGenerateMap: list existing maps (session %d): %v", sessionID, err)
+		return
+	}
 	existingNames := make([]string, len(existing))
 	for i, m := range existing {
 		existingNames[i] = m.Name
 	}
 
+	recentNames := existingNames[max(0, len(existingNames)-30):]
+	knownLocations, err := json.Marshal(recentNames)
+	if err != nil {
+		return
+	}
 	detectPrompt := fmt.Sprintf(`You are a TTRPG map assistant. Analyze this story passage.
 
 Does this passage describe or establish a NAMED, visually distinct location? This includes: taverns, dungeons, caves, city streets, forests, ships, markets, ruins, castles, chambers, wilderness areas — any named place with atmosphere or layout details.
@@ -46,8 +55,11 @@ Return ONLY JSON (no explanation, no markdown):
 - If a named location is clearly established: {"new_location":true,"name":"<exact location name>","context":"<50-word description: layout, atmosphere, key features for map generation>"}
 - If no named location or purely abstract/transitional text: {"new_location":false}
 
+Previously mapped locations (JSON): %s
+If the passage describes a previously mapped location, including another spelling or a shortened name for the same place, return {"new_location":false}. A distinct area inside a known location can have its own map.
+
 Story passage:
-%s`, gmText)
+%s`, knownLocations, gmText)
 
 	permit, ok := s.acquireAutomation(settingAutoGenerateMap)
 	if !ok {
@@ -98,14 +110,27 @@ Story passage:
 		return // no new location detected — not an error
 	}
 
-	locNameLower := strings.ToLower(loc.Name)
+	locationKey := func(name string) string {
+		return strings.TrimPrefix(strings.ToLower(strings.Join(strings.Fields(name), " ")), "the ")
+	}
+	detectedKey := locationKey(loc.Name)
 	for _, name := range existingNames {
-		if strings.ToLower(name) == locNameLower {
+		if locationKey(name) == detectedKey {
 			permit.Success()
 			return // duplicate — not an error
 		}
 	}
 
+	if s.mapSocket != "" {
+		mapID, err := s.illustrateMap(ctx, sess.CampaignID, loc.Name, loc.Context)
+		permit.Complete(err)
+		if err != nil {
+			log.Printf("autoGenerateMap: illustration failed (session %d): %v", sessionID, err)
+			return
+		}
+		s.bus.Publish(Event{Type: EventMapCreated, Payload: &MapCreatedPayload{CampaignID: RealtimeInt64(sess.CampaignID), MapID: RealtimeInt64(mapID)}})
+		return
+	}
 	// Map generation requires precise SVG output — use the structured AI client,
 	// not the narrative GM model.
 	mapPrompt := mapSystemPrompt + "\n\nGenerate a map for this TTRPG setting:\n\n" + loc.Context

@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+)
 
 type MapZone struct {
 	ID         int64   `json:"id"`
@@ -98,4 +101,27 @@ func (d *DB) GetMapZone(id int64) (*MapZone, error) {
 		return nil, err
 	}
 	return &z, nil
+}
+
+// CreateIllustratedMap publishes the map and its interactive zones together.
+func (d *DB) CreateIllustratedMap(ctx context.Context, campaignID int64, name, path string, zones []MapZone) (int64, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	row, err := tx.ExecContext(ctx, "INSERT INTO maps(campaign_id,name,image_path) VALUES(?,?,?)", campaignID, name, path)
+	if err != nil {
+		return 0, err
+	}
+	id, err := row.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	for _, z := range zones {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO map_zones(map_id,name,x,y,width,height) VALUES(?,?,?,?,?,?)", id, z.Name, z.X, z.Y, z.Width, z.Height); err != nil {
+			return 0, err
+		}
+	}
+	return id, tx.Commit()
 }

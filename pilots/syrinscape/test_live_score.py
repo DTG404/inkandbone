@@ -209,6 +209,22 @@ class LiveScoreTest(unittest.TestCase):
             )
         self.assertEqual([c["sound"] for c in cues], [72, 45])
 
+    def test_rank_timeout_does_not_persist_a_missing_scene_change(self):
+        self.db.execute("insert into score_room values(6,4,'market',10)")
+        digest = self.turn(20, "The desert wind rises.")
+        cue = dict(kind="mood", place="dunes", anchor="desert wind", query="wind")
+        with (
+            patch.object(score, "model", side_effect=[{"cues": [cue]}, TimeoutError()]),
+            patch.object(
+                score, "search", return_value=[{"id": 42, "title": "Dune sea"}]
+            ),
+        ):
+            with self.assertRaises(TimeoutError):
+                self.run_op("plan", digest=digest)
+        self.assertEqual(
+            self.db.execute("select count(*) from score_turn").fetchone()[0], 0
+        )
+
     def test_empty_game_transcript_can_be_null(self):
         self.ctx["recent_messages"] = None
         self.assertEqual(self.run_op("resume"), {"cues": []})

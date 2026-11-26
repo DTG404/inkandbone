@@ -216,7 +216,7 @@ Return IDs only from its own candidates.""",
                     }
                     for i in choices
                 ],
-                timeout=6,
+                timeout=15,
             ).get("picks", {})
         except (TimeoutError, urllib.error.URLError):
             # An optional ranking call can queue behind another GM turn. Only
@@ -232,6 +232,10 @@ Return IDs only from its own candidates.""",
                 ]
                 if len(exact) == 1:
                     picks[str(idx)] = exact[0]["id"]
+                elif options[idx] and cues[idx]["kind"] == "mood":
+                    # Propagate a transient failure. Persisting an empty plan here
+                    # would keep the previous location audible after a scene change.
+                    raise
         for i in choices:
             ident = picks.get(str(i))
             row = next((r for r in options[i] if r["id"] == ident), None)
@@ -381,7 +385,7 @@ def handle(db, name, payload, read_context, provider, listener, token):
                     saved
                     if row
                     and not old_quiet
-                    and (has_room or any(c["kind"] != "event" for c in saved))
+                    and any(c["kind"] != "event" for c in saved)
                     else direct(
                         db,
                         campaign,

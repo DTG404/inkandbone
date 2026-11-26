@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Campaign, Character, Session } from './types'
 import type { Ruleset, RulebookSource } from './api'
 import {
@@ -113,8 +113,13 @@ export function ManagePanel({
     })
   }, [])
 
+  const sessionRequest = useRef(0)
   const loadSessions = useCallback((campaignId: number) => {
-    fetchSessions(campaignId).then(setSessions).catch((cause) => {
+    const request = ++sessionRequest.current
+    fetchSessions(campaignId).then(rows => {
+      if (request === sessionRequest.current) setSessions(rows)
+    }).catch((cause) => {
+      if (request !== sessionRequest.current) return
       console.error(cause)
       setError('Sessions could not be loaded. Select the campaign again to retry.')
     })
@@ -544,7 +549,7 @@ export function ManagePanel({
                     {sessions.length === 0 && (
                       <p className="manage-empty">No sessions in this campaign.</p>
                     )}
-                    {sessions.map(s => {
+                    {sessions.filter(s => s.campaign_id === selectedCampaignId).map(s => {
                       const isActive = s.id === activeSessionId
                       return (
                         <div key={s.id} className={`manage-row${isActive ? ' manage-row--active' : ''}`}>

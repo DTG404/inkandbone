@@ -161,6 +161,19 @@ class LiveScoreTest(unittest.TestCase):
             )
         self.assertEqual([row["id"] for row in choices], [1, 2])
 
+    def test_mood_search_includes_the_perceived_setting_even_with_many_speech_hits(
+        self,
+    ):
+        chatter = [{"id": n, "title": "Speech"} for n in range(15)]
+        market = {"id": 304, "title": "Alley Market"}
+        with patch.object(
+            score,
+            "search",
+            side_effect=lambda _, q, *a, **k: [market] if q == "market" else chatter,
+        ):
+            choices = score.candidates("unused", "chatter", "Moods", "Mood", "market")
+        self.assertIn(market, choices)
+
     def test_busy_ranker_preserves_remembered_mood_and_unambiguous_event(self):
         self.db.execute("insert into score_place values(6,'market',72,'Market')")
         intent = {

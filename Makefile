@@ -41,6 +41,7 @@ e2e: build
 
 # Reproduce the checks enforced by CI from a clean checkout.
 verify:
+	cd pilots/syrinscape && python3 -B -m unittest test_live_score
 	cd web && npm ci && npm run build
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './.git/*' -not -path './.worktrees/*' -not -path '*/node_modules/*'))" || { gofmt -l $$(find . -name '*.go' -not -path './.git/*' -not -path './.worktrees/*' -not -path '*/node_modules/*'); exit 1; }
 	./scripts/verify-generated.sh

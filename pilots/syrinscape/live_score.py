@@ -47,18 +47,23 @@ def model(instruction, data, timeout=20):
     return json.loads(value["choices"][0]["message"]["content"])
 
 
-def candidates(token, query, kind, model_name):
+def candidates(token, query, kind, model_name, setting_query=""):
     rows = search(token, query, kind, model_name, timeout=4)
     words = [word for word in query.split() if word.isalpha()]
-    if len(rows) >= 8 or len(words) < 2:
-        return rows
+    queries = []
+    if setting_query and setting_query.casefold() != query.casefold():
+        queries.append(setting_query)
     # A phrase can match only branded spells or alarms. Also offer the director
     # ordinary sounds for its source noun, while keeping the close matches first.
-    queries = [words[0], " | ".join(words[:3])]
+    if len(rows) < 8 and len(words) > 1:
+        queries.extend([words[0], " | ".join(words[:3])])
+    if not queries:
+        return rows
     by_id = {row["id"]: row for row in rows}
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [
-            pool.submit(search, token, q, kind, model_name, timeout=4) for q in queries
+            pool.submit(search, token, q, kind, model_name, timeout=4)
+            for q in dict.fromkeys(queries)
         ]
         for job in jobs:
             try:
@@ -120,6 +125,10 @@ establishing the perceived environment","query":"source noun"}]}. Reuse a known 
 A passing hush or the end of one discrete sound leaves the established environment audible when
 the narration describes sounds continuing. If the environment truly cannot be inferred, return
 {"cues":[]}. Never replay events, score a metaphor, or use hidden information. No Markdown."""
+    direction += (
+        " For each mood also return settingQuery: one generic English noun naming the "
+        "perceived environment, for example market, forest, ocean or factory. Omit proper names."
+    )
     plan = model(
         direction,
         {
@@ -166,10 +175,14 @@ the narration describes sounds continuing. If the environment truly cannot be in
         elif kind != "quiet":
             if not query or len(query) > 80:
                 continue
+            setting_query = str(item.get("settingQuery", "")).strip()
+            if kind != "mood" or not re.fullmatch(r"[a-zA-Z]{2,30}", setting_query):
+                setting_query = ""
             choices[len(cues)] = (
                 query,
                 "Oneshots" if kind == "event" else "Moods",
                 "OneshotElement" if kind == "event" else "Mood",
+                setting_query,
             )
         cues.append(cue)
     if choices:
@@ -211,7 +224,7 @@ Return IDs only from its own candidates.""",
             # Already-resolved local ambience remains usable on this turn.
             ranked = False
             picks = {}
-            for idx, (query, _, _) in choices.items():
+            for idx, (query, _, _, _) in choices.items():
                 exact = [
                     r
                     for r in options[idx]

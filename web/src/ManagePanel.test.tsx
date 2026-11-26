@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ManagePanel } from './ManagePanel'
@@ -100,4 +100,28 @@ it('announces a destructive management action after it succeeds', async () => {
   await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
   expect(await screen.findByRole('status')).toHaveTextContent('Campaign deleted.')
+})
+
+it('keeps the selected campaign sessions when an earlier fetch finishes last', async () => {
+  let release!: () => void
+  const slow = new Promise<void>(resolve => { release = resolve })
+  vi.stubGlobal('fetch', async (path: string) => {
+    let data: unknown = []
+    if (path === '/api/campaigns') data = [{id:1,name:'First'}, {id:2,name:'Second'}]
+    if (path === '/api/campaigns/1/sessions') {
+      await slow
+      data = [{id:3,campaign_id:1,title:'Old table'}]
+    }
+    if (path === '/api/campaigns/2/sessions') data = [{id:4,campaign_id:2,title:'New table'}]
+    return {ok:true,json:async () => data}
+  })
+  const user = userEvent.setup()
+  render(<ManagePanel initialTab="sessions" activeCampaignId={1} activeCharacterId={null}
+    activeSessionId={null} onClose={() => undefined} onContextChanged={() => undefined} />)
+  await screen.findByRole('option', {name:'Second'})
+  await user.selectOptions(screen.getByRole('combobox'), '2')
+  expect(await screen.findByText('New table')).toBeInTheDocument()
+  await act(async () => { release() })
+  expect(screen.getByText('New table')).toBeInTheDocument()
+  expect(screen.queryByText('Old table')).not.toBeInTheDocument()
 })

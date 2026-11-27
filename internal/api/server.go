@@ -347,6 +347,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/objectives/{id}", s.handlePatchObjective)
 	s.mux.HandleFunc("DELETE /api/objectives/{id}", s.handleDeleteObjective)
 	// Feature 11: Player inventory
+	s.registerTurnChangeRoutes()
 	s.mux.HandleFunc("GET /api/characters/{id}/items", s.handleListItems)
 	s.mux.HandleFunc("POST /api/characters/{id}/items", s.handleCreateItem)
 	s.mux.HandleFunc("PATCH /api/items/{id}", s.handlePatchItem)

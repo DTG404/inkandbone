@@ -160,6 +160,7 @@ type CharacterCreatedPayload struct {
 }
 
 type CharacterUpdatedPayload struct {
+	ChangeID        *int64  `json:"change_id,omitempty"`
 	CharacterID     *int64  `json:"character_id,omitempty"`
 	Clan            *string `json:"clan,omitempty"`
 	CurrencyBalance *int64  `json:"currency_balance,omitempty"`

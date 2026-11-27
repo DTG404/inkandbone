@@ -192,11 +192,7 @@ func (s *Server) autoUpdateCharacterStats(ctx context.Context, sessionID int64, 
 		return
 	}
 	// Resolve active character.
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -372,150 +368,54 @@ Return ONLY a JSON object with the fields that must change and their new values.
 		return
 	}
 
-	// Capture XP before applying patch. Normalize string-stored XP to float64.
+	// Restrict the model to the sheet fields this automation owns. Merge its
+	// suggestions against the same pre-inference values at commit time.
 	xpFieldKey := advancement.XPKey(ruleset.Name)
-	beforeXP := 0
-	if v, ok := current[xpFieldKey].(float64); ok {
-		beforeXP = int(v)
-	} else if s, ok := current[xpFieldKey].(string); ok {
-		if n, err := strconv.Atoi(s); err == nil {
-			beforeXP = n
-			current[xpFieldKey] = float64(n)
+	beforeXP := statInteger(current[xpFieldKey])
+	safeFields := map[string]bool{xpFieldKey: true, "hunger": true, "health_superficial": true, "health_aggravated": true, "willpower_superficial": true, "willpower_aggravated": true, "stains": true, "humanity": true, "hp": true, "hp_max": true}
+	for key, value := range patch {
+		if !safeFields[key] {
+			continue
 		}
-	}
-
-	currentHunger := 0
-	if v, ok := current["hunger"].(float64); ok {
-		currentHunger = int(v)
-	}
-
-	for k, v := range patch {
-		_, exists := current[k]
-		// Allow xp to be created even if missing from character data (backfill guard).
-		if !exists && k == xpFieldKey {
-			exists = true
-			current[xpFieldKey] = float64(0)
-		}
-		if exists {
-			// Never let the AI goroutine lower XP — it can only award, not spend.
-			if k == xpFieldKey {
-				newXP, _ := v.(float64)
-				if int(newXP) <= beforeXP {
-					continue
-				}
+		if key == xpFieldKey {
+			xp := statInteger(value)
+			if xp <= beforeXP {
+				continue
 			}
-			// VtM: never let the AI goroutine increase hunger.
-			// Hunger rises only via explicit /rouse and /surge commands.
-			if k == "hunger" && ruleset.Name == "vtm" {
-				newHunger, _ := v.(float64)
-				if int(newHunger) > currentHunger {
-					continue
-				}
-			}
-			// VtM: never let the AI goroutine change discipline dots or identity fields.
-			// Disciplines only advance via explicit XP spending (/advance command).
-			// Identity fields (clan, sect, generation, etc.) are set at creation and never change.
-			if ruleset.Name == "vtm" {
-				vtmProtectedFields := map[string]bool{
-					"animalism": true, "auspex": true, "blood_sorcery": true, "celerity": true,
-					"dominate": true, "fortitude": true, "obfuscate": true, "oblivion": true,
-					"potence": true, "presence": true, "protean": true,
-					"clan": true, "sect": true, "predator_type": true, "generation": true,
-					"character_type": true,
-					"ambition":       true, "desire": true, "convictions": true, "touchstones": true,
-					"merits_flaws": true,
-				}
-				if vtmProtectedFields[k] {
-					continue
-				}
-			}
-			current[k] = v
+			value = xp
 		}
-	}
-
-	// Capture XP after patch.
-	afterXP := 0
-	if v, ok := current[xpFieldKey].(float64); ok {
-		afterXP = int(v)
-	} else if s, ok := current[xpFieldKey].(string); ok {
-		// Handle legacy string-stored XP
-		if n, err := strconv.Atoi(s); err == nil {
-			afterXP = n
-			current[xpFieldKey] = float64(n) // normalize to number
+		if ruleset.Name == "vtm" && key == "hunger" && statInteger(value) > statInteger(current[key]) {
+			continue
 		}
+		current[key] = value
 	}
-
-	// VtM: re-read live hunger before writing to avoid overwriting rouse check increases.
-	// autoUpdateCharacterStats reads char data before the AI call (slow). By the time
-	// the AI responds, a rouse check goroutine may have already incremented hunger via
-	// a concurrent handleVtMRouseCheck. Writing the stale snapshot would undo that.
-	//
-	// Two cases to handle correctly:
-	//   Feeding: AI decreases hunger (e.g. 5→2). Apply that same delta to the live
-	//            value so concurrent rouse changes are preserved proportionally.
-	//   No feed: AI returned hunger unchanged. Preserve whatever live value is (may be
-	//            higher due to a rouse check that ran while we waited for the AI).
-	if ruleset.Name == "vtm" {
-		if liveChar, liveErr := s.db.GetCharacter(charID); liveErr == nil && liveChar != nil && liveChar.DataJSON != "" {
-			var liveStats map[string]any
-			if json.Unmarshal([]byte(liveChar.DataJSON), &liveStats) == nil {
-				if liveHunger, ok := liveStats["hunger"].(float64); ok {
-					curHunger, _ := current["hunger"].(float64)
-					initialHungerF := float64(currentHunger) // captured before AI call
-					if curHunger < initialHungerF {
-						// AI decreased hunger (feeding): apply delta to live value.
-						delta := initialHungerF - curHunger
-						newHunger := liveHunger - delta
-						if newHunger < 0 {
-							newHunger = 0
-						}
-						current["hunger"] = newHunger
-					} else if liveHunger > curHunger {
-						// No feeding: preserve live value (rouse check may have raised it).
-						current["hunger"] = liveHunger
-					}
-				}
-			}
-		}
-	}
-
-	// Identity guard: before writing, merge AI-approved changes into the LIVE character data
-	// from the DB. This prevents concurrent goroutines from corrupting identity fields.
-	// Only safe fields (xp, hunger, health, willpower, stains) are written from the AI patch.
-	if freshChar, freshErr := s.db.GetCharacter(charID); freshErr == nil && freshChar != nil && freshChar.DataJSON != "" && freshChar.DataJSON != "{}" {
-		var live map[string]any
-		if json.Unmarshal([]byte(freshChar.DataJSON), &live) == nil {
-			safeFields := map[string]bool{"xp": true, "hunger": true, "health_superficial": true, "health_aggravated": true, "willpower_superficial": true, "willpower_aggravated": true, "stains": true, "humanity": true, "hp": true, "hp_max": true}
-			for k, v := range patch {
-				if safeFields[k] {
-					// XP guard: never let the AI lower XP — it can only award, not spend.
-					if k == xpFieldKey {
-						newXP, _ := v.(float64)
-						if int(newXP) <= beforeXP {
-							continue
-						}
-					}
-					live[k] = v
-				}
-			}
-			current = live
-		}
-	}
-	updated, err := json.Marshal(current)
+	target, err := json.Marshal(current)
 	if err != nil {
 		return
 	}
-
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	updated, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "stats", char.DataJSON, string(target))
+	if err != nil || updated == char.DataJSON {
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(string(updated))}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(updated)}})
+	char.DataJSON = updated
+	if json.Unmarshal([]byte(updated), &current) == nil {
+		afterXP := statInteger(current[xpFieldKey])
+		if afterXP > beforeXP {
+			s.autoSuggestXPSpend(ctx, sessionID, charID, char, ruleset, current, afterXP)
+		}
+	}
+}
 
-	// If XP increased, suggest advancements before this ordered event completes.
-	// Use the updated stats JSON rather than stale pre-patch character data.
-	char.DataJSON = string(updated)
-	if afterXP > beforeXP {
-		s.autoSuggestXPSpend(ctx, sessionID, charID, char, ruleset, current, afterXP)
+func statInteger(value any) int {
+	switch v := value.(type) {
+	case float64:
+		return int(v)
+	case string:
+		n, _ := strconv.Atoi(v)
+		return n
+	default:
+		return 0
 	}
 }
 
@@ -920,11 +820,9 @@ func (s *Server) extractNPCs(ctx context.Context, sessionID int64, gmText string
 	}
 
 	var charName string
-	if charIDStr, err := s.db.GetSetting("active_character_id"); err == nil && charIDStr != "" {
-		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
-			if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
-				charName = char.Name
-			}
+	if charID, err := s.turnActorID(ctx); err == nil {
+		if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
+			charName = char.Name
 		}
 	}
 
@@ -998,7 +896,7 @@ No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 			if npc.Name == "" || npc.Name == charName {
 				continue
 			}
-			if _, err := s.db.CreateSessionNPC(sessionID, npc.Name, npc.Note); err == nil {
+			if _, err := s.db.AddTurnEntity(turnSource(ctx, sessionID), "npc", sessionID, npc.Name, npc.Note, 1); err == nil {
 				changed++
 			}
 		}
@@ -1020,9 +918,9 @@ No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 	}
 
 	// Build a set of known NPC IDs for safety (only delete NPCs we actually track).
-	knownIDs := make(map[int64]bool, len(existing))
+	knownIDs := make(map[int64]string, len(existing))
 	for _, n := range existing {
-		knownIDs[n.ID] = true
+		knownIDs[n.ID] = n.Name
 	}
 	// Also build a set of known names (case-insensitive) to avoid duplicates.
 	knownNamesLower := make(map[string]bool, len(knownNames))
@@ -1038,15 +936,15 @@ No explanation, no markdown.`, string(knownJSON), excludeClause, gmText)
 		if knownNamesLower[strings.ToLower(npc.Name)] {
 			continue
 		}
-		if _, err := s.db.CreateSessionNPC(sessionID, npc.Name, npc.Note); err == nil {
+		if _, err := s.db.AddTurnEntity(turnSource(ctx, sessionID), "npc", sessionID, npc.Name, npc.Note, 1); err == nil {
 			changed++
 		}
 	}
 	for _, id := range result.Remove {
-		if !knownIDs[id] {
+		if _, ok := knownIDs[id]; !ok {
 			continue // safety: never delete an ID we didn't give the AI
 		}
-		if err := s.db.DeleteSessionNPC(id); err == nil {
+		if err := s.db.RemoveTurnEntity(turnSource(ctx, sessionID), "npc", sessionID, id, knownIDs[id]); err == nil {
 			changed++
 		}
 	}
@@ -1119,6 +1017,7 @@ func (s *Server) autoDetectObjectives(ctx context.Context, sessionID int64, gmTe
 		Title       string `json:"title"`
 		Description string `json:"description"`
 	}
+	activeTitles := map[int64]string{}
 	var activeSlim []slimObjective
 	var allTitles []string
 	for _, o := range existing {
@@ -1126,6 +1025,7 @@ func (s *Server) autoDetectObjectives(ctx context.Context, sessionID int64, gmTe
 		existingTitleSet[key] = true
 		allTitles = append(allTitles, o.Title)
 		if o.Status == "active" {
+			activeTitles[o.ID] = o.Title
 			activeSlim = append(activeSlim, slimObjective{ID: o.ID, Title: o.Title, Description: o.Description})
 		}
 	}
@@ -1237,7 +1137,7 @@ No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentC
 		if existingTitleSet[key] {
 			continue
 		}
-		if _, err := s.db.CreateObjective(sess.CampaignID, n.Title, n.Description, nil); err == nil {
+		if _, err := s.db.AddTurnEntity(turnSource(ctx, sessionID), "objective", sess.CampaignID, n.Title, n.Description, 1); err == nil {
 			changed++
 			existingTitleSet[key] = true // prevent same-batch duplicates
 		}
@@ -1246,7 +1146,11 @@ No markdown, no explanation.`, string(activeJSON), allTitlesStr, gmText, recentC
 		if res.Status != "completed" && res.Status != "failed" {
 			continue
 		}
-		if err := s.db.UpdateObjectiveStatus(res.ID, res.Status); err == nil {
+		title, known := activeTitles[res.ID]
+		if !known {
+			continue
+		}
+		if err := s.db.SetTurnObjectiveStatus(turnSource(ctx, sessionID), sess.CampaignID, res.ID, title, res.Status); err == nil {
 			changed++
 		}
 	}
@@ -1267,11 +1171,7 @@ func (s *Server) autoExtractItems(ctx context.Context, sessionID int64, gmText s
 		return
 	}
 	// Resolve active character.
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -1351,7 +1251,7 @@ Story passage:
 		if qty <= 0 {
 			qty = 1
 		}
-		if _, err := s.db.CreateItem(charID, g.Name, g.Description, qty); err == nil {
+		if _, err := s.db.AddTurnEntity(turnSource(ctx, sessionID), "item", charID, g.Name, g.Description, qty); err == nil {
 			existingNames[strings.ToLower(g.Name)] = true // prevent dupe within same response
 			changed++
 		}
@@ -1362,7 +1262,7 @@ Story passage:
 			lostLower := strings.ToLower(lostName)
 			for _, item := range existing {
 				if strings.ToLower(item.Name) == lostLower {
-					if err := s.db.DeleteItem(item.ID); err == nil {
+					if err := s.db.RemoveTurnEntity(turnSource(ctx, sessionID), "item", charID, item.ID, item.Name); err == nil {
 						changed++
 					}
 					break
@@ -1517,11 +1417,7 @@ func (s *Server) autoUpdateCurrency(ctx context.Context, sessionID int64, gmText
 	}
 
 	// Resolve active character.
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -1566,22 +1462,15 @@ Story passage:
 		return
 	}
 
-	// Get current balance.
-	char, err := s.db.GetCharacter(charID)
-	if err != nil || char == nil {
+	applied, err := s.db.ApplyTurnCurrency(turnSource(ctx, sessionID), charID, result.Delta)
+	if err != nil || applied.Delta == 0 {
 		return
 	}
-
-	newBalance := char.CurrencyBalance + result.Delta
-	if newBalance < 0 {
-		newBalance = 0
+	payload := &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), CurrencyBalance: RealtimeInt64(applied.Balance), CurrencyLabel: RealtimePtr(applied.Label), CurrencyDelta: RealtimeInt64(applied.Delta)}
+	if applied.ChangeID != 0 {
+		payload.ChangeID = RealtimeInt64(applied.ChangeID)
 	}
-
-	if err := s.db.UpdateCharacterCurrencyBalance(charID, newBalance); err != nil {
-		return
-	}
-
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), CurrencyBalance: RealtimeInt64(newBalance), CurrencyLabel: RealtimePtr(char.CurrencyLabel), CurrencyDelta: RealtimeInt64(result.Delta)}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: payload})
 }
 
 // autoUpdateRecap regenerates the session recap in the background every 4 GM

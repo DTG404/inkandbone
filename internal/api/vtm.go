@@ -321,15 +321,12 @@ func (s *Server) autoVtMDisciplineRouseChecks(ctx context.Context, sessionID int
 	}
 
 	// Mortals and ghouls do not use Rouse Checks for Disciplines.
-	charIDStr, _ := s.db.GetSetting("active_character_id")
-	if charIDStr != "" {
-		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
-			if char, err := s.db.GetCharacter(charID); err == nil && char != nil && char.DataJSON != "" {
-				var charStats map[string]any
-				if json.Unmarshal([]byte(char.DataJSON), &charStats) == nil {
-					if ct, ok := charStats["character_type"].(string); ok && strings.ToLower(ct) == "mortal" {
-						return
-					}
+	if charID, err := s.turnActorID(ctx); err == nil {
+		if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
+			var stats map[string]any
+			if json.Unmarshal([]byte(char.DataJSON), &stats) == nil {
+				if ct, ok := stats["character_type"].(string); ok && strings.EqualFold(ct, "mortal") {
+					return
 				}
 			}
 		}
@@ -384,8 +381,8 @@ Reply with ONLY a single integer: the number of Rouse Checks owed (0 if none). N
 		count = 5 // sanity cap — no scene warrants more than 5 Rouse Checks
 	}
 
-	for range count {
-		_ = s.handleVtMRouseCheck(ctx, sessionID)
+	for i := range count {
+		_ = s.handleVtMRouseCheck(context.WithValue(ctx, turnReasonKey{}, fmt.Sprintf("discipline-rouse-%d", i)), sessionID)
 	}
 }
 
@@ -508,11 +505,7 @@ func (s *Server) autoDetectVtMEmbrace(ctx context.Context, sessionID int64, gmTe
 	}
 
 	// Resolve active character and confirm it is a Mortal.
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -614,7 +607,7 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 		log.Printf("autoDetectVtMEmbrace: marshal failed: %v", err)
 		return
 	}
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	if _, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "embrace", char.DataJSON, string(updated)); err != nil {
 		log.Printf("autoDetectVtMEmbrace: DB update failed: %v", err)
 		return
 	}
@@ -678,11 +671,7 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 	if !stainTriggerRE.MatchString(strings.ToLower(text)) {
 		return
 	}
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -766,7 +755,7 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 	if err != nil {
 		return
 	}
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	if _, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "stains", char.DataJSON, string(updated)); err != nil {
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID)}})
@@ -807,17 +796,13 @@ func (s *Server) autoUpdateChronicleNight(ctx context.Context, sessionID int64, 
 
 	// Willpower restoration: sleeping the day restores min(Composure, Resolve) willpower.
 	// This is deterministic — no AI call needed.
-	s.vtmRestoreWillpowerOnWake(sessionID)
+	s.vtmRestoreWillpowerOnWake(ctx, sessionID)
 }
 
 // vtmRestoreWillpowerOnWake restores Willpower by min(Composure, Resolve) when the
 // vampire wakes for a new night, capped at willpower_max. Pure calculation, no AI.
-func (s *Server) vtmRestoreWillpowerOnWake(sessionID int64) {
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+func (s *Server) vtmRestoreWillpowerOnWake(ctx context.Context, sessionID int64) {
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -869,8 +854,9 @@ func (s *Server) vtmRestoreWillpowerOnWake(sessionID int64) {
 	if err != nil {
 		return
 	}
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	live, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "willpower", char.DataJSON, string(updated))
+	if err != nil {
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(string(updated))}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(live)}})
 }

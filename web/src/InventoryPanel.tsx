@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { fetchItems, createItem, patchItem, deleteItem, patchCurrency } from './api'
 import type { Item } from './types'
 import { useToast } from './ui/ToastProvider'
+import { undoTurnChange } from './session/turnChangeStore'
 import { wsEvent } from './wsEvents'
 
 interface InventoryPanelProps {
@@ -15,8 +16,8 @@ interface InventoryPanelProps {
 interface CurrencyToast {
   delta: number
   label: string
-  prevBalance: number
-  newBalance: number
+  sessionId?: number
+  changeId?: number
 }
 
 export function InventoryPanel({
@@ -87,8 +88,8 @@ export function InventoryPanel({
         setToast({
           delta,
           label: lbl,
-          prevBalance: newBal - delta,
-          newBalance: newBal,
+          sessionId: p.session_id,
+          changeId: p.change_id,
         })
         setBalance(newBal)
         setLabel(lbl)
@@ -103,16 +104,14 @@ export function InventoryPanel({
   }, [lastEvent, effectiveCharacterId])
 
   async function handleUndoToast() {
-    if (!toast || effectiveCharacterId === null) return
+    if (!toast?.changeId || !toast.sessionId) return
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(null)
-    setBalance(toast.prevBalance)
     try {
-      await patchCurrency(effectiveCharacterId, { currency_balance: toast.prevBalance })
+      await undoTurnChange(toast.sessionId, toast.changeId)
     } catch (err) {
       console.error(err)
-      setBalance(toast.newBalance)
-      feedback.error('Could not undo the currency change.')
+      feedback.error(err instanceof Error ? err.message : 'Could not undo the currency change.')
     }
   }
 
@@ -264,7 +263,7 @@ export function InventoryPanel({
       {toast && (
         <div className="currency-toast">
           <span>AI: {deltaSign}{toast.delta} {toast.label}</span>
-          <button className="currency-toast-undo" onClick={handleUndoToast}>Undo</button>
+          {toast.changeId && toast.sessionId ? <button className="currency-toast-undo" onClick={handleUndoToast}>Undo</button> : null}
         </div>
       )}
 

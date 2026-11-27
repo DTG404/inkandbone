@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { refreshTurnChanges } from './session/turnChangeStore'
 import { parseRealtimeEvent, type RealtimeEvent } from './realtime.gen'
 
 export type WebSocketStatus = 'connecting' | 'open' | 'reconnecting' | 'offline'
@@ -74,6 +75,7 @@ export function useWebSocket(
         hasOpened = true
         attempt = 0
         setStatus('open')
+        refreshTurnChanges()
       }
 
       socket.onmessage = (e) => {
@@ -87,6 +89,7 @@ export function useWebSocket(
             lastSequenceRef.current = parsed.sequence
           }
           if (reconcile) requireReconciliation()
+          if (reconcile || ['character_updated', 'item_updated', 'npc_updated', 'objective_updated'].includes(parsed.type)) refreshTurnChanges()
           setLastEvent(parsed)
           onMessageRef.current(parsed)
         } catch {

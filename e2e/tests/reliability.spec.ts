@@ -550,3 +550,81 @@ test('a long played session generates a visible map with persistent interactive 
   await page.getByTitle('Toggle zone editor').click()
   await expect(zone.getByRole('button', { name: 'Hide' })).toBeVisible()
 })
+
+test('a downloaded campaign archive resumes play independently after import and reload', async ({ page }) => {
+  const original = await createFixture(state.api)
+  const firstAction = 'I mark the north gate on my chart.'
+  const nextAction = 'I follow the imported chart downstream.'
+  const transcript = async (id: number) => {
+    const response = await state.api.get(`/api/sessions/${id}/messages`)
+    expect(response.ok()).toBe(true)
+    return response.json() as Promise<Array<{ id: number; role: string; content: string }>>
+  }
+
+  await page.goto(state.app.origin)
+  const input = page.getByPlaceholder('What do you do?')
+  await input.fill(firstAction)
+  await input.press('Enter')
+  await expect(page.locator('.prose-gm-wrap')).toContainText('Rain taps the window.')
+  const source = await eventually(() => transcript(original.sessionId), rows => rows.length === 2, 'source turn')
+  expect(source.map(m => m.role)).toEqual(['user', 'assistant'])
+
+  const manage = page.getByRole('button', { name: 'Manage', exact: true })
+  await manage.click()
+  const dialog = page.getByRole('dialog', { name: 'Manage Campaign' })
+  const campaignsBefore = await (await state.api.get('/api/campaigns')).json() as Array<{ id: number }>
+  const downloadStarted = page.waitForEvent('download')
+  await dialog.locator(`a[href="/api/campaigns/${original.campaignId}/archive"]`).click()
+  const download = await downloadStarted
+  expect(download.suggestedFilename()).toBe(`campaign-${original.campaignId}.inkandbone.json`)
+  const archivePath = path.join(state.root, 'played-campaign.inkandbone.json')
+  await download.saveAs(archivePath)
+  await dialog.getByLabel('Campaign archive file').setInputFiles(archivePath)
+  const importResponse = page.waitForResponse(r => r.url().endsWith('/api/campaigns/import'))
+  await dialog.getByRole('button', { name: 'Import as new campaign' }).click()
+  const response = await importResponse
+  expect(response.status()).toBe(201)
+  const campaignsAfter = await (await state.api.get('/api/campaigns')).json() as Array<{ id: number }>
+  const added = campaignsAfter.filter(c => !campaignsBefore.some(old => old.id === c.id))
+  expect(added).toHaveLength(1)
+  const importedId = added[0].id
+  expect(importedId).not.toEqual(original.campaignId)
+  const sessions = await (await state.api.get(`/api/campaigns/${importedId}/sessions`)).json() as Array<{ id: number }>
+  const characters = await (await state.api.get(`/api/campaigns/${importedId}/characters`)).json() as Array<{ id: number }>
+  expect(sessions).toHaveLength(1)
+  expect(characters).toHaveLength(1)
+  const importedSession = sessions[0].id
+  expect(importedSession).not.toEqual(original.sessionId)
+  expect(characters[0].id).not.toEqual(original.characterId)
+
+  const importedRow = dialog.locator('.manage-row').filter({ has: page.locator(`a[href="/api/campaigns/${importedId}/archive"]`) })
+  await importedRow.getByRole('button', { name: 'Set Active' }).click()
+  await expect(dialog).not.toBeVisible()
+  for (const tab of ['Characters', 'Sessions']) {
+    await manage.click()
+    await dialog.getByRole('button', { name: tab, exact: true }).click()
+    await dialog.getByRole('button', { name: 'Set Active', exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+  }
+  await expect(page.getByText(firstAction, { exact: true })).toBeVisible()
+  await input.fill(nextAction)
+  await input.press('Enter')
+  const copy = await eventually(() => transcript(importedSession), rows => rows.length === 4, 'imported turn')
+  expect(copy.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+  expect(copy.map(m => m.content)).toEqual([firstAction, source[1].content, nextAction, STREAM_TEXT])
+  expect(copy.slice(0, 2).every(m => !source.some(old => old.id === m.id))).toBe(true)
+  await page.reload()
+  await expect(page.getByText(firstAction, { exact: true })).toBeVisible()
+  await expect(page.getByText(nextAction, { exact: true })).toBeVisible()
+  await expect(page.locator('.prose-gm-wrap')).toHaveCount(2)
+
+  const restoreSelection = await state.api.patch('/api/settings', {
+    data: { campaign_id: original.campaignId, character_id: original.characterId, session_id: original.sessionId },
+  })
+  expect(restoreSelection.ok()).toBe(true)
+  await page.reload()
+  await expect(page.getByText(firstAction, { exact: true })).toBeVisible()
+  await expect(page.getByText(nextAction, { exact: true })).toHaveCount(0)
+  await expect(page.locator('.prose-gm-wrap')).toHaveCount(1)
+  expect(await transcript(original.sessionId)).toEqual(source)
+})

@@ -7,6 +7,7 @@ import {
   fetchCharacters,
   fetchSessions,
   createCampaign,
+  importCampaignArchive,
   deleteCampaign,
   createCharacter,
   deleteCharacter,
@@ -57,6 +58,9 @@ export function ManagePanel({
   const [newCampaignDesc, setNewCampaignDesc] = useState('')
   const [newCampaignRuleset, setNewCampaignRuleset] = useState(0)
   const [creatingCampaign, setCreatingCampaign] = useState(false)
+
+  const [archiveFile, setArchiveFile] = useState<File | null>(null)
+  const archiveInput = useRef<HTMLInputElement>(null)
 
   // Characters
   const [characters, setCharacters] = useState<Character[]>([])
@@ -168,6 +172,33 @@ export function ManagePanel({
       showSafeError('The campaign could not be created. Try again.', e)
     } finally {
       setCreatingCampaign(false)
+    }
+  }
+
+  async function handleImportArchive() {
+    if (!archiveFile || busy) return
+    setBusy(true)
+    setError('')
+    setAnnouncement('')
+    try {
+      const imported = await importCampaignArchive(archiveFile)
+      setArchiveFile(null)
+      if (archiveInput.current) archiveInput.current.value = ''
+      setSelectedCampaignId(imported.id)
+      setAnnouncement('Archive imported as a new campaign.')
+      try {
+        setCampaigns(await fetchCampaigns())
+      } catch (cause) {
+        showSafeError('Archive imported. Reopen Manage to refresh the campaign list.', cause)
+      }
+    } catch (cause) {
+      const message = cause instanceof Error && (
+        cause.message === 'Install the matching ruleset and referenced rulebooks, then import again.' ||
+        cause.message === 'The archive exceeds the 96 MiB limit.'
+      ) ? cause.message : 'The campaign archive could not be imported. Check the file and try again.'
+      showSafeError(message, cause)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -385,6 +416,7 @@ export function ManagePanel({
                             Set Active
                           </button>
                         )}
+                        <a className="manage-btn" href={`/api/campaigns/${c.id}/archive`} download aria-label={`Export ${c.name} archive`}>Export</a>
                         {isActive && <span className="manage-badge">Active</span>}
                         <button
                           className="manage-btn manage-btn--danger"
@@ -399,6 +431,14 @@ export function ManagePanel({
                 })}
               </div>
 
+              <div className="manage-form">
+                <h4 className="manage-form-title">Campaign archive</h4>
+                <p>Exports include GM notes, whispers, hidden map zones, and secrets. Importing creates a new campaign using the installed ruleset and books.</p>
+                <label>Campaign archive file
+                  <input ref={archiveInput} type="file" accept=".json,application/json" disabled={busy} onChange={e => setArchiveFile(e.target.files?.[0] ?? null)} />
+                </label>
+                <button className="manage-btn" disabled={!archiveFile || busy} onClick={handleImportArchive}>Import as new campaign</button>
+              </div>
               <div className="manage-form">
                 <h4 className="manage-form-title">New Campaign</h4>
                 <input

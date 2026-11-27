@@ -65,8 +65,14 @@ export async function generateRecap(sessionId: number): Promise<{ summary: strin
 }
 
 
-export async function sendMessage(sessionId: number, content: string, whisper?: boolean, characterId?: number | null): Promise<void> {
+export class SubmissionError extends Error {
+  readonly status: number
+  constructor(status: number) { super(`sendMessage failed: ${status}`); this.status = status }
+}
+
+export async function sendMessage(sessionId: number, content: string, whisper?: boolean, characterId?: number | null, clientActionKey?: string): Promise<number> {
   const body: Record<string, unknown> = { role: 'user', content }
+  if (clientActionKey) body['client_action_key'] = clientActionKey
   if (whisper) body['whisper'] = true
   if (characterId != null) body['character_id'] = characterId
   const res = await request(`/api/sessions/${sessionId}/messages`, {
@@ -74,7 +80,8 @@ export async function sendMessage(sessionId: number, content: string, whisper?: 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`sendMessage failed: ${res.status}`)
+  if (!res.ok) throw new SubmissionError(res.status)
+  return Number(res.headers.get('X-Message-ID'))
 }
 
 
@@ -82,8 +89,9 @@ export async function gmRespondStream(
   sessionId: number,
   onChunk: (text: string) => void,
   scored = false,
+  actionId?: number,
 ): Promise<string> {
-  const res = await request(`/api/sessions/${sessionId}/gm-respond-stream`, { method: 'POST', ...(scored ? {headers:{'X-Ink-Live-Score':'1'}} : {}) })
+  const res = await request(`/api/sessions/${sessionId}/gm-respond-stream${actionId ? `?action_id=${actionId}` : ''}`, { method: 'POST', ...(scored ? {headers:{'X-Ink-Live-Score':'1'}} : {}) })
   if (!res.ok) throw new Error(`gmRespondStream failed: ${res.status}`)
   let accumulated = ''
   let streamError: Error | undefined

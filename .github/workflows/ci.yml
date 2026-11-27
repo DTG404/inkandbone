@@ -71,7 +71,7 @@ jobs:
 
       - name: Install browser dependencies
         working-directory: e2e
-        run: npm ci && npx playwright install --with-deps chromium
+        run: npm ci && npx playwright install --with-deps chromium webkit
 
       - name: Verify browser workflows
         run: make verify-e2e

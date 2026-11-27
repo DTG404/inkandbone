@@ -2316,3 +2316,19 @@
 .login-error {
   color: #e68b7b;
 }
+
+.player-reference { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; padding-inline: .5rem; }
+.player-reference button, .player-reference-card button {
+  color: var(--gold); background: var(--surface); border: 1px solid var(--border); padding: .35rem .65rem;
+}
+.player-reference-card { display: grid; gap: 1rem; padding: 1rem; color: var(--text); }
+.player-reference-close { justify-self: end; }
+.player-reference-card form, .player-reference-card dl { display: grid; gap: .75rem; }
+.player-reference-card textarea { min-height: 5rem; width: 100%; padding: .5rem; font: inherit; color: var(--text); background: var(--surface); }
+.player-reference-card dt { color: var(--gold); }
+.player-reference-card dd { margin: .25rem 0 .5rem; }
+.touch-zone-hint { display: none; }
+@media (any-pointer: coarse) {
+  .touch-zone-hint { display: block; color: var(--text-dim); }
+  .map-surface [aria-pressed='true'] { outline: 3px solid var(--gold); }
+}

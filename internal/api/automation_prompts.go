@@ -569,14 +569,14 @@ var mechanicKeywords = map[string][]string{
 // appendRulebookContext searches uploaded rulebook chunks for keywords from the player's
 // message — including implied mechanic terms — and injects matching chunks into the world
 // context block so the GM is bound by the actual rules. At most 5 chunks are injected.
-func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, playerMsg string, worldCtx *string) {
+func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, playerMsg string, worldCtx *string) []db.RuleCitation {
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil || sess == nil {
-		return
+		return nil
 	}
 	camp, err := s.db.GetCampaign(sess.CampaignID)
 	if err != nil || camp == nil {
-		return
+		return nil
 	}
 
 	stopWords := map[string]bool{
@@ -615,7 +615,7 @@ func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, pla
 	}
 
 	if len(keywords) == 0 {
-		return
+		return nil
 	}
 
 	seenChunks := map[int64]bool{}
@@ -641,7 +641,7 @@ func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, pla
 		}
 	}
 	if len(chunks) == 0 {
-		return
+		return nil
 	}
 
 	const maxChunkChars = 1200 // per-chunk content limit
@@ -649,21 +649,24 @@ func (s *Server) appendRulebookContext(ctx context.Context, sessionID int64, pla
 
 	var sb strings.Builder
 	sb.WriteString("\n[RULEBOOK REFERENCES]\n")
+	var citations []db.RuleCitation
 	totalChars := 0
 	for _, c := range chunks {
 		content := c.Content
 		if len(content) > maxChunkChars {
-			content = content[:maxChunkChars] + "…"
+			content = strings.ToValidUTF8(content[:maxChunkChars], "") + "…"
 		}
 		entry := fmt.Sprintf("## %s (from %s)\n%s\n\n", c.Heading, c.Source, content)
 		if totalChars+len(entry) > maxTotalChars {
 			break
 		}
+		citations = append(citations, db.RuleCitation{ChunkID: c.ID, Source: c.Source, Heading: c.Heading, Passage: content})
 		sb.WriteString(entry)
 		totalChars += len(entry)
 	}
 	sb.WriteString("[/RULEBOOK REFERENCES]")
 	*worldCtx += sb.String()
+	return citations
 }
 
 // formatCharacterIdentity returns a character block with name and all identity fields.

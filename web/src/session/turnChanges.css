@@ -1,0 +1,8 @@
+.turn-changes { margin-block: .6rem; font-family: var(--font-ui, sans-serif); font-size: .85rem; }
+.turn-changes summary { cursor: pointer; width: fit-content; padding-block: .35rem; }
+.turn-changes ul { list-style: none; margin: 0; padding: 0; }
+.turn-changes li { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .4rem 0; }
+.turn-changes li div { overflow-wrap: anywhere; }
+.turn-changes li span { display: block; }
+.turn-changes small { text-transform: capitalize; }
+.turn-changes button { flex-shrink: 0; min-height: 2.75rem; }

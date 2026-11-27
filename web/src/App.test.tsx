@@ -293,7 +293,7 @@ describe('App', () => {
           publicMessage,
           { id: 2, session_id: 1, role: 'user', content: body.content, whisper: body.whisper === true, created_at: '' },
         ]
-        return Promise.resolve({ ok: true })
+        return Promise.resolve(new Response(null, {status:201, headers:{'X-Message-ID':'2'}}))
       }
       if (input === '/api/sessions/1/messages') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(authorizedMessages) })
@@ -316,10 +316,10 @@ describe('App', () => {
     expect(privateMessage.closest('.prose-player')).toHaveClass('prose-player--whisper')
     expect(screen.getByText('PUBLIC_SENTINEL')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/1/messages')
-    expect(fetchMock).toHaveBeenCalledWith('/api/sessions/1/messages', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ role: 'user', content: 'PRIVATE_SENTINEL', whisper: true }),
-    }))
+    const posted = fetchMock.mock.calls.find(([url, init]) => url === '/api/sessions/1/messages' && init?.method === 'POST')
+    expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
+      role: 'user', content: 'PRIVATE_SENTINEL', whisper: true, client_action_key: expect.stringMatching(/^[a-f0-9]{32}$/),
+    })
   })
 
   it('excludes displayed whispers from AI map-generation context', async () => {

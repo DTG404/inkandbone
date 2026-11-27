@@ -13,7 +13,7 @@ export type RealtimeEvent =
   | { type: 'campaign_updated'; sequence: number; payload: { campaign_id?: number; chronicle_night?: number; chronicle_night_start_dow?: number } }
   | { type: 'card_drawn'; sequence: number; payload: { campaign_id?: number; card?: Record<string, unknown>; deck_id?: number; deck_name?: string; draw_index?: number; session_id?: number; total?: number } }
   | { type: 'character_created'; sequence: number; payload: { character_id?: number; name?: string } }
-  | { type: 'character_updated'; sequence: number; payload: { character_id?: number; clan?: string; currency_balance?: number; currency_delta?: number; currency_label?: string; data_json?: string; embrace?: boolean; field?: string; id?: number; new_value?: number; portrait_path?: string; predator_type?: string; session_id?: number; xp_cost?: number } }
+  | { type: 'character_updated'; sequence: number; payload: { change_id?: number; character_id?: number; clan?: string; currency_balance?: number; currency_delta?: number; currency_label?: string; data_json?: string; embrace?: boolean; field?: string; id?: number; new_value?: number; portrait_path?: string; predator_type?: string; session_id?: number; xp_cost?: number } }
   | { type: 'combat_ended'; sequence: number; payload: { encounter_id?: number; session_id?: number } }
   | { type: 'combat_started'; sequence: number; payload: { encounter_id?: number; name?: string; session_id?: number } }
   | { type: 'combatant_updated'; sequence: number; payload: { combatant_id?: number; encounter_id?: number; session_id?: number } }
@@ -68,7 +68,7 @@ const websocketPayloads = {
   campaign_updated: { campaign_id: 'number?', chronicle_night: 'number?', chronicle_night_start_dow: 'number?' },
   card_drawn: { campaign_id: 'number?', card: 'object?', deck_id: 'number?', deck_name: 'string?', draw_index: 'number?', session_id: 'number?', total: 'number?' },
   character_created: { character_id: 'number?', name: 'string?' },
-  character_updated: { character_id: 'number?', clan: 'string?', currency_balance: 'number?', currency_delta: 'number?', currency_label: 'string?', data_json: 'string?', embrace: 'boolean?', field: 'string?', id: 'number?', new_value: 'number?', portrait_path: 'string?', predator_type: 'string?', session_id: 'number?', xp_cost: 'number?' },
+  character_updated: { change_id: 'number?', character_id: 'number?', clan: 'string?', currency_balance: 'number?', currency_delta: 'number?', currency_label: 'string?', data_json: 'string?', embrace: 'boolean?', field: 'string?', id: 'number?', new_value: 'number?', portrait_path: 'string?', predator_type: 'string?', session_id: 'number?', xp_cost: 'number?' },
   combat_ended: { encounter_id: 'number?', session_id: 'number?' },
   combat_started: { encounter_id: 'number?', name: 'string?', session_id: 'number?' },
   combatant_updated: { combatant_id: 'number?', encounter_id: 'number?', session_id: 'number?' },

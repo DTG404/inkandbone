@@ -292,6 +292,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)
 	// Existing read routes
 	s.mux.HandleFunc("GET /api/campaigns", s.handleListCampaigns)
+	s.registerCampaignArchiveRoutes()
 	s.mux.HandleFunc("GET /api/campaigns/{id}/characters", s.handleListCharacters)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/sessions", s.handleListSessions)
 	s.mux.HandleFunc("GET /api/campaigns/{id}/world-notes", s.handleListWorldNotes)
@@ -346,6 +347,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/objectives/{id}", s.handlePatchObjective)
 	s.mux.HandleFunc("DELETE /api/objectives/{id}", s.handleDeleteObjective)
 	// Feature 11: Player inventory
+	s.registerTurnChangeRoutes()
 	s.mux.HandleFunc("GET /api/characters/{id}/items", s.handleListItems)
 	s.mux.HandleFunc("POST /api/characters/{id}/items", s.handleCreateItem)
 	s.mux.HandleFunc("PATCH /api/items/{id}", s.handlePatchItem)
@@ -399,6 +401,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/npc-stats/{id}", s.handleUpdateNpcStat)
 	s.mux.HandleFunc("DELETE /api/npc-stats/{id}", s.handleDeleteNpcStat)
 	// Phase C: GM tools
+	s.mux.HandleFunc("POST /api/sessions/{id}/clarify", s.handlePerception)
+	s.mux.HandleFunc("POST /api/sessions/{id}/player-brief", s.handlePerception)
 	s.mux.HandleFunc("POST /api/sessions/{id}/improvise", s.handleImprovise)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/pre-session-brief", s.handlePreSessionBrief)
 	s.mux.HandleFunc("POST /api/sessions/{id}/detect-threads", s.handleDetectThreads)

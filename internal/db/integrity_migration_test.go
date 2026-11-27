@@ -42,6 +42,8 @@ func TestForeignKeySchemaDeclaresEveryDeleteAction(t *testing.T) {
 		{"decks", "campaign_id", "campaigns", "CASCADE"},
 		{"dice_rolls", "session_id", "sessions", "CASCADE"},
 		{"factions", "campaign_id", "campaigns", "CASCADE"},
+		{"gm_turns", "action_message_id", "messages", "CASCADE"},
+		{"gm_turns", "response_message_id", "messages", "SET NULL"},
 		{"items", "character_id", "characters", "CASCADE"},
 		{"map_pins", "map_id", "maps", "CASCADE"},
 		{"map_tokens", "map_id", "maps", "CASCADE"},
@@ -60,6 +62,7 @@ func TestForeignKeySchemaDeclaresEveryDeleteAction(t *testing.T) {
 		{"session_npcs", "session_id", "sessions", "CASCADE"},
 		{"sessions", "adventure_id", "adventures", "SET NULL"},
 		{"sessions", "campaign_id", "campaigns", "CASCADE"},
+		{"turn_changes", "message_id", "messages", "CASCADE"},
 		{"world_notes", "campaign_id", "campaigns", "CASCADE"},
 		{"xp_log", "session_id", "sessions", "CASCADE"},
 	}

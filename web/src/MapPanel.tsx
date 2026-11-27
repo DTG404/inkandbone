@@ -21,6 +21,9 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const [selectedPin, setSelectedPin] = useState<MapPin | null>(null)
   const [tokens, setTokens] = useState<MapToken[]>([])
   const [dragging, setDragging] = useState<{ tokenId: number } | null>(null)
+  const [tapToken, setTapToken] = useState<{ kind: 'move' | 'character' | 'npc'; id: number } | null>(null)
+  const [touchMap, setTouchMap] = useState(false)
+  const pointerType = useRef('mouse')
   const [hoveredToken, setHoveredToken] = useState<number | null>(null)
   const [showPalette, setShowPalette] = useState(false)
   const [zones, setZones] = useState<MapZone[]>([])
@@ -59,6 +62,8 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
   const activeMap = maps[activeMapIdx] ?? null
 
   useEffect(() => {
+    setTapToken(null)
+    setDragging(null)
     setZoneEditMode(false)
     setZoneDrawing(null)
     setPendingZoneName(null)
@@ -205,12 +210,11 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
     setZoneDrawing(prev => prev ? { ...prev, endX: ex, endY: ey } : null)
   }
 
-  function handleZoneMouseUp() {
-    if (!zoneEditMode || !zoneDrawing) return
-    const x = Math.min(zoneDrawing.startX, zoneDrawing.endX)
-    const y = Math.min(zoneDrawing.startY, zoneDrawing.endY)
-    const w = Math.abs(zoneDrawing.endX - zoneDrawing.startX)
-    const h = Math.abs(zoneDrawing.endY - zoneDrawing.startY)
+  function finishZone(drawing: NonNullable<typeof zoneDrawing>) {
+    const x = Math.min(drawing.startX, drawing.endX)
+    const y = Math.min(drawing.startY, drawing.endY)
+    const w = Math.abs(drawing.endX - drawing.startX)
+    const h = Math.abs(drawing.endY - drawing.startY)
     if (w < 0.02 || h < 0.02) { setZoneDrawing(null); return }
     setZoneDrawing(null)
     setPendingZoneName({ x, y, w, h })
@@ -252,6 +256,28 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       console.error(err)
       if (activeMap) loadTokens(activeMap.id)
       toast.error('Could not move map token.')
+    }
+  }
+
+  async function tapSurface(event: React.MouseEvent<HTMLImageElement>) {
+    if (!activeMap) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
+    if (zoneEditMode && pointerType.current !== 'mouse') {
+      if (pendingZoneName) return
+      if (zoneDrawing) finishZone({ ...zoneDrawing, endX: x, endY: y })
+      else setZoneDrawing({ startX: x, startY: y, endX: x, endY: y })
+    } else if (tapToken) {
+      try {
+        if (tapToken.kind === 'move') await moveToken(tapToken.id, x, y)
+        else await placeToken(activeMap.id, tapToken.kind, tapToken.id, x, y)
+        setTapToken(null)
+        loadTokens(activeMap.id)
+      } catch {
+        toast.error('Could not position this token. Tap a destination to try again.')
+      }
     }
   }
 
@@ -297,7 +323,8 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       {activeMap && (
         <button
           className={`zone-mode-btn${zoneEditMode ? ' active' : ''}`}
-          onClick={() => setZoneEditMode(!zoneEditMode)}
+          onClick={() => { setTapToken(null); setZoneDrawing(null); setPendingZoneName(null); setZoneEditMode(!zoneEditMode) }}
+          onPointerDown={event => setTouchMap(event.pointerType !== 'mouse')}
           title="Toggle zone editor"
         >
           ⬜ Zones
@@ -305,12 +332,18 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
       )}
       {activeMap && (
         <>
+          {tapToken && <p role="status">Tap the map to position the token. <button onClick={() => setTapToken(null)}>Cancel</button></p>}
+          {zoneEditMode && !pendingZoneName && <p className="touch-zone-hint">{zoneDrawing ? 'Tap the opposite corner.' : 'Tap two corners to mark a zone.'}</p>}
           <div
+            onPointerDownCapture={event => {
+              pointerType.current = event.pointerType
+              setTouchMap(event.pointerType !== 'mouse')
+            }}
             className="map-scroll"
             style={{ position: 'relative', flex: 1, userSelect: dragging ? 'none' : 'auto' }}
-            onMouseMove={(e) => { handleMapMouseMove(e); handleZoneMouseMove(e) }}
-            onMouseUp={(e) => { handleMapMouseUp(e); handleZoneMouseUp() }}
-            onMouseLeave={() => { setDragging(null); setZoneDrawing(null) }}
+            onMouseMove={(e) => { if (pointerType.current === 'mouse') { handleMapMouseMove(e); handleZoneMouseMove(e) } }}
+            onMouseUp={(e) => { if (pointerType.current === 'mouse') { void handleMapMouseUp(e); if (zoneEditMode && zoneDrawing) finishZone(zoneDrawing) } }}
+            onMouseLeave={() => { if (pointerType.current === 'mouse') { setDragging(null); setZoneDrawing(null) } }}
           >
             <div className="map-surface">
               <img
@@ -320,7 +353,8 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                 style={{ width: '100%', display: 'block' }}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleMapDrop}
-                onMouseDown={(e) => { if (zoneEditMode) handleZoneMouseDown(e) }}
+                onClick={tapSurface}
+                onMouseDown={(e) => { if (zoneEditMode && pointerType.current === 'mouse') handleZoneMouseDown(e) }}
               />
               {pins.map((pin) => (
                 <button
@@ -371,11 +405,20 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                     fontWeight: 700,
                     cursor: 'grab',
                     zIndex: 10,
+                    pointerEvents: zoneEditMode ? 'none' : 'auto',
                   }}
                   title={token.name}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Move ${token.name}`}
+                  aria-pressed={tapToken?.kind === 'move' && tapToken.id === token.id}
+                  onClick={() => { if (!zoneEditMode && pointerType.current !== 'mouse') setTapToken({ kind: 'move', id: token.id }) }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTapToken({ kind: 'move', id: token.id }) }
+                  }}
                   onMouseDown={(e) => {
                     e.preventDefault()
-                    setDragging({ tokenId: token.id })
+                    if (pointerType.current === 'mouse' && !zoneEditMode) setDragging({ tokenId: token.id })
                   }}
                   onMouseEnter={() => setHoveredToken(token.id)}
                   onMouseLeave={() => setHoveredToken(null)}
@@ -430,7 +473,7 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                       : zone.is_revealed ? 'transparent' : 'rgba(0,0,0,0.75)',
                     border: zoneEditMode ? '2px dashed #c9a84c' : 'none',
                     transition: 'background 0.6s ease-out',
-                    pointerEvents: zoneEditMode ? 'auto' : 'none',
+                    pointerEvents: zoneEditMode && !touchMap ? 'auto' : 'none',
                     zIndex: zone.is_revealed ? 0 : 5,
                     boxSizing: 'border-box',
                   }}
@@ -490,31 +533,35 @@ export function MapPanel({ campaignId, lastEvent, onActiveMapChange, characters,
                 {(characters ?? []).map((c) => {
                   const placed = tokens.some(t => t.entity_type === 'character' && t.entity_id === c.id)
                   return (
-                    <div
+                    <button type="button"
                       key={`char-${c.id}`}
                       className={`token-chip${placed ? ' token-chip-placed' : ''}`}
+                      disabled={placed || zoneEditMode}
+                      onClick={() => setTapToken({ kind: 'character', id: c.id })}
                       draggable={!placed}
                       onDragStart={(e) => {
                         e.dataTransfer.setData('text/plain', JSON.stringify({ entityType: 'character', entityId: c.id }))
                       }}
                     >
                       {c.name} <span className="token-type-badge">PC</span>
-                    </div>
+                    </button>
                   )
                 })}
                 {(sessionNpcs ?? []).map((n) => {
                   const placed = tokens.some(t => t.entity_type === 'npc' && t.entity_id === n.id)
                   return (
-                    <div
+                    <button type="button"
                       key={`npc-${n.id}`}
                       className={`token-chip${placed ? ' token-chip-placed' : ''}`}
+                      disabled={placed || zoneEditMode}
+                      onClick={() => setTapToken({ kind: 'npc', id: n.id })}
                       draggable={!placed}
                       onDragStart={(e) => {
                         e.dataTransfer.setData('text/plain', JSON.stringify({ entityType: 'npc', entityId: n.id }))
                       }}
                     >
                       {n.name} <span className="token-type-badge">NPC</span>
-                    </div>
+                    </button>
                   )
                 })}
               </div>

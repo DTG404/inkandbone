@@ -117,3 +117,15 @@ export async function patchCampaignConfig(
   })
   if (!res.ok) throw new Error(`patchCampaignConfig failed: ${res.status}`)
 }
+
+export async function importCampaignArchive(file: File): Promise<{ id: number }> {
+  const res = await request('/api/campaigns/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: file,
+  })
+  if (res.status === 422) throw new Error('Install the matching ruleset and referenced rulebooks, then import again.')
+  if (res.status === 413) throw new Error('The archive exceeds the 96 MiB limit.')
+  if (!res.ok) throw new Error('The campaign archive could not be imported. Check the file and try again.')
+  return res.json()
+}

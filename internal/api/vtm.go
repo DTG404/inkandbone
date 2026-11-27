@@ -171,8 +171,8 @@ func (s *Server) vtmHungerDiceRoll(ctx context.Context, sessionID int64, pool in
 	// Log and broadcast.
 	allRolls := append(normal, hungerDice...)
 	breakdownBytes, _ := json.Marshal(allRolls)
-	_, _ = s.db.LogDiceRoll(sessionID, expr, successes, string(breakdownBytes))
-	s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(expr), Result: RealtimeInt64(successes), NormalDice: RealtimeArray(normal), HungerDice: RealtimeArray(hungerDice), Successes: RealtimeInt64(successes), MessyCritical: RealtimePtr(messyCritical), BestialFail: RealtimePtr(bestialFail), CharacterName: RealtimePtr(characterName), Hidden: RealtimePtr(false)}})
+	s.recordTurnDice(ctx, sessionID, expr, successes, string(breakdownBytes))
+	s.turnEvent(ctx, Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(expr), Result: RealtimeInt64(successes), NormalDice: RealtimeArray(normal), HungerDice: RealtimeArray(hungerDice), Successes: RealtimeInt64(successes), MessyCritical: RealtimePtr(messyCritical), BestialFail: RealtimePtr(bestialFail), CharacterName: RealtimePtr(characterName), Hidden: RealtimePtr(false)}})
 
 	// Messy Critical → roll clan Compulsion.
 	var compulsion string
@@ -226,7 +226,7 @@ func (s *Server) vtmRollClanCompulsion(ctx context.Context, sessionID int64, cha
 		result = "The Beast surges. The character must immediately seek to slake their Hunger through feeding — all other actions feel meaningless until Hunger drops below 3."
 	}
 
-	s.bus.Publish(Event{Type: EventOracleResult, Payload: &OracleResultPayload{SessionID: RealtimeInt64(sessionID), Table: RealtimePtr(tableName), Roll: RealtimeInt64(roll), Result: RealtimePtr(result), IsCompulsion: RealtimePtr(true)}})
+	s.turnEvent(ctx, Event{Type: EventOracleResult, Payload: &OracleResultPayload{SessionID: RealtimeInt64(sessionID), Table: RealtimePtr(tableName), Roll: RealtimeInt64(roll), Result: RealtimePtr(result), IsCompulsion: RealtimePtr(true)}})
 
 	return result
 }
@@ -236,12 +236,8 @@ func (s *Server) vtmRollClanCompulsion(ctx context.Context, sessionID int64, cha
 // At Hunger 5, does not increase further but flags a Frenzy risk.
 // Returns a string describing the result for injection into GM context.
 func (s *Server) handleVtMRouseCheck(ctx context.Context, sessionID int64) string {
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return ""
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
-	if err != nil {
+	charID, err := s.turnActorID(ctx)
+	if err != nil || charID == 0 {
 		return ""
 	}
 	char, err := s.db.GetCharacter(charID)
@@ -264,8 +260,8 @@ func (s *Server) handleVtMRouseCheck(ctx context.Context, sessionID int64) strin
 	}
 
 	roll := mathrand.Intn(10) + 1
-	_, _ = s.db.LogDiceRoll(sessionID, "1d10 (Rouse Check)", roll, "[]")
-	s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr("1d10 (Rouse Check)"), Result: RealtimeInt64(roll)}})
+	s.recordTurnDice(ctx, sessionID, "1d10 (Rouse Check)", roll, "[]")
+	s.turnEvent(ctx, Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr("1d10 (Rouse Check)"), Result: RealtimeInt64(roll)}})
 
 	if roll >= 6 {
 		return fmt.Sprintf("[ROUSE CHECK] Result: %d — Success. Hunger unchanged at %d.", roll, currentHunger)
@@ -282,10 +278,10 @@ func (s *Server) handleVtMRouseCheck(ctx context.Context, sessionID int64) strin
 	if err != nil {
 		return fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger should increase to %d but stat update failed.", roll, newHunger)
 	}
-	if err := s.db.UpdateCharacterData(charID, string(dataJSON)); err != nil {
+	if err := s.turnCharacter(ctx, sessionID, charID, char.DataJSON, string(dataJSON)); err != nil {
 		return fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger should increase to %d but stat update failed.", roll, newHunger)
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID)}})
+	s.turnEvent(ctx, Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID)}})
 
 	msg := fmt.Sprintf("[ROUSE CHECK] Result: %d — Failed. Hunger increases to %d.", roll, newHunger)
 	if newHunger >= 4 {
@@ -321,15 +317,12 @@ func (s *Server) autoVtMDisciplineRouseChecks(ctx context.Context, sessionID int
 	}
 
 	// Mortals and ghouls do not use Rouse Checks for Disciplines.
-	charIDStr, _ := s.db.GetSetting("active_character_id")
-	if charIDStr != "" {
-		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
-			if char, err := s.db.GetCharacter(charID); err == nil && char != nil && char.DataJSON != "" {
-				var charStats map[string]any
-				if json.Unmarshal([]byte(char.DataJSON), &charStats) == nil {
-					if ct, ok := charStats["character_type"].(string); ok && strings.ToLower(ct) == "mortal" {
-						return
-					}
+	if charID, err := s.turnActorID(ctx); err == nil {
+		if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
+			var stats map[string]any
+			if json.Unmarshal([]byte(char.DataJSON), &stats) == nil {
+				if ct, ok := stats["character_type"].(string); ok && strings.EqualFold(ct, "mortal") {
+					return
 				}
 			}
 		}
@@ -384,8 +377,8 @@ Reply with ONLY a single integer: the number of Rouse Checks owed (0 if none). N
 		count = 5 // sanity cap — no scene warrants more than 5 Rouse Checks
 	}
 
-	for range count {
-		_ = s.handleVtMRouseCheck(ctx, sessionID)
+	for i := range count {
+		_ = s.handleVtMRouseCheck(context.WithValue(ctx, turnReasonKey{}, fmt.Sprintf("discipline-rouse-%d", i)), sessionID)
 	}
 }
 
@@ -408,8 +401,7 @@ func bloodPotencyBonusDice(bp int) int {
 func (s *Server) handleVtMBloodSurge(ctx context.Context, sessionID int64) string {
 	rouseResult := s.handleVtMRouseCheck(ctx, sessionID)
 
-	charIDStr, _ := s.db.GetSetting("active_character_id")
-	charID, _ := strconv.ParseInt(charIDStr, 10, 64)
+	charID, _ := s.turnActorID(ctx)
 	char, err := s.db.GetCharacter(charID)
 	if err != nil || char == nil {
 		return rouseResult
@@ -508,11 +500,7 @@ func (s *Server) autoDetectVtMEmbrace(ctx context.Context, sessionID int64, gmTe
 	}
 
 	// Resolve active character and confirm it is a Mortal.
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -614,7 +602,7 @@ Example: {"embraced": true, "clan": "Nosferatu"}`, gmText)
 		log.Printf("autoDetectVtMEmbrace: marshal failed: %v", err)
 		return
 	}
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	if _, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "embrace", char.DataJSON, string(updated)); err != nil {
 		log.Printf("autoDetectVtMEmbrace: DB update failed: %v", err)
 		return
 	}
@@ -678,11 +666,7 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 	if !stainTriggerRE.MatchString(strings.ToLower(text)) {
 		return
 	}
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -766,7 +750,7 @@ func (s *Server) detectAndApplyVtMStains(ctx context.Context, sessionID int64, t
 	if err != nil {
 		return
 	}
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	if _, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "stains", char.DataJSON, string(updated)); err != nil {
 		return
 	}
 	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID)}})
@@ -807,17 +791,13 @@ func (s *Server) autoUpdateChronicleNight(ctx context.Context, sessionID int64, 
 
 	// Willpower restoration: sleeping the day restores min(Composure, Resolve) willpower.
 	// This is deterministic — no AI call needed.
-	s.vtmRestoreWillpowerOnWake(sessionID)
+	s.vtmRestoreWillpowerOnWake(ctx, sessionID)
 }
 
 // vtmRestoreWillpowerOnWake restores Willpower by min(Composure, Resolve) when the
 // vampire wakes for a new night, capped at willpower_max. Pure calculation, no AI.
-func (s *Server) vtmRestoreWillpowerOnWake(sessionID int64) {
-	charIDStr, err := s.db.GetSetting("active_character_id")
-	if err != nil || charIDStr == "" {
-		return
-	}
-	charID, err := strconv.ParseInt(charIDStr, 10, 64)
+func (s *Server) vtmRestoreWillpowerOnWake(ctx context.Context, sessionID int64) {
+	charID, err := s.turnActorID(ctx)
 	if err != nil {
 		return
 	}
@@ -869,8 +849,9 @@ func (s *Server) vtmRestoreWillpowerOnWake(sessionID int64) {
 	if err != nil {
 		return
 	}
-	if err := s.db.UpdateCharacterData(charID, string(updated)); err != nil {
+	live, err := s.db.ApplyTurnStats(turnSource(ctx, sessionID), charID, "willpower", char.DataJSON, string(updated))
+	if err != nil {
 		return
 	}
-	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(string(updated))}})
+	s.bus.Publish(Event{Type: EventCharacterUpdated, Payload: &CharacterUpdatedPayload{ID: RealtimeInt64(charID), CharacterID: RealtimeInt64(charID), SessionID: RealtimeInt64(sessionID), DataJson: RealtimePtr(live)}})
 }

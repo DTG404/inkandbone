@@ -19,6 +19,22 @@ Use **Manage** to select the campaign, character and session. A campaign holds t
 
 Some mechanics belong to a particular system. The [Vampire V5 guide](games/vtm.md) covers Hunger and the Masquerade. The [Ironsworn guide](games/ironsworn.md) covers vows and momentum.
 
+## Pick up a session
+
+The action box saves an unsent draft for each session in this browser. If a connection drops during a turn, reopen the table and choose **Resume GM response**. An accepted action keeps its roll and completed answer when you reconnect.
+
+After a break of half an hour, **Where were we?** opens with your character’s last known location, pending decision and known leads. You can also open it beside the action box at any time. **Ask the GM** uses the same public narration addressed to your character. Asking leaves the transcript, rolls, inventory, game clock and soundtrack alone. A detail your character hasn’t learned stays unknown.
+
+Open **Changes** beneath a GM reply to inspect its recorded updates. Undo an individual update there. If someone has since edited that value, the table preserves their edit. When a rulebook passage was supplied for a reply, expand its source to read the saved heading and exact passage.
+
+## Use a touch map
+
+Open the map drawer and choose **Tokens**. Tap a character or NPC, then tap its position on the map. To move a placed token, tap it and then tap its destination. In the zone editor, tap two opposite corners, enter a name and choose **Add**. Use **Reveal** when the party discovers that zone.
+
+## Move a campaign
+
+In **Manage → Campaigns**, download the campaign archive. It includes private GM material, whispers and artwork. Keep it somewhere appropriate for the GM. Importing creates a separate campaign with its own IDs and transcript. The destination needs the referenced ruleset and matching installed rulebook sources. Select the restored campaign, character and session to continue play.
+
 ## Add a book to the compendium
 
 You can play with a built-in sheet before adding any books. Import a book when you want passages from that edition or supplement available during play.

@@ -10,9 +10,9 @@ const domainGoldens: Record<string, string> = {
   'combat.ts': '1c5806f8277892a57b511fb71ea6af5759733e94bc445dce3e2f673b4ad999d6',
   'decks.ts': '5012ab850d609cf4c6ce8c7eaf449538074c3be39619960c7400b4e9f811fe61',
   'macros.ts': 'abe4056b659a993a8eddfcd43afdbaf5f6d18d7c87867715abe92db691503db1',
-  'management.ts': '6fb9af9257cd401279cfe87dde1783f71d0aad33c22b27b0590939b5b1a9649f',
+  'management.ts': '4fb5d486fbffcfad5a765e10ecb3f4b0fd03458ca79e7bb28fd106748df03544',
   'rules.ts': '1422b1e80675bd66418b3ae50b1af7cd35ebbcddb4d0e489696af17a8be054ff',
-  'sessions.ts': '1da835558f7960eac6b5dda3c4e88c55de228a53d4a0f2acacd4d811b13ceefc',
+  'sessions.ts': '385a22017ac61a86f30532ab70ddec4d0f6f72e5cb64ca5659f0dd4dfd00bf34',
   'transport.ts': 'e526bc66b5db1b062b906cad31b4bbb53b07bd829cf9a608db40e43c561f9053',
   'world.ts': '2bc868a6744d6c8a1725b4782e1ae98e4ba5bb60b10f6a719db67592accc0879',
   'worldCatalog.ts': '8b576bed5fb18c044839317c990ec20798a42b2375424ea54b5091ed66a38686',
@@ -42,7 +42,7 @@ describe('domain API transport characterization', () => {
         expect(body, `${file}:${match[1]} non-2xx`).toMatch(/if \(!\w+\.ok\)/)
       }
     }
-    expect(functionCount).toBe(125)
+    expect(functionCount).toBe(126)
   })
 
   it('keeps the compatibility entrypoint as re-exports only', () => {

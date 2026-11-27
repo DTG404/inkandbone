@@ -21,6 +21,7 @@ import { Dialog } from './ui/Dialog'
 import { IconButton } from './ui/IconButton'
 import { useToast } from './ui/ToastProvider'
 import { NarrativeStream, TurnOrderStrip, normalizeGMContent } from './session/NarrativeStream'
+import { PlayerReference } from './session/PlayerReference'
 import { PlayerComposer } from './session/PlayerComposer'
 import { RightWorkspace } from './session/RightWorkspace'
 
@@ -111,6 +112,8 @@ export interface SessionViewProps {
   setXPSuggestionsEvent: (event: XPSpendSuggestionsEvent | null) => void
   aiTalentDescs: Record<string, string>
   setAiTalentDescs: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  recoverTurn?: () => void
+  retrySubmission?: boolean
   handleSend: () => Promise<void>
   onSendText: (text: string) => Promise<boolean>
   handleGenerateMap: () => Promise<void>
@@ -158,7 +161,7 @@ export function SessionView({
   setXPSuggestionsEvent,
   aiTalentDescs,
   setAiTalentDescs,
-  handleSend,
+  recoverTurn, retrySubmission, handleSend,
   onSendText,
   handleGenerateMap,
   handleSpendXP,
@@ -169,6 +172,7 @@ export function SessionView({
   onCharacterSelect,
   typingNames,
 }: SessionViewProps) {
+  const perspectiveId = selectedCharacterId ?? ctx.character?.id
   const scrollRef = useRef<HTMLDivElement>(null)
   const [mobileDestination, setMobileDestination] = useState<MobileDestination>('story')
   const [sessionNpcs, setSessionNpcs] = useState<SessionNPC[]>([])
@@ -521,12 +525,18 @@ export function SessionView({
           <p className="typing-indicator">⏳ {typingNames.join(' & ')} {typingNames.length === 1 ? 'is' : 'are'} thinking…</p>
         )}
 
+        {aiEnabled && ctx.session && perspectiveId != null && (
+          <PlayerReference key={`${ctx.session.id}-${perspectiveId}`}
+            sessionId={ctx.session.id} characterId={perspectiveId} />
+        )}
         <PlayerComposer
           characterId={ctx.character?.id ?? null}
           hasSession={ctx.session != null}
           input={input}
           onInputChange={setInput}
           onSend={handleSend}
+          recoverTurn={recoverTurn}
+          retrySubmission={retrySubmission}
           onSendText={onSendText}
           sending={sending}
           whisperMode={whisperMode}

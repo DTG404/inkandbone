@@ -1,3 +1,5 @@
+import { acknowledgeSubmission, updateDraft, useSessionDraft, type Submission } from './session/sessionDraft'
+import { SubmissionError } from './api/sessions'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWebSocket, webSocketURL } from './useWebSocket'
 import { fetchContext, fetchMessages, sendMessage, gmRespondStream, generateMap, fetchRuleset, fetchAdvancementConfig, suggestAdvances, type AdvancementConfig } from './api'
@@ -145,12 +147,20 @@ function GameApp() {
   const [mapEnabled, setMapEnabled] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   const [rightTab, setRightTab] = useState<PanelID>('notes')
-  const [input, setInput] = useState('')
+  const sessionID = ctx?.session?.id ?? null
+  const draft = useSessionDraft(sessionID)
+  const input = draft.text
+  const whisperMode = draft.whisper
+  const setInput = (value: string) => { if (sessionID !== null) updateDraft(sessionID, d => ({...d, text: value})) }
+  const setWhisperMode = (value: boolean | ((previous: boolean) => boolean)) => {
+    if (sessionID !== null) updateDraft(sessionID, d => ({...d, whisper: typeof value === 'function' ? value(d.whisper) : value}))
+  }
+  const submitting = useRef(false)
+  const [streamSession, setStreamSession] = useState<number | null>(null)
   const [sending, setSending] = useState(false)
   const [gmResponding, setGmResponding] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [generatingMap, setGeneratingMap] = useState(false)
-  const [whisperMode, setWhisperMode] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showPlayerHistory, setShowPlayerHistory] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') ?? 'worn-grimoire')
@@ -397,69 +407,76 @@ function GameApp() {
     }
   }, [needsReconcile, reconcileGeneration, webSocketStatus, loadContext, acknowledgeReconcile])
 
-  const handleSendText = useCallback(async (text: string): Promise<boolean> => {
-    if (!text || !ctx?.session || sending) return false
+  const waitingAction = aiEnabled && messages.findLast(message => message.session_id === sessionID && message.pending_gm)
+  const pendingKey = draft.submission?.key
+  useEffect(() => {
+    if (sessionID === null || !pendingKey) return
+    const saved = messages.find(message => message.session_id === sessionID && message.client_action_key === pendingKey)
+    if (saved) {
+      acknowledgeSubmission(sessionID, pendingKey)
+    }
+  }, [sessionID, pendingKey, messages])
+  const submitTurn = async (item?: Submission, resumeID?: number): Promise<boolean> => {
+    if (sessionID === null || submitting.current) return false
+    const sid = sessionID
+    submitting.current = true
     setSending(true)
-    let submitted = false
+    setStreamSession(sid)
+    let accepted = resumeID !== undefined
     try {
-      await sendMessage(ctx.session.id, text, false, selectedCharacterId)
-      submitted = true
-      loadContext(true)
+      let actionID = resumeID
+      if (item) {
+        updateDraft(sid, d => ({...d, submission: item}))
+        actionID = await sendMessage(sid, item.text, item.whisper, item.character, item.key)
+        if (!Number.isSafeInteger(actionID) || actionID <= 0) throw new Error('Missing action acknowledgement')
+        accepted = true
+        acknowledgeSubmission(sid, item.key)
+        void refreshTranscript()
+        if (item.whisper || !aiEnabled) return true
+      }
       setGmResponding(true)
       setStreamingText('')
       if (scoreSession) {
         scoringTurn(scoreSession)
-        setScoredTurn({session: scoreSession, after: messages.at(-1)?.id ?? 0})
+        setScoredTurn({session: scoreSession, after: actionID ?? 0})
       }
-      const narration = await gmRespondStream(ctx.session.id, (chunk) => {
-        if (scoreSession) return
-        setStreamingText((prev) => prev + chunk)
-      }, !!scoreSession)
-      if (scoreSession && activeSessionRef.current === scoreSession) {
+      const narration = await gmRespondStream(sid, chunk => {
+        if (!scoreSession && activeSessionRef.current === sid) setStreamingText(prev => prev + chunk)
+      }, !!scoreSession, actionID)
+      if (scoreSession && activeSessionRef.current === sid) {
         await revealScoredTurn(scoreSession, narration, setStreamingText)
-        await loadContext(true)
-      } else { void loadContext(true) }
-      setStreamingText('')
+      }
       return true
     } catch (err) {
       console.error(err)
-      if (submitted) {
-        toast.error('The GM response was interrupted. The story is being refreshed; your action was not resubmitted.')
-        loadContext(true)
-        return true
+      if (!accepted && item && err instanceof SubmissionError && err.status >= 400 && err.status < 500) {
+        updateDraft(sid, d => d.submission?.key === item.key ? {...d, submission: undefined} : d)
       }
-      toast.error('Your action could not be sent. Your text has been restored so you can try again.')
-      return false
+      toast.error(accepted ? 'GM response interrupted. Resume the saved action from the journal.' : 'Action not confirmed. Your draft is saved.')
+      return accepted
     } finally {
+      submitting.current = false
       scoringTurn(null)
       setScoredTurn(null)
       setSending(false)
       setGmResponding(false)
+      setStreamingText('')
+      void loadContext(true)
     }
-  }, [ctx, sending, loadContext, selectedCharacterId, toast, scoreSession, messages])
-
-  const handleSend = useCallback(async () => {
-    const text = input.trim()
-    if (!text || !ctx?.session || sending) return
-    setInput('')
-    const isWhisper = whisperMode
-    setWhisperMode(false)
-    if (isWhisper) {
-      setSending(true)
-      try {
-        await sendMessage(ctx.session.id, text, true, selectedCharacterId)
-        loadContext(true)
-      } catch {
-        setInput(text)
-        toast.error('Your whisper could not be sent. Your text has been restored so you can try again.')
-      } finally {
-        setSending(false)
-      }
-      return
-    }
-    const sent = await handleSendText(text)
-    if (!sent) setInput(text)
-  }, [input, ctx, sending, loadContext, whisperMode, selectedCharacterId, handleSendText, toast])
+  }
+  const newSubmission = (text: string, fromComposer: boolean): Submission => ({
+    key: Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join(''), text, whisper: fromComposer && whisperMode, character: selectedCharacterId, fromComposer,
+  })
+  const handleSendText = async (text: string) => {
+    if (!text.trim() || draft.submission || waitingAction) return false
+    return submitTurn(newSubmission(text.trim(), false))
+  }
+  const handleSend = async () => {
+    if (input.trim() && !draft.submission && (!waitingAction || whisperMode)) await submitTurn(newSubmission(input.trim(), true))
+  }
+  const recoverTurn = draft.submission
+    ? () => { void submitTurn(draft.submission) }
+    : waitingAction ? () => { void submitTurn(undefined, waitingAction.id) } : undefined
 
   const handleGenerateMap = useCallback(async () => {
     if (!ctx?.campaign || !mapEnabled || generatingMap) return
@@ -706,8 +723,8 @@ function GameApp() {
         setSearchQuery={setSearchQuery}
         aiEnabled={aiEnabled}
         mapEnabled={mapEnabled}
-        gmResponding={gmResponding}
-        streamingText={streamingText}
+        gmResponding={gmResponding && streamSession === sessionID}
+        streamingText={streamSession === sessionID ? streamingText : ''}
         generatingMap={generatingMap}
         mapOpen={mapOpen}
         setMapOpen={setMapOpen}
@@ -733,6 +750,8 @@ function GameApp() {
         setXPSuggestionsEvent={setXPSuggestionsEvent}
         aiTalentDescs={aiTalentDescs}
         setAiTalentDescs={setAiTalentDescs}
+        recoverTurn={recoverTurn}
+        retrySubmission={!!draft.submission}
         handleSend={handleSend}
         onSendText={handleSendText}
         handleGenerateMap={handleGenerateMap}

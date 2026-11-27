@@ -125,3 +125,23 @@ it('keeps the selected campaign sessions when an earlier fetch finishes last', a
   expect(screen.getByText('New table')).toBeInTheDocument()
   expect(screen.queryByText('Old table')).not.toBeInTheDocument()
 })
+
+it('imports a private archive as a separate campaign and exposes its download', async () => {
+  const user = userEvent.setup()
+  let imported = false
+  const api = vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === '/api/campaigns/import' && init?.method === 'POST') {
+      imported = true
+      return { ok: true, json: async () => ({ id: 9 }) }
+    }
+    const rows = imported && input === '/api/campaigns' ? [{ id: 9, ruleset_id: 1, name: 'Restored' }] : []
+    return { ok: true, json: async () => rows }
+  })
+  vi.stubGlobal('fetch', api)
+  render(<ManagePanel activeCampaignId={null} activeCharacterId={null} activeSessionId={null} onClose={() => {}} onContextChanged={() => {}} />)
+  const file = new File(['{}'], 'story.inkandbone.json', { type: 'application/json' })
+  await user.upload(await screen.findByLabelText('Campaign archive file'), file)
+  await user.click(screen.getByRole('button', { name: 'Import as new campaign' }))
+  expect(await screen.findByRole('link', { name: 'Export Restored archive' })).toHaveAttribute('href', '/api/campaigns/9/archive')
+  expect(api).toHaveBeenCalledWith('/api/campaigns/import', expect.objectContaining({ body: file }))
+})

@@ -10,6 +10,7 @@ import { playDiceRoll, playNotification, playCombatStart } from './audio/sounds'
 import { setAmbientTrack } from './audio/ambient'
 import { joinScore, leaveScore, revealScoredTurn, scoringTurn } from './audio/liveScore'
 import { SessionView } from './SessionView'
+import { useMobileWorkspace } from './layout/useMobileWorkspace'
 import { CharacterSelector } from './CharacterSelector'
 import { LoginScreen } from './LoginScreen'
 import type { PanelID } from './navigation/panelRegistry'
@@ -156,6 +157,7 @@ function GameApp() {
   const [activeMapId, setActiveMapId] = useState<number | null>(null)
   const [activeMapImagePath, setActiveMapImagePath] = useState<string | null>(null)
   const generateMapRetryRef = useRef<() => void>(() => undefined)
+  const phone = useMobileWorkspace()
   const [manageOpen, setManageOpen] = useState(false)
   const [gmScreenOpen, setGmScreenOpen] = useState(false)
   const [manageTab, setManageTab] = useState<'campaigns' | 'characters' | 'sessions' | 'rulebooks' | 'automation'>('campaigns')
@@ -537,94 +539,127 @@ function GameApp() {
     ? visibleMessages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
     : visibleMessages
 
+  const dismissMenu = phone ? { popoverTarget: 'table-menu', popoverTargetAction: 'hide' as const } : {}
+  const toolbar = (
+    <>
+      <CharacterSelector
+        characters={charactersList}
+        selectedId={selectedCharacterId}
+        onSelect={setSelectedCharacterId}
+      />
+      <button
+        className="h-theme"
+        onClick={() => setTheme(t => t === 'worn-grimoire' ? 'parchment' : 'worn-grimoire')}
+        aria-label="Toggle theme"
+        title="Toggle theme"
+      >
+        {theme === 'worn-grimoire' ? '☀' : '🌙'}{phone && ' Theme'}
+      </button>
+      <button
+        {...dismissMenu}
+        className={`h-actions-btn${showPlayerHistory ? ' active' : ''}`}
+        onClick={() => setShowPlayerHistory((v) => !v)}
+        aria-label="Your actions"
+        title="Your actions"
+      >
+        ⚔ Actions
+      </button>
+      {ctx.character && (
+        <button
+          {...dismissMenu}
+          className={`h-actions-btn${showTalentsPanel ? ' active' : ''}`}
+          onClick={() => setShowTalentsPanel((v) => !v)}
+          aria-label={rulesetName === 'vtm' ? 'Disciplines, Merits & Flaws' : 'Character talents & psychic powers'}
+          title={rulesetName === 'vtm' ? 'Disciplines, Merits & Flaws' : 'Character talents & psychic powers'}
+        >
+          {rulesetName === 'vtm' ? '✦ Disciplines' : '✦ Talents'}
+        </button>
+      )}
+      <button {...dismissMenu} className="h-export" onClick={handleExport} aria-label="Export session" title="Export session">
+        ↓ Export
+      </button>
+      <button
+        {...dismissMenu}
+        className="h-manage"
+        onClick={() => setGmScreenOpen(true)}
+        aria-label="GM Screen"
+        title="GM Screen — campaign config, notes, and tools"
+      >
+        {phone ? 'GM Screen' : '🎭 GM Screen'}
+      </button>
+      <button
+        {...dismissMenu}
+        className="h-manage"
+        onClick={() => setManageOpen(true)}
+        aria-label="Manage"
+        title="Manage campaigns, characters, sessions"
+      >
+        ⚙ Manage
+      </button>
+      {ctx?.character && aiEnabled && advancementConfig?.supported === true && charXPBalance >= advancementConfig.minimum_xp && (
+        <button
+          {...dismissMenu}
+          className={`xp-available-badge${suggestingXP ? ' xp-loading' : ''}`}
+          disabled={suggestingXP}
+          onClick={async () => {
+            if (xpSuggestionsEvent && xpPanelDismissed) {
+              setXpPanelDismissed(false)
+              return
+            }
+            setSuggestingXP(true)
+            try {
+              await suggestAdvances(ctx.character!.id, charXPBalance)
+              setXpPanelDismissed(false)
+            } catch (cause) {
+              console.error(cause)
+              toast.error('Advancement suggestions could not be requested. Try again.')
+            } finally {
+              setSuggestingXP(false)
+            }
+          }}
+          title={xpSuggestionsEvent && xpPanelDismissed
+            ? `Advancement available — ${xpSuggestionsEvent.current_xp} ${xpSuggestionsEvent.xp_label}`
+            : 'Request advancement suggestions'}
+        >
+          {suggestingXP ? '...' : '⬆ Advance'}
+        </button>
+      )}
+      {ctx?.campaign && rulesetName === 'vtm' && (
+        <ChronicleNightTracker campaign={ctx.campaign} />
+      )}
+      <AudioControls showLabels={phone} />
+    </>
+  )
+
   return (
     <div className="grimoire">
       <header className="grimoire-header">
-        <span className="h-campaign">{ctx.campaign?.name ?? 'No campaign'}</span>
-        <span className="h-sep">›</span>
-        <span className="h-char">{ctx.character?.name ?? 'No character'}</span>
-        <span className="h-sep">›</span>
-        <span className="h-session">{ctx.session?.title ?? 'No session'}</span>
-        <CharacterSelector
-          characters={charactersList}
-          selectedId={selectedCharacterId}
-          onSelect={setSelectedCharacterId}
-        />
-        <button
-          className="h-theme"
-          onClick={() => setTheme(t => t === 'worn-grimoire' ? 'parchment' : 'worn-grimoire')}
-          title="Toggle theme"
-        >
-          {theme === 'worn-grimoire' ? '☀' : '🌙'}
-        </button>
-        <button
-          className={`h-actions-btn${showPlayerHistory ? ' active' : ''}`}
-          onClick={() => setShowPlayerHistory((v) => !v)}
-          aria-label="Your actions"
-          title="Your actions"
-        >
-          ⚔ Actions
-        </button>
-        {ctx.character && (
-          <button
-            className={`h-actions-btn${showTalentsPanel ? ' active' : ''}`}
-            onClick={() => setShowTalentsPanel((v) => !v)}
-            aria-label={rulesetName === 'vtm' ? 'Disciplines, Merits & Flaws' : 'Character talents & psychic powers'}
-            title={rulesetName === 'vtm' ? 'Disciplines, Merits & Flaws' : 'Character talents & psychic powers'}
-          >
-            {rulesetName === 'vtm' ? '✦ Disciplines' : '✦ Talents'}
-          </button>
+        {phone ? (
+          <div className="phone-context">
+            <strong>{ctx.campaign?.name ?? 'Ink & Bone'}</strong>
+            <span>{[ctx.character?.name, ctx.session?.title].filter(Boolean).join(' · ')}</span>
+          </div>
+        ) : (
+          <>
+            <span className="h-campaign">{ctx.campaign?.name ?? 'No campaign'}</span>
+            <span className="h-sep">›</span>
+            <span className="h-char">{ctx.character?.name ?? 'No character'}</span>
+            <span className="h-sep">›</span>
+            <span className="h-session">{ctx.session?.title ?? 'No session'}</span>
+          </>
         )}
-        <button className="h-export" onClick={handleExport} aria-label="Export session" title="Export session">
-          ↓ Export
-        </button>
-        <button
-          className="h-manage"
-          onClick={() => setGmScreenOpen(true)}
-          aria-label="GM Screen"
-          title="GM Screen — campaign config, notes, and tools"
-        >
-          🎭 GM Screen
-        </button>
-        <button
-          className="h-manage"
-          onClick={() => setManageOpen(true)}
-          aria-label="Manage"
-          title="Manage campaigns, characters, sessions"
-        >
-          ⚙ Manage
-        </button>
-        {ctx?.character && aiEnabled && advancementConfig?.supported === true && charXPBalance >= advancementConfig.minimum_xp && (
-          <button
-            className={`xp-available-badge${suggestingXP ? ' xp-loading' : ''}`}
-            disabled={suggestingXP}
-            onClick={async () => {
-              if (xpSuggestionsEvent && xpPanelDismissed) {
-                setXpPanelDismissed(false)
-                return
-              }
-              setSuggestingXP(true)
-              try {
-                await suggestAdvances(ctx.character!.id, charXPBalance)
-                setXpPanelDismissed(false)
-              } catch (cause) {
-                console.error(cause)
-                toast.error('Advancement suggestions could not be requested. Try again.')
-              } finally {
-                setSuggestingXP(false)
-              }
-            }}
-            title={xpSuggestionsEvent && xpPanelDismissed
-              ? `Advancement available — ${xpSuggestionsEvent.current_xp} ${xpSuggestionsEvent.xp_label}`
-              : 'Request advancement suggestions'}
-          >
-            {suggestingXP ? '...' : '⬆ Advance'}
-          </button>
-        )}
-        {ctx?.campaign && rulesetName === 'vtm' && (
-          <ChronicleNightTracker campaign={ctx.campaign} />
-        )}
-        <AudioControls />
+        {phone ? (
+          <>
+            <button type="button" className="phone-menu-trigger" popoverTarget="table-menu">Menu</button>
+            <section id="table-menu" className="phone-menu" aria-label="Table menu" popover="auto">
+              <div className="phone-menu-title">
+                <strong>Table menu</strong>
+                <button type="button" popoverTarget="table-menu" popoverTargetAction="hide">Close</button>
+              </div>
+              {toolbar}
+            </section>
+          </>
+        ) : toolbar}
       </header>
 
       {webSocketStatus !== 'open' && (

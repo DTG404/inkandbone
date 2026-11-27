@@ -17,7 +17,7 @@ export function getAudioVolume(): number {
   return v ? parseFloat(v) : 0.7;
 }
 
-export default function AudioControls() {
+export default function AudioControls({ showLabels = false }: { showLabels?: boolean }) {
   const [muted, setMuted] = useState<boolean>(() => getAudioMuted());
   const [volume, setVolume] = useState<number>(() => getAudioVolume());
   const [ambientPaused, setAmbientPaused] = useState<boolean>(
@@ -63,7 +63,7 @@ export default function AudioControls() {
         title={muted ? 'Unmute audio' : 'Mute audio'}
         className="audio-mute-btn"
       >
-        {muted ? '🔇' : '🔊'}
+        {showLabels ? (muted ? 'Unmute' : 'Mute') : (muted ? '🔇' : '🔊')}
       </button>
       <input
         type="range"
@@ -82,7 +82,7 @@ export default function AudioControls() {
         title={ambientPaused ? 'Resume ambient music' : 'Pause ambient music'}
         className="audio-pause-btn"
       >
-        {ambientPaused ? '▶' : '⏸'}
+        {showLabels ? (ambientPaused ? 'Resume' : 'Pause') : (ambientPaused ? '▶' : '⏸')}
       </button>
     </div>
   );

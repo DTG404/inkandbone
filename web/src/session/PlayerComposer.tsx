@@ -1,3 +1,4 @@
+import { useMobileWorkspace } from '../layout/useMobileWorkspace'
 import type { Dispatch, SetStateAction } from 'react'
 import { MacroBar } from '../MacroBar'
 
@@ -24,6 +25,7 @@ export function PlayerComposer({
   whisperMode,
   setWhisperMode,
 }: PlayerComposerProps) {
+  const phone = useMobileWorkspace()
   return (
     <>
       <MacroBar
@@ -37,10 +39,11 @@ export function PlayerComposer({
           type="button"
           className={`whisper-toggle${whisperMode ? ' active' : ''}`}
           onClick={() => setWhisperMode((value) => !value)}
+          aria-pressed={whisperMode}
           aria-label={whisperMode ? 'Disable whisper mode' : 'Enable whisper mode'}
           title={whisperMode ? 'Whisper mode on — GM will not respond' : 'Enable whisper mode'}
         >
-          🔒
+          {phone ? 'Whisper' : '🔒'}
         </button>
         <textarea
           className={`player-input-field${whisperMode ? ' whisper-active' : ''}`}
@@ -62,7 +65,7 @@ export function PlayerComposer({
           disabled={sending || !input.trim() || !hasSession}
           onClick={() => { void onSend() }}
         >
-          {sending ? '…' : '↵'}
+          {sending ? '…' : phone ? 'Send' : '↵'}
         </button>
       </div>
     </>

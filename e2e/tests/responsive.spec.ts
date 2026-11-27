@@ -214,6 +214,40 @@ for (const viewport of VIEWPORTS) {
   })
 }
 
+test('phone controls fit at 320px and return to inline controls at 600px', async ({ page, request }) => {
+  await activateFixture(request)
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.goto('/')
+  const header = page.locator('.grimoire-header')
+  expect(await header.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  const menu = page.getByRole('button', { name: 'Menu', exact: true })
+  await menu.click()
+  const controls = page.getByRole('region', { name: 'Table menu' })
+  await expect(controls.getByRole('slider', { name: 'Volume' })).toBeVisible()
+  await expect(controls.getByRole('button', { name: 'GM Screen' })).toBeInViewport()
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeFocused()
+
+  const tags = page.locator('summary').filter({ hasText: 'Scene tags' })
+  const night = page.getByRole('button', { name: 'night', exact: true })
+  await expect(night).toBeHidden()
+  await tags.click()
+  await night.click()
+  await expect(night).toHaveAttribute('aria-pressed', 'true')
+  await tags.click()
+  await expect(tags).toContainText('night')
+  await page.reload()
+  await expect(tags).toContainText('night')
+
+  await page.setViewportSize({ width: 600, height: 800 })
+  await expect(menu).toHaveCount(0)
+  await expect(tags).toHaveCount(0)
+  await expect(night).toBeVisible()
+  await expect(header.getByRole('button', { name: 'Manage', exact: true })).toBeVisible()
+  await night.click()
+  await expect(night).toHaveAttribute('aria-pressed', 'false')
+})
+
 for (const visual of [
   { name: 'dark-desktop', theme: 'worn-grimoire' as const, width: 1440, height: 900 },
   { name: 'light-desktop', theme: 'parchment' as const, width: 1440, height: 900 },

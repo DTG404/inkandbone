@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { devices, expect, test, webkit, type APIRequestContext } from '@playwright/test'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import fs from 'fs'
 import http, { type IncomingMessage, type ServerResponse } from 'http'
@@ -85,6 +85,8 @@ function promptFor(request: ChatRequest): string {
 
 function successfulAutomationContent(request: ChatRequest): string {
   const prompt = promptFor(request)
+  if (prompt.includes('returning character')) return '{"location":"Rain taps the window."}'
+  if (prompt.includes('supplied character-visible narration')) return '{"answer":"Rain taps the window."}'
   if (prompt.includes('TTRPG rules referee') && prompt.includes('Cross the moonbridge')) {
     return '{"required":true,"expression":"1d6","attribute":"Balance","dc":2,"reason":"Crossing the moonbridge"}'
   }
@@ -630,6 +632,99 @@ test('a downloaded campaign archive resumes play independently after import and 
   await expect(page.getByText(nextAction, { exact: true })).toHaveCount(0)
   await expect(page.locator('.prose-gm-wrap')).toHaveCount(1)
   expect(await transcript(original.sessionId)).toEqual(source)
+})
+
+test('every registered ruleset opens a sheet and plays a persistent fixture turn', async ({ page }) => {
+  const rulesets: Array<{id: number; name: string}> = await (await state.api.get('/api/rulesets')).json()
+  expect(rulesets.length).toBeGreaterThan(0)
+  test.setTimeout(30000 + rulesets.length * 10000)
+  for (const ruleset of rulesets) {
+    await test.step(ruleset.name, async () => {
+      const {sessionId} = await createFixture(state.api, ruleset.id)
+      await page.goto(state.app.origin)
+      const sheet = page.locator('.sidebar-left')
+      await expect(sheet).toBeVisible()
+      await expect(sheet.locator('label input:visible, label select:visible, label textarea:visible, .attr-row:visible').first()).toBeVisible()
+      const action = `I listen at the window in the ${ruleset.name} campaign.`
+      await page.getByPlaceholder('What do you do?').fill(action)
+      await page.getByPlaceholder('What do you do?').press('Enter')
+      await expect(page.locator('.prose-gm-wrap')).toContainText('Rain taps the window.')
+      await page.reload()
+      await expect(page.getByText(action, {exact:true})).toBeVisible()
+      await expect(page.locator('.prose-gm-wrap')).toContainText('Rain taps the window.')
+      const transcript = await (await state.api.get(`/api/sessions/${sessionId}/messages`)).json()
+      expect(transcript.map((m: {role:string}) => m.role)).toEqual(['user','assistant'])
+    })
+  }
+})
+
+test('iPhone WebKit plays a turn, clarifies without advancing, and positions map pieces by touch', async () => {
+  const fixture = await createFixture(state.api)
+  const browser = await webkit.launch()
+  try {
+    const page = await browser.newPage({ ...devices['iPhone 13'] })
+    await page.goto(state.app.origin)
+    await page.getByRole('button', {name:'Menu',exact:true}).tap()
+    await expect(page.getByRole('region',{name:'Table menu'})).toBeVisible()
+    await page.getByRole('button',{name:'Close',exact:true}).tap()
+    await page.getByPlaceholder('What do you do?').fill('I listen for movement outside.')
+    await page.getByRole('button',{name:'Send', exact:true}).tap()
+    await expect(page.locator('.prose-gm-wrap')).toContainText('Rain taps the window.')
+    await page.getByRole('button',{name:'Ask the GM',exact:true}).tap()
+    await page.getByLabel('What can your character tell from the scene?').fill('What can I hear?')
+    await page.getByRole('button',{name:'Ask without taking a turn'}).tap()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Rain taps the window.')
+    await dialog.getByRole('button',{name:'Close',exact:true}).tap()
+    const messages = await (await state.api.get(`/api/sessions/${fixture.sessionId}/messages`)).json()
+    expect(messages).toHaveLength(2)
+    await page.getByRole('button',{name:'Where were we?'}).tap()
+    await expect(dialog).toContainText('Rain taps the window.')
+    await dialog.getByRole('button',{name:'Close',exact:true}).tap()
+
+    const response = await state.api.post(`/api/campaigns/${fixture.campaignId}/maps/generate`, {data:{context:'Market gate lanterns', name:'Touch market'}})
+    expect(response.ok()).toBe(true)
+    const map = await response.json()
+    await page.reload()
+    await page.locator('.map-drawer-handle').tap()
+    const img = page.locator(`img[src="/api/assets/maps/${map.id}"]`)
+    await expect(img).toBeVisible()
+    await img.evaluate(async el => { await (el as HTMLImageElement).decode() })
+    await page.getByRole('button',{name:/Tokens/}).tap()
+    await page.getByRole('button',{name:'Aster PC'}).tap()
+    const area = await img.boundingBox()
+    expect(area).not.toBeNull()
+    const position = (x:number,y:number) => ({x:Math.round(area!.width*x),y:Math.round(area!.height*y)})
+    await img.tap({position:position(.45,.45)})
+    const token = page.getByRole('button',{name:'Move Aster'})
+    await token.tap()
+    await img.tap({position:position(.7,.65)})
+    await page.getByTitle('Toggle zone editor').tap()
+    await img.tap({position:position(.48,.16)})
+    await img.tap({position:position(.84,.40)})
+    await page.getByPlaceholder('Zone name').fill('North room')
+    await page.locator('.zone-name-prompt').getByRole('button',{name:'Add',exact:true}).tap()
+    const zone = page.locator('.zone-list-row').filter({hasText:'North room'})
+    await zone.getByRole('button',{name:'Reveal'}).tap()
+    await expect(zone.getByRole('button',{name:'Hide'})).toBeVisible()
+    await page.reload()
+    await page.locator('.map-drawer-handle').tap()
+    await expect(token).toBeVisible()
+    const tokens = await (await state.api.get(`/api/maps/${map.id}/tokens`)).json()
+    expect(tokens[0].x).toBeCloseTo(.7,1)
+    expect(tokens[0].y).toBeCloseTo(.65,1)
+    await page.getByTitle('Toggle zone editor').tap()
+    await expect(zone.getByRole('button',{name:'Hide'})).toBeVisible()
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('inkandbone.lastVisit.')) localStorage.setItem(key, String(Date.now() - 3600000))
+      }
+    })
+    await page.reload()
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('Pending decision')
+    await expect(dialog).toContainText('Rain taps the window.')
+  } finally { await browser.close() }
 })
 
 test('saved drafts and a lost submission acknowledgement recover one cited GM turn', async ({page}) => {

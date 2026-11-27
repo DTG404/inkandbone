@@ -95,3 +95,16 @@ The maintained browser tree is `e2e/tests/`; `cd e2e && npm test` is its only su
 ## Live campaign rehearsal
 
 Run `node e2e/live-campaign.mjs /path/to/fixture.json` on a **disposable deployment** with `TTRPG_AUTH_SECRET` supplied privately to the process. The fixture contains the deployment `origin`, numeric `campaign` and `session` IDs, and `actions`, an ordered list of 30 distinct, setting-appropriate player actions. Start with that session selected. The runner uses the browser composer, checks each persisted GM response and its visible text, and checks the full sequence after reload. A restarted run recognizes completed pairs. Each turn uses the deployment's configured providers and automations.
+
+## Campaign continuity and touch acceptance
+
+| Behavior | Repeatable evidence |
+| --- | --- |
+| Resume a turn and restore its draft | The browser reloads the draft, loses the submission acknowledgement after the server saves it, then resumes. The transcript has one action and one reply, and the dice log has one roll. |
+| Inspect sources | The recovered turn opens the matched source and heading, displays the saved passage, and retains it after reload. |
+| Correct one change | The SQLite and HTTP tests exercise stat, item, currency, objective and NPC changes, independent correction, and a later manual edit that returns to the original value. |
+| Resume from the player’s perspective and ask the GM | The phone browser opens the return card after a simulated break, asks about the scene and checks the transcript count. The API tests exclude other characters’ scenes and whispers. |
+| Use a touch map | WebKit taps to place and reposition a token, draws a two-corner zone, reveals it, then reloads and checks coordinates and visibility. |
+| Restore a campaign and continue play | The browser downloads the archive, imports the file, opens the copied campaign and plays the next turn. Reloading each campaign verifies separate transcripts. HTTP tests also restore private notes, whispers, portraits and maps. |
+| Exercise every installed ruleset | The browser reads the ruleset registry at runtime, creates each fixture, opens its sheet, sends an action, and checks the persisted action and response after reload. The provider supplies a deterministic fixture turn. |
+| Physical iPhone | **Open.** On a handset, check the native keyboard and composer, lock and resume during a turn, and listen for the intended Syrinscape transition through the speaker. WebKit emulation covers the on-screen workflow. |

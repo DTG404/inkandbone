@@ -401,6 +401,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/npc-stats/{id}", s.handleUpdateNpcStat)
 	s.mux.HandleFunc("DELETE /api/npc-stats/{id}", s.handleDeleteNpcStat)
 	// Phase C: GM tools
+	s.mux.HandleFunc("POST /api/sessions/{id}/clarify", s.handlePerception)
+	s.mux.HandleFunc("POST /api/sessions/{id}/player-brief", s.handlePerception)
 	s.mux.HandleFunc("POST /api/sessions/{id}/improvise", s.handleImprovise)
 	s.mux.HandleFunc("POST /api/campaigns/{id}/pre-session-brief", s.handlePreSessionBrief)
 	s.mux.HandleFunc("POST /api/sessions/{id}/detect-threads", s.handleDetectThreads)

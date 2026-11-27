@@ -15,7 +15,7 @@ This file is the canonical supported-toolchain and verification reference. Versi
 | govulncheck | v1.3.0 |
 | gitleaks | v8.30.1 |
 
-The repository currently embeds 57 ordered SQL migration files and seeds 14 supported game systems. Add new migrations; never rewrite an applied migration.
+The repository currently embeds 59 ordered SQL migration files and seeds 14 supported game systems. Add new migrations; never rewrite an applied migration.
 
 ## Commands
 
@@ -29,6 +29,8 @@ make generate     # regenerate realtime Go/TypeScript contracts
 ```
 
 Use `npm ci`, not `npm install`, for reproducible frontend and E2E installs. The maintained browser suite lives only under `e2e/`; its coverage inventory is in [testing/e2e-coverage-matrix.md](testing/e2e-coverage-matrix.md).
+
+Install the two browser engines with `cd e2e && npm ci && npx playwright install --with-deps chromium webkit`. The suite discovers every registered ruleset and runs the touch workflow with a WebKit iPhone profile.
 
 CI runs `make verify` and `make verify-e2e` as separate required jobs. A local release candidate should pass both commands from a clean dependency install.
 

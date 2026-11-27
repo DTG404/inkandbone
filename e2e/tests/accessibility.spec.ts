@@ -153,6 +153,7 @@ for (const viewport of VIEWPORTS) {
     const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
     expect(hasOverflow).toBe(false)
 
+    if (viewport.width < 600) await page.getByRole('button', { name: 'Menu', exact: true }).click()
     await page.getByRole('button', { name: /Manage$/ }).click()
     const dialog = page.getByRole('dialog', { name: 'Manage Campaign' })
     await expect(dialog).toBeVisible()

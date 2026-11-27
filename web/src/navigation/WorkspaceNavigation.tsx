@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMobileWorkspace } from '../layout/useMobileWorkspace'
 import { PANEL_DEFINITIONS, type MobileDestination, type PanelGroup, type PanelID } from './panelRegistry'
 
 const GROUPS: readonly PanelGroup[] = ['Play', 'World', 'GM']
@@ -15,19 +15,6 @@ interface WorkspaceNavigationProps {
   mobileDestination: MobileDestination
   onMobileDestinationChange: (destination: MobileDestination) => void
   mobile?: boolean
-}
-
-function useMobileWorkspace(override?: boolean): boolean {
-  const query = '(max-width: 599px)'
-  const [mobile, setMobile] = useState(() => override ?? (typeof window.matchMedia === 'function' && window.matchMedia(query).matches))
-  useEffect(() => {
-    if (override !== undefined || typeof window.matchMedia !== 'function') return
-    const media = window.matchMedia(query)
-    const change = () => setMobile(media.matches)
-    media.addEventListener('change', change)
-    return () => media.removeEventListener('change', change)
-  }, [override])
-  return override ?? mobile
 }
 
 export function WorkspaceNavigation({

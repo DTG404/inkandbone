@@ -13,6 +13,7 @@ import { XPSuggestionsPanel } from './XPSuggestionsPanel'
 import { XPLogPanel } from './XPLogPanel'
 import { CharacterSelector } from './CharacterSelector'
 import { wgTalentDescription } from './wgTalentData'
+import { useMobileWorkspace } from './layout/useMobileWorkspace'
 import { WorkspaceShell } from './layout/WorkspaceShell'
 import { WorkspaceNavigation } from './navigation/WorkspaceNavigation'
 import { PANEL_DEFINITIONS, type MobileDestination, type PanelID } from './navigation/panelRegistry'
@@ -32,6 +33,7 @@ interface SceneTagPickerProps {
 
 function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
   const toast = useToast()
+  const phone = useMobileWorkspace()
   const activeTags = session.scene_tags ? session.scene_tags.split(',').filter(Boolean) : []
 
   async function toggleTag(tag: string) {
@@ -48,12 +50,13 @@ function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
     }
   }
 
-  return (
+  const picker = (
     <div className="scene-tag-picker">
       {SCENE_TAGS.map(tag => (
         <button
           key={tag}
           className={`scene-tag${activeTags.includes(tag) ? ' active' : ''}`}
+          aria-pressed={activeTags.includes(tag)}
           onClick={() => toggleTag(tag)}
           title={tag}
         >
@@ -61,6 +64,13 @@ function SceneTagPicker({ session, onUpdate }: SceneTagPickerProps) {
         </button>
       ))}
     </div>
+  )
+  if (!phone) return picker
+  return (
+    <details className="phone-scene-tags" key={session.id}>
+      <summary>Scene tags{activeTags.length > 0 && <span> · {activeTags.join(', ')}</span>}</summary>
+      {picker}
+    </details>
   )
 }
 

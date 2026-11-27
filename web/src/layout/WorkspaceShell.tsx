@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { LAYOUT_LIMITS, useWorkspaceLayout } from './useWorkspaceLayout'
 import type { MobileDestination } from '../navigation/panelRegistry'
+import { useMobileWorkspace } from './useMobileWorkspace'
 import { Drawer } from '../ui/Drawer'
 
 interface WorkspaceShellProps {
@@ -33,7 +34,7 @@ function useWorkspaceMedia(query: string): boolean {
 
 export function WorkspaceShell({ header, left, story, right, mobileNav, mobileDestination = 'story' }: WorkspaceShellProps) {
   const tablet = useWorkspaceMedia('(min-width: 600px) and (max-width: 899px)')
-  const mobile = useWorkspaceMedia('(max-width: 599px)')
+  const mobile = useMobileWorkspace()
   const [tabletDrawer, setTabletDrawer] = useState<TabletDrawer>(null)
   const activeResizeCleanup = useRef<(() => void) | null>(null)
   const {

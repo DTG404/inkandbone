@@ -767,3 +767,34 @@ test('saved drafts and a lost submission acknowledgement recover one cited GM tu
   expect(transcript.map(message => message.role)).toEqual(['user','assistant'])
   expect(await (await state.api.get(`${endpoint}/dice-rolls`)).json()).toHaveLength(1)
 })
+
+test('single asterisks carry unspoken actions through the table and GM history', async ({page}) => {
+  const fixture = await createFixture(state.api)
+  await page.goto(state.app.origin)
+  const input = page.getByPlaceholder('What do you do?')
+  const turns = [
+    { text: '*looks around confused*', actions: ['looks around confused'] },
+    { text: '*points at the door* "Where are we?" *steps back*', actions: ['points at the door', 'steps back'] },
+  ]
+  for (const [i, turn] of turns.entries()) {
+    await input.fill(turn.text)
+    await input.press('Enter')
+    await expect(page.locator('.prose-gm-wrap')).toHaveCount(i + 1)
+    const row = page.locator('.prose-player').last()
+    await expect(row.locator('.prose-player-label')).toContainText('Aster acts')
+    await expect(row.locator('em')).toHaveText(turn.actions)
+    const latest = state.provider.captured.filter(request => request.stream).at(-1)!
+    const userText = latest.messages!.filter(message => message.role === 'user').at(-1)!.content!
+    for (const action of turn.actions) {
+      expect(userText).toContain(JSON.stringify({kind:'unspoken_action', text:action}))
+    }
+    if (i === 1) {
+      expect(userText).toContain(JSON.stringify({kind:'text', text:' "Where are we?" '}))
+      await expect(row).toContainText('"Where are we?"')
+    }
+  }
+  await page.reload()
+  await expect(page.locator('.prose-player em')).toHaveText(turns.flatMap(turn => turn.actions))
+  const history = await (await state.api.get(`/api/sessions/${fixture.sessionId}/messages`)).json()
+  expect(history.filter((message: {role:string}) => message.role === 'user').map((message: {content:string}) => message.content)).toEqual(turns.map(turn => turn.text))
+})

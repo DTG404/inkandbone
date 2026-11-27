@@ -26,10 +26,18 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	if messages == nil {
-		messages = []db.Message{}
+	type transcriptMessage struct {
+		db.Message
+		PlayerParts []playerPart `json:"player_parts,omitempty"`
 	}
-	writeJSON(w, messages)
+	transcript := make([]transcriptMessage, len(messages))
+	for i, message := range messages {
+		transcript[i].Message = message
+		if message.Role == "user" {
+			transcript[i].PlayerParts = splitPlayerActions(message.Content)
+		}
+	}
+	writeJSON(w, transcript)
 }
 
 func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
@@ -212,9 +220,12 @@ func (s *Server) respondToAction(w http.ResponseWriter, r *http.Request, streami
 			continue
 		}
 		content := m.Content
-		if m.Role == "user" && m.CharacterID != nil {
-			if name, ok := charNameMap[*m.CharacterID]; ok {
-				content = "[" + name + "] " + content
+		if m.Role == "user" {
+			content = playerInputForGM(content)
+			if m.CharacterID != nil {
+				if name, ok := charNameMap[*m.CharacterID]; ok {
+					content = "[" + name + "] " + content
+				}
 			}
 		}
 		history = append(history, ai.ChatMessage{Role: m.Role, Content: content})
@@ -387,7 +398,7 @@ The base prompt above says "the player controls only their character" — that r
 	s.autoRevealZones(withTurnMessage(r.Context(), msgID, actorID), id, fullText)
 	sessionID := id
 	gmText := fullText
-	playerAction := lastPlayerMsg
+	playerAction := playerInputForGM(lastPlayerMsg)
 	s.submitPostStreamAutomation(sessionID, settingAutoExtractNPCs, JobModeEvent, func(ctx context.Context) error {
 		ctx = withTurnMessage(ctx, msgID, actorID)
 		s.extractNPCs(ctx, sessionID, gmText)

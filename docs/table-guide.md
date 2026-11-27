@@ -19,6 +19,8 @@ Use **Manage** to select the campaign, character and session. A campaign holds t
 
 Some mechanics belong to a particular system. The [Vampire V5 guide](games/vtm.md) covers Hunger and the Masquerade. The [Ironsworn guide](games/ironsworn.md) covers vows and momentum.
 
+Wrap an action in single asterisks to tell the GM what your character does. For example, `*looks around confused* "Where are we?"` gives the GM a visible gesture followed by a spoken question. The transcript displays the action in italics.
+
 ## Pick up a session
 
 The action box saves an unsent draft for each session in this browser. If a connection drops during a turn, reopen the table and choose **Resume GM response**. An accepted action keeps its roll and completed answer when you reconnect.

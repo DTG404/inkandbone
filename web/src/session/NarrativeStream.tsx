@@ -200,14 +200,20 @@ export function NarrativeStream({
       )
     } else {
       const isWhisper = m.whisper === true
+      const parts = m.player_parts
       const speakerName = m.character_id != null && charNameMap[m.character_id]
         ? charNameMap[m.character_id]
         : characterName
       nodes.push(
         <div key={m.id} className={`prose-player${isWhisper ? ' prose-player--whisper' : ''}`}>
-          <div className="prose-player-label">{speakerName} speaks</div>
+          <div className="prose-player-label">{speakerName} {parts?.length ? 'acts' : 'speaks'}</div>
           <p className="prose-player-text">
-            {searchQuery ? highlightText(m.content, searchQuery) : m.content}
+            {parts?.length ? parts.map((part, index) => {
+              const text = highlightText(part.text, searchQuery)
+              return part.kind === 'unspoken_action'
+                ? <em key={index} className="player-action">{text}</em>
+                : <span key={index}>{text}</span>
+            }) : highlightText(m.content, searchQuery)}
           </p>
         </div>
       )

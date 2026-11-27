@@ -50,7 +50,7 @@ func TestRouteContractCreateMessagePublishesGeneratedEvent(t *testing.T) {
 }
 
 func TestPromptGoldenCoreDirectives(t *testing.T) {
-	assert.Equal(t, "c18fb36f92eee5d5c7786195c219b77ece95cc7358a55ae872aa3aaefa8e348f", fmt.Sprintf("%x", sha256.Sum256([]byte(gmSystemPrompt))))
+	assert.Equal(t, "24331160eedbaabcc9c82b7b7b4fc31dd61bd7e76ae436ccead6328abece0a85", fmt.Sprintf("%x", sha256.Sum256([]byte(gmSystemPrompt))))
 	assert.Equal(t, "8aefb56d58e9bd67636764476b3f978a57c20ada491931a5bb81269421a2f13b", fmt.Sprintf("%x", sha256.Sum256([]byte(mapSystemPrompt))))
 	assert.Equal(t, "The Gate", func() string { title, _ := parseGeneratedNote("Title: The Gate\nContent: Old stone."); return title }())
 }

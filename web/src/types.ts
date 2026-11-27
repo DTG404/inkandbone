@@ -33,6 +33,7 @@ export interface Session {
 }
 
 export interface Message {
+  player_parts?: { kind: 'text' | 'unspoken_action'; text: string }[]
   pending_gm?: boolean
   client_action_key?: string
   rule_citations?: {chunk_id: number; source: string; heading: string; passage: string}[]

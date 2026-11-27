@@ -67,7 +67,7 @@ func (s *Server) prepareAction(ctx context.Context, sid int64, action db.Message
 		}
 	}
 	if result.Command == "" {
-		result.Roll = s.checkAndExecuteRoll(ctx, sid, action.Content, name)
+		result.Roll = s.checkAndExecuteRoll(ctx, sid, playerInputForGM(action.Content), name)
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err

@@ -115,6 +115,9 @@
   margin-bottom: 0.25rem;
 }
 
+.prose-player-text:has(.player-action) { font-style: normal; }
+.prose-player-text .player-action { font-style: italic; }
+
 .prose-player-text {
   font-style: italic;
   color: var(--gold);

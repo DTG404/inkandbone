@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 )
 
@@ -111,13 +112,16 @@ func (d *DB) DeleteSession(id int64) error {
 // --- Messages ---
 
 type Message struct {
-	ID          int64  `json:"id"`
-	SessionID   int64  `json:"session_id"`
-	Role        string `json:"role"` // "user" or "assistant"
-	Content     string `json:"content"`
-	Whisper     bool   `json:"whisper"`
-	CharacterID *int64 `json:"character_id"`
-	CreatedAt   string `json:"created_at"`
+	ClientActionKey *string        `json:"client_action_key,omitempty"`
+	RuleCitations   []RuleCitation `json:"rule_citations,omitempty"`
+	PendingGM       bool           `json:"pending_gm,omitempty"`
+	ID              int64          `json:"id"`
+	SessionID       int64          `json:"session_id"`
+	Role            string         `json:"role"` // "user" or "assistant"
+	Content         string         `json:"content"`
+	Whisper         bool           `json:"whisper"`
+	CharacterID     *int64         `json:"character_id"`
+	CreatedAt       string         `json:"created_at"`
 }
 
 func (d *DB) CreateMessage(sessionID int64, role, content string, whisper bool, characterID *int64) (int64, error) {
@@ -140,7 +144,7 @@ func boolToIntMsg(b bool) int {
 
 func (d *DB) ListMessages(sessionID int64) ([]Message, error) {
 	rows, err := d.db.Query(
-		"SELECT id, session_id, role, content, whisper, character_id, created_at FROM messages WHERE session_id = ? ORDER BY created_at, id",
+		"SELECT id, session_id, role, content, whisper, character_id, created_at, client_action_key,rule_citations, (role='user' AND whisper=0 AND (client_action_key IS NULL OR EXISTS (SELECT 1 FROM gm_turns t WHERE t.action_message_id=messages.id AND t.response_message_id IS NULL)) AND id=(SELECT m.id FROM messages m WHERE m.session_id=messages.session_id AND m.whisper=0 ORDER BY m.created_at DESC,m.id DESC LIMIT 1)) FROM messages WHERE session_id = ? ORDER BY created_at, id",
 		sessionID,
 	)
 	if err != nil {
@@ -150,9 +154,13 @@ func (d *DB) ListMessages(sessionID int64) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
+		var citations string
 		var whisper int
 		var charID sql.NullInt64
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &whisper, &charID, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &whisper, &charID, &m.CreatedAt, &m.ClientActionKey, &citations, &m.PendingGM); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(citations), &m.RuleCitations); err != nil {
 			return nil, err
 		}
 		m.Whisper = whisper == 1

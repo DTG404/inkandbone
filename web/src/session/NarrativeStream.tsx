@@ -1,3 +1,4 @@
+import { TurnChanges } from './TurnChanges'
 import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -178,6 +179,14 @@ export function NarrativeStream({
       nodes.push(
         <div key={m.id} className="prose-gm prose-gm-wrap">
           <ReactMarkdown>{normalizeGMContent(m.content)}</ReactMarkdown>
+          {m.rule_citations?.length ? <section aria-label="Rulebook passages supplied to the GM">
+            <small>Rulebook passages supplied to the GM</small>
+            {m.rule_citations.map(citation => <details key={citation.chunk_id}>
+              <summary>{citation.source}{citation.heading && ` · ${citation.heading}`}</summary>
+              <blockquote>{citation.passage}</blockquote>
+            </details>)}
+          </section> : null}
+          <TurnChanges sessionId={m.session_id} messageId={m.id} />
           {activeMapId !== null && activeMapImagePath !== null && (
             <button
               className="prose-pin-btn"

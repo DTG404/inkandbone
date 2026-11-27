@@ -33,6 +33,9 @@ export interface Session {
 }
 
 export interface Message {
+  pending_gm?: boolean
+  client_action_key?: string
+  rule_citations?: {chunk_id: number; source: string; heading: string; passage: string}[]
   id: number
   session_id: number
   role: string

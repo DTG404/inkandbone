@@ -85,6 +85,9 @@ function promptFor(request: ChatRequest): string {
 
 function successfulAutomationContent(request: ChatRequest): string {
   const prompt = promptFor(request)
+  if (prompt.includes('TTRPG rules referee') && prompt.includes('Cross the moonbridge')) {
+    return '{"required":true,"expression":"1d6","attribute":"Balance","dc":2,"reason":"Crossing the moonbridge"}'
+  }
   if (prompt.includes('objective tracker')) return '{"new":[],"resolved":[]}'
   if (prompt.includes('NPC roster manager')) return '{"add":[],"remove":[]}'
   if (prompt.includes('map assistant')) return '{"new_location":false}'
@@ -254,7 +257,7 @@ function healthByKey(items: AutomationHealth[], key: string): AutomationHealth {
   return health
 }
 
-async function createFixture(api: APIRequestContext): Promise<{ campaignId: number; characterId: number; sessionId: number }> {
+async function createFixture(api: APIRequestContext, rulesetId?: number): Promise<{ campaignId: number; characterId: number; sessionId: number }> {
   const rulesetsResponse = await api.get('/api/rulesets')
   expect(rulesetsResponse.ok()).toBe(true)
   const rulesets = await rulesetsResponse.json() as Array<{ id: number; name: string }>
@@ -262,7 +265,7 @@ async function createFixture(api: APIRequestContext): Promise<{ campaignId: numb
   expect(vtm).toBeDefined()
 
   const campaignResponse = await api.post('/api/campaigns', {
-    data: { description: 'Disposable reliability fixture', name: 'Reliability Campaign', ruleset_id: vtm!.id },
+    data: { description: 'Disposable reliability fixture', name: 'Reliability Campaign', ruleset_id: rulesetId ?? vtm!.id },
   })
   expect(campaignResponse.status()).toBe(201)
   const campaignId = (await campaignResponse.json() as { id: number }).id
@@ -627,4 +630,45 @@ test('a downloaded campaign archive resumes play independently after import and 
   await expect(page.getByText(nextAction, { exact: true })).toHaveCount(0)
   await expect(page.locator('.prose-gm-wrap')).toHaveCount(1)
   expect(await transcript(original.sessionId)).toEqual(source)
+})
+
+test('saved drafts and a lost submission acknowledgement recover one cited GM turn', async ({page}) => {
+  const fixture = await createFixture(state.api, 1)
+  const endpoint = `/api/sessions/${fixture.sessionId}`
+  const action = 'Cross the moonbridge.'
+  const source = 'Moonbridge field guide'
+  const passage = 'A moonbridge requires one Balance check.'
+  const upload = await state.api.post(`/api/rulesets/1/rulebook?source=${encodeURIComponent(source)}`, {
+    headers: {'Content-Type': 'text/plain'}, data: `# Moonbridge crossing\n\n${passage}`,
+  })
+  expect(upload.ok()).toBeTruthy()
+  const settings = await (await state.api.get('/api/settings/automations')).json() as {key:string}[]
+  const rollCheck = settings.find(setting => setting.key.includes('check_roll'))
+  expect(rollCheck).toBeDefined()
+  await state.api.patch('/api/settings/automations', {data: {key: rollCheck!.key, enabled:true}})
+  await page.goto(state.app.origin)
+  const input = page.getByPlaceholder('What do you do?')
+  await input.fill(action)
+  await page.reload()
+  await expect(input).toHaveValue(action)
+  await page.route(`**${endpoint}/messages`, async route => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const saved = await route.fetch()
+    expect(saved.status()).toBe(201)
+    await route.abort('connectionreset')
+  })
+  await input.press('Enter')
+  await expect(page.getByRole('button', {name:'Resume GM response'})).toBeVisible()
+  await page.reload()
+  await expect(input).toHaveValue('')
+  await page.getByRole('button', {name:'Resume GM response'}).click()
+  const citation = page.locator('summary').filter({hasText:source})
+  await expect(citation).toBeVisible()
+  await citation.click()
+  await expect(page.locator('blockquote').filter({hasText:passage})).toBeVisible()
+  await page.reload()
+  await expect(citation).toBeVisible()
+  const transcript = await (await state.api.get(`${endpoint}/messages`)).json() as {role:string}[]
+  expect(transcript.map(message => message.role)).toEqual(['user','assistant'])
+  expect(await (await state.api.get(`${endpoint}/dice-rolls`)).json()).toHaveLength(1)
 })

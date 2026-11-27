@@ -111,6 +111,8 @@ export interface SessionViewProps {
   setXPSuggestionsEvent: (event: XPSpendSuggestionsEvent | null) => void
   aiTalentDescs: Record<string, string>
   setAiTalentDescs: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  recoverTurn?: () => void
+  retrySubmission?: boolean
   handleSend: () => Promise<void>
   onSendText: (text: string) => Promise<boolean>
   handleGenerateMap: () => Promise<void>
@@ -158,7 +160,7 @@ export function SessionView({
   setXPSuggestionsEvent,
   aiTalentDescs,
   setAiTalentDescs,
-  handleSend,
+  recoverTurn, retrySubmission, handleSend,
   onSendText,
   handleGenerateMap,
   handleSpendXP,
@@ -527,6 +529,8 @@ export function SessionView({
           input={input}
           onInputChange={setInput}
           onSend={handleSend}
+          recoverTurn={recoverTurn}
+          retrySubmission={retrySubmission}
           onSendText={onSendText}
           sending={sending}
           whisperMode={whisperMode}

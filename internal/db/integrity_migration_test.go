@@ -42,6 +42,8 @@ func TestForeignKeySchemaDeclaresEveryDeleteAction(t *testing.T) {
 		{"decks", "campaign_id", "campaigns", "CASCADE"},
 		{"dice_rolls", "session_id", "sessions", "CASCADE"},
 		{"factions", "campaign_id", "campaigns", "CASCADE"},
+		{"gm_turns", "action_message_id", "messages", "CASCADE"},
+		{"gm_turns", "response_message_id", "messages", "SET NULL"},
 		{"items", "character_id", "characters", "CASCADE"},
 		{"map_pins", "map_id", "maps", "CASCADE"},
 		{"map_tokens", "map_id", "maps", "CASCADE"},

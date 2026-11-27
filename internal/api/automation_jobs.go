@@ -709,14 +709,11 @@ func (s *Server) checkAndExecuteRoll(ctx context.Context, sessionID int64, playe
 	}
 
 	charStats := "none"
-	if charIDStr, err := s.db.GetSetting("active_character_id"); err == nil && charIDStr != "" {
-		if charID, err := strconv.ParseInt(charIDStr, 10, 64); err == nil {
-			if char, err := s.db.GetCharacter(charID); err == nil && char != nil {
-				charStats = char.DataJSON
-			}
+	if charID, err := s.turnActorID(ctx); err == nil && charID != 0 {
+		if char, err := s.db.GetCharacter(charID); err == nil && char != nil && char.CampaignID == camp.ID {
+			charStats = char.DataJSON
 		}
 	}
-
 	schema := ruleset.SchemaJSON
 	if len(schema) > 800 {
 		schema = schema[:800]
@@ -789,8 +786,8 @@ If NO dice roll is required, respond with ONLY:
 	}
 
 	breakdownBytes, _ := json.Marshal(rolls)
-	_, _ = s.db.LogDiceRoll(sessionID, check.Expression, total, string(breakdownBytes))
-	s.bus.Publish(Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(check.Expression), Result: RealtimeInt64(total), CharacterName: RealtimePtr(characterName), Hidden: RealtimePtr(false)}})
+	s.recordTurnDice(ctx, sessionID, check.Expression, total, string(breakdownBytes))
+	s.turnEvent(ctx, Event{Type: EventDiceRolled, Payload: &DiceRolledPayload{SessionID: RealtimeInt64(sessionID), Expression: RealtimePtr(check.Expression), Result: RealtimeInt64(total), CharacterName: RealtimePtr(characterName), Hidden: RealtimePtr(false)}})
 
 	return &rollCheckResult{
 		Expression: check.Expression,
